@@ -26,6 +26,7 @@ export async function signUp(formData: FormData) {
     password: formData.get("password") as string,
     options: {
       data: { full_name: formData.get("full_name") as string },
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/callback`,
     },
   })
 

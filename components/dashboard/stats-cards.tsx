@@ -1,48 +1,59 @@
 "use client"
 
-import { ArrowUpRight, TrendingUp } from "lucide-react"
+import { ArrowUpRight, TrendingUp, TrendingDown, CheckSquare, BookOpen } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { useState } from "react"
 
 interface StatsCardsProps {
-  total: number
-  done: number
-  inProgress: number
-  todo: number
+  totalTasks: number
+  tasksDone: number
+  assignmentsDue: number
+  monthlyIncome: number
+  monthlyExpenses: number
 }
 
-export function StatsCards({ total, done, inProgress, todo }: StatsCardsProps) {
+function currency(n: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n)
+}
+
+export function StatsCards({ totalTasks, tasksDone, assignmentsDue, monthlyIncome, monthlyExpenses }: StatsCardsProps) {
   const [hoveredCard, setHoveredCard] = useState<number | null>(null)
+
+  const completionPct = totalTasks > 0 ? Math.round((tasksDone / totalTasks) * 100) : 0
 
   const stats = [
     {
       title: "Total Tasks",
-      value: String(total),
-      subtitle: "All time",
+      value: String(totalTasks),
+      subtitle: `${completionPct}% done`,
+      Icon: CheckSquare,
       bgColor: "bg-primary",
       textColor: "text-primary-foreground",
       delay: "0ms",
     },
     {
-      title: "Completed",
-      value: String(done),
-      subtitle: total > 0 ? `${Math.round((done / total) * 100)}% done` : "0% done",
+      title: "Assignments Due",
+      value: String(assignmentsDue),
+      subtitle: "pending or in progress",
+      Icon: BookOpen,
       bgColor: "bg-card",
       textColor: "text-foreground",
       delay: "100ms",
     },
     {
-      title: "In Progress",
-      value: String(inProgress),
-      subtitle: "Active now",
+      title: "Income",
+      value: currency(monthlyIncome),
+      subtitle: "this month",
+      Icon: TrendingUp,
       bgColor: "bg-card",
       textColor: "text-foreground",
       delay: "200ms",
     },
     {
-      title: "To Do",
-      value: String(todo),
-      subtitle: "Not started",
+      title: "Expenses",
+      value: currency(monthlyExpenses),
+      subtitle: "this month",
+      Icon: TrendingDown,
       bgColor: "bg-card",
       textColor: "text-foreground",
       delay: "300ms",
@@ -71,13 +82,13 @@ export function StatsCards({ total, done, inProgress, todo }: StatsCardsProps) {
               }`}
             >
               <ArrowUpRight
-                className={`w-3 h-3 ${stat.bgColor === "bg-primary" ? "text-primary-foreground" : "text-primary-foreground"}`}
+                className="w-3 h-3 text-primary-foreground"
               />
             </div>
           </div>
           <p className="text-3xl font-bold mb-2">{stat.value}</p>
           <div className="flex items-center gap-1.5 text-xs opacity-80">
-            <TrendingUp className="w-3 h-3" />
+            <stat.Icon className="w-3 h-3" />
             <span>{stat.subtitle}</span>
           </div>
         </Card>

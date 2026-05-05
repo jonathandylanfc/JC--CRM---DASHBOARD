@@ -1,6 +1,15 @@
 "use client"
 
-import { LayoutDashboard, CheckSquare, Calendar, BarChart3, Users, Settings, HelpCircle, LogOut } from "lucide-react"
+import {
+  LayoutDashboard,
+  CheckSquare,
+  Calendar,
+  BarChart3,
+  DollarSign,
+  Settings,
+  HelpCircle,
+  LogOut,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
 import Link from "next/link"
@@ -8,14 +17,14 @@ import { usePathname } from "next/navigation"
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/" },
-  { icon: CheckSquare, label: "Tasks", badge: "124", href: "/tasks" },
+  { icon: CheckSquare, label: "Tasks", href: "/tasks" },
+  { icon: DollarSign, label: "Finance", href: "/finance" },
   { icon: Calendar, label: "Calendar", href: "/calendar" },
   { icon: BarChart3, label: "Analytics", href: "/analytics" },
-  { icon: Users, label: "Team", href: "/team" },
+  { icon: Settings, label: "Settings", href: "/settings" },
 ]
 
 const generalItems = [
-  { icon: Settings, label: "Settings", href: "/settings" },
   { icon: HelpCircle, label: "Help", href: "/help" },
   { icon: LogOut, label: "Logout", href: "/logout" },
 ]
@@ -65,11 +74,6 @@ export function Sidebar() {
                 >
                   <item.icon className="w-4 h-4" />
                   <span className="text-sm">{item.label}</span>
-                  {item.badge && (
-                    <span className="ml-auto bg-primary text-primary-foreground text-[10px] font-semibold px-1.5 py-0.5 rounded-full animate-pulse">
-                      {item.badge}
-                    </span>
-                  )}
                 </Link>
               )
             })}

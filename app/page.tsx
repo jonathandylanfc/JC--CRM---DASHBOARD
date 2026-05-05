@@ -12,24 +12,37 @@ import { Button } from "@/components/ui/button"
 import {
   getTaskStats,
   getWeeklyFocusActivity,
-  getUpcomingTasks,
+  getUpcomingAssignments,
   getRecentTasks,
   getGoalStats,
   getTodayFocusMinutes,
   getUserProfile,
+  getAssignmentCount,
+  getMonthlyFinanceSummary,
 } from "@/lib/data"
 
 export default async function DashboardPage() {
-  const [taskStats, weeklyActivity, upcomingTasks, recentTasks, goalStats, todayMinutes, user] =
-    await Promise.all([
-      getTaskStats(),
-      getWeeklyFocusActivity(),
-      getUpcomingTasks(),
-      getRecentTasks(),
-      getGoalStats(),
-      getTodayFocusMinutes(),
-      getUserProfile(),
-    ])
+  const [
+    taskStats,
+    weeklyActivity,
+    upcomingAssignments,
+    recentTasks,
+    goalStats,
+    todayMinutes,
+    user,
+    assignmentsDue,
+    financeSummary,
+  ] = await Promise.all([
+    getTaskStats(),
+    getWeeklyFocusActivity(),
+    getUpcomingAssignments(),
+    getRecentTasks(),
+    getGoalStats(),
+    getTodayFocusMinutes(),
+    getUserProfile(),
+    getAssignmentCount(),
+    getMonthlyFinanceSummary(),
+  ])
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -58,7 +71,13 @@ export default async function DashboardPage() {
         />
 
         <div className="mt-4 md:mt-5 space-y-3 md:space-y-4">
-          <StatsCards {...taskStats} />
+          <StatsCards
+            totalTasks={taskStats.total}
+            tasksDone={taskStats.done}
+            assignmentsDue={assignmentsDue}
+            monthlyIncome={financeSummary.income}
+            monthlyExpenses={financeSummary.expenses}
+          />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
             <div className="lg:col-span-2 space-y-3 md:space-y-4">
@@ -67,7 +86,7 @@ export default async function DashboardPage() {
             </div>
 
             <div className="space-y-3 md:space-y-4">
-              <Reminders tasks={upcomingTasks} />
+              <Reminders tasks={upcomingAssignments} />
               <ProjectProgress {...goalStats} />
             </div>
           </div>
