@@ -10,7 +10,7 @@ const teamMembers = [
   {
     name: "Alexandra Deff",
     role: "Product Designer",
-    email: "alexandra@tasko.com",
+    email: "alexandra@dylanpro.app",
     status: "active",
     tasks: 12,
     avatar: "/avatars/avatar-1.jpg",
@@ -19,7 +19,7 @@ const teamMembers = [
   {
     name: "Edwin Adenike",
     role: "Frontend Developer",
-    email: "edwin@tasko.com",
+    email: "edwin@dylanpro.app",
     status: "active",
     tasks: 8,
     avatar: "/avatars/avatar-2.jpg",
@@ -28,7 +28,7 @@ const teamMembers = [
   {
     name: "Isaac Oluwatemilorun",
     role: "Backend Developer",
-    email: "isaac@tasko.com",
+    email: "isaac@dylanpro.app",
     status: "away",
     tasks: 15,
     avatar: "/avatars/avatar-3.jpg",
@@ -37,7 +37,7 @@ const teamMembers = [
   {
     name: "David Oshodi",
     role: "UI/UX Designer",
-    email: "david@tasko.com",
+    email: "david@dylanpro.app",
     status: "active",
     tasks: 6,
     avatar: "/avatars/avatar-4.jpg",

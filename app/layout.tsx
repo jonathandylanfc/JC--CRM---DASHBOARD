@@ -9,9 +9,8 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Donezo - Project Management Dashboard",
+  title: "Dylan Pro",
   description: "Plan, prioritize, and accomplish your tasks with ease",
-  generator: "v0.app",
   icons: {
     icon: [
       {
@@ -39,7 +38,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans antialiased`}>
-        <ThemeProvider defaultTheme="light" storageKey="tasko-theme">
+        <ThemeProvider defaultTheme="light" storageKey="dylanpro-theme">
           {children}
         </ThemeProvider>
         <Analytics />

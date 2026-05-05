@@ -48,7 +48,7 @@ export function Sidebar() {
             />
             <div className="w-3 h-1.5 border-b-2 border-primary-foreground rounded-full absolute bottom-2.5" />
           </div>
-          <span className="text-lg font-semibold text-foreground">Tasko</span>
+          <span className="text-lg font-semibold text-foreground">Dylan Pro</span>
         </Link>
       </div>
 

@@ -57,7 +57,7 @@ export default function LoginPage() {
               <div className="w-2 h-2 rounded-full bg-primary-foreground absolute" style={{ top: "28%", right: "28%" }} />
               <div className="w-4 h-2 border-b-2 border-primary-foreground rounded-full absolute bottom-3" />
             </div>
-            <span className="text-2xl font-bold text-foreground">Tasko</span>
+            <span className="text-2xl font-bold text-foreground">Dylan Pro</span>
           </div>
           <p className="text-sm text-muted-foreground">Plan, prioritize, and accomplish your tasks with ease</p>
         </div>

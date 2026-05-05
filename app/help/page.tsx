@@ -8,7 +8,7 @@ export default function HelpPage() {
       <Sidebar />
 
       <main className="flex-1 p-4 lg:p-6 lg:ml-64">
-        <Header title="Help & Support" description="Get help with using Tasko and find answers to common questions." />
+        <Header title="Help & Support" description="Get help with using Dylan Pro and find answers to common questions." />
 
         <div className="mt-6">
           <HelpContent />
