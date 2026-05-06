@@ -47,3 +47,38 @@ export async function deleteTransaction(id: string) {
   revalidatePath("/")
   return { success: true }
 }
+
+export type ImportRow = {
+  date: string
+  title: string
+  amount: number
+  type: string
+  category: string
+}
+
+export async function importTransactions(
+  rows: ImportRow[],
+): Promise<{ count?: number; error?: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  if (!rows.length) return { error: "No rows to import" }
+
+  const { error } = await supabase.from("transactions").insert(
+    rows.map((r) => ({
+      user_id: user.id,
+      title: r.title.slice(0, 255),
+      amount: Math.abs(r.amount),
+      type: r.type === "income" ? "income" : "expense",
+      category: r.category,
+      date: r.date,
+      notes: null,
+    })),
+  )
+  if (error) return { error: error.message }
+  revalidatePath("/finance")
+  revalidatePath("/")
+  return { count: rows.length }
+}

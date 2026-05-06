@@ -32,6 +32,7 @@ import {
 } from "lucide-react"
 import { format } from "date-fns"
 import { createTransaction, deleteTransaction } from "@/app/finance/actions"
+import { CsvImporter } from "@/components/finance/csv-importer"
 
 interface Transaction {
   id: string
@@ -202,6 +203,9 @@ export function FinanceContent({
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-foreground">Transactions</h2>
 
+            <div className="flex items-center gap-2">
+              <CsvImporter />
+
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button size="sm" className="gap-2">
@@ -299,6 +303,7 @@ export function FinanceContent({
                 </form>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
 
           {optimisticTransactions.length === 0 ? (
