@@ -6,16 +6,14 @@ import {
   getAllSubscriptions,
   getMonthlyFinanceSummary,
   getUserProfile,
-  getStartingBalance,
 } from "@/lib/data"
 
 export default async function FinancePage() {
-  const [transactions, subscriptions, financeSummary, user, startingBalance] = await Promise.all([
+  const [transactions, subscriptions, financeSummary, user] = await Promise.all([
     getAllTransactions(),
     getAllSubscriptions(),
     getMonthlyFinanceSummary(),
     getUserProfile(),
-    getStartingBalance(),
   ])
 
   return (
@@ -36,7 +34,6 @@ export default async function FinancePage() {
             initialSubscriptions={subscriptions}
             monthlyIncome={financeSummary.income}
             monthlyExpenses={financeSummary.expenses}
-            initialStartingBalance={startingBalance}
           />
         </div>
       </main>

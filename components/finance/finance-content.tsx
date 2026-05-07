@@ -54,6 +54,7 @@ interface Transaction {
   category: string
   date: string
   notes: string | null
+  balance: number | null
 }
 
 interface Subscription {
@@ -71,7 +72,6 @@ interface FinanceContentProps {
   initialSubscriptions: Subscription[]
   monthlyIncome: number
   monthlyExpenses: number
-  initialStartingBalance: number
 }
 
 function formatDate(dateStr: string) {
@@ -132,7 +132,6 @@ export function FinanceContent({
   initialSubscriptions,
   monthlyIncome,
   monthlyExpenses,
-  initialStartingBalance,
 }: FinanceContentProps) {
   const router = useRouter()
 
@@ -169,7 +168,6 @@ export function FinanceContent({
   const [dateRange, setDateRange] = useState<DateRange>("this_month")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
-  const [startingBalance] = useState(initialStartingBalance)
 
   const allCategories = useMemo(() => {
     const cats = new Set(optimisticTransactions.map((tx) => tx.category))
@@ -190,25 +188,17 @@ export function FinanceContent({
     const expenses = filtered
       .filter((tx) => tx.type === "expense")
       .reduce((s, tx) => s + Number(tx.amount), 0)
-    const base = dateRange === "all_time" && !selectedCategory ? startingBalance : 0
-    const net = base + income - expenses
-    return { filteredIncome: income, filteredExpenses: expenses, filteredNet: net }
-  }, [optimisticTransactions, dateRange, startingBalance, selectedCategory])
+    return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
+  }, [optimisticTransactions, dateRange, selectedCategory])
 
-  // Running balance for each transaction — computed over ALL transactions sorted date ASC,
-  // starting from the opening balance set during CSV import.
-  const runningBalances = useMemo(() => {
-    const sorted = [...optimisticTransactions].sort(
-      (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
-    )
-    const map = new Map<string, number>()
-    let bal = startingBalance
-    for (const tx of sorted) {
-      bal += tx.type === "income" ? Number(tx.amount) : -Number(tx.amount)
-      map.set(tx.id, bal)
-    }
-    return map
-  }, [optimisticTransactions, startingBalance])
+  // Use the balance stored directly on each transaction (from CSV Balance column).
+  // For "All Time" Net Balance, use the most recent transaction's stored balance.
+  const currentBalance = useMemo(() => {
+    const withBal = optimisticTransactions.filter((tx) => tx.balance != null)
+    if (!withBal.length) return null
+    // transactions are sorted date desc — first one with a balance is most recent
+    return withBal[0].balance as number
+  }, [optimisticTransactions])
 
   // Keep the just-saved transaction at the top regardless of sort order or limit windows.
   // Uses the real DB row (not the optimistic placeholder) so the UUID always matches
@@ -294,6 +284,7 @@ export function FinanceContent({
       category: (fd.get("category") as string) || "other",
       date: (fd.get("date") as string) || new Date().toISOString().split("T")[0],
       notes: (fd.get("notes") as string) || null,
+      balance: null,
     }
     setOpen(false)
     startTransition(async () => {
@@ -311,6 +302,7 @@ export function FinanceContent({
           category: tx.category,
           date: tx.date,
           notes: tx.notes ?? null,
+          balance: null,
         }
         setSavedTx(saved)
         setDateRange("all_time")
@@ -357,23 +349,25 @@ export function FinanceContent({
           <p className="text-2xl font-bold text-rose-800 dark:text-rose-300">{currency(filteredExpenses)}</p>
         </Card>
 
-        <Card
-          className={`p-5 ${
-            filteredNet >= 0
-              ? "bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"
-              : "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"
-          }`}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <p className={`text-sm font-medium ${filteredNet >= 0 ? "text-blue-700 dark:text-blue-400" : "text-amber-700 dark:text-amber-400"}`}>
-              Net Balance
-            </p>
-            <DollarSign className={`w-4 h-4 ${filteredNet >= 0 ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400"}`} />
-          </div>
-          <p className={`text-2xl font-bold ${filteredNet >= 0 ? "text-blue-800 dark:text-blue-300" : "text-amber-800 dark:text-amber-300"}`}>
-            {filteredNet >= 0 ? "+" : ""}{currency(filteredNet)}
-          </p>
-        </Card>
+        {(() => {
+          const display = dateRange === "all_time" && !selectedCategory && currentBalance != null
+            ? currentBalance
+            : filteredNet
+          const pos = display >= 0
+          return (
+            <Card className={`p-5 ${pos ? "bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800" : "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"}`}>
+              <div className="flex items-center justify-between mb-2">
+                <p className={`text-sm font-medium ${pos ? "text-blue-700 dark:text-blue-400" : "text-amber-700 dark:text-amber-400"}`}>
+                  {dateRange === "all_time" && currentBalance != null ? "Current Balance" : "Net Balance"}
+                </p>
+                <DollarSign className={`w-4 h-4 ${pos ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400"}`} />
+              </div>
+              <p className={`text-2xl font-bold ${pos ? "text-blue-800 dark:text-blue-300" : "text-amber-800 dark:text-amber-300"}`}>
+                {currency(display)}
+              </p>
+            </Card>
+          )
+        })()}
       </div>
 
       {/* Transactions + Subscriptions */}
@@ -622,9 +616,9 @@ export function FinanceContent({
                           <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                             {tx.type === "income" ? "+" : "-"}{currency(Number(tx.amount))}
                           </span>
-                          {startingBalance !== 0 && runningBalances.has(tx.id) && (
+                          {tx.balance != null && (
                             <p className="text-[11px] text-muted-foreground tabular-nums">
-                              {currency(runningBalances.get(tx.id)!)}
+                              {currency(tx.balance)}
                             </p>
                           )}
                         </div>
