@@ -280,11 +280,10 @@ export function FinanceContent({
           date: tx.date,
           notes: tx.notes ?? null,
         }
-        // Pin the saved row at top permanently — do NOT call router.refresh() here
-        // because that resets optimisticTransactions before setSavedTx takes effect,
-        // making old-dated transactions disappear into the sorted list.
         setSavedTx(saved)
+        setDateRange("all_time")
         toast.success(`"${tempTx.title}" saved`)
+        router.refresh()
       }
     })
   }

@@ -171,14 +171,11 @@ export async function getAllTasks() {
 export async function getAllTransactions() {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return []
-  const { data } = await supabase
-    .from("transactions")
-    .select("id, title, amount, type, category, date, notes")
-    .eq("user_id", userId)
-    .order("date", { ascending: false })
-    .limit(10000)
-  console.log(`[getAllTransactions] returned ${data?.length ?? 0} rows`)
-  return data ?? []
+  const { data } = await supabase.rpc("get_all_transactions")
+  return (data ?? []) as Array<{
+    id: string; title: string; amount: number; type: string
+    category: string; date: string; notes: string | null
+  }>
 }
 
 export async function getAllSubscriptions() {
