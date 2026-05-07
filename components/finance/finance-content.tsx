@@ -191,8 +191,24 @@ export function FinanceContent({
       .filter((tx) => tx.type === "expense")
       .reduce((s, tx) => s + Number(tx.amount), 0)
     const base = dateRange === "all_time" && !selectedCategory ? startingBalance : 0
-    return { filteredIncome: income, filteredExpenses: expenses, filteredNet: base + income - expenses }
+    const net = base + income - expenses
+    return { filteredIncome: income, filteredExpenses: expenses, filteredNet: net }
   }, [optimisticTransactions, dateRange, startingBalance, selectedCategory])
+
+  // Running balance for each transaction — computed over ALL transactions sorted date ASC,
+  // starting from the opening balance set during CSV import.
+  const runningBalances = useMemo(() => {
+    const sorted = [...optimisticTransactions].sort(
+      (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
+    )
+    const map = new Map<string, number>()
+    let bal = startingBalance
+    for (const tx of sorted) {
+      bal += tx.type === "income" ? Number(tx.amount) : -Number(tx.amount)
+      map.set(tx.id, bal)
+    }
+    return map
+  }, [optimisticTransactions, startingBalance])
 
   // Keep the just-saved transaction at the top regardless of sort order or limit windows.
   // Uses the real DB row (not the optimistic placeholder) so the UUID always matches
@@ -602,9 +618,16 @@ export function FinanceContent({
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-                          {tx.type === "income" ? "+" : "-"}{currency(Number(tx.amount))}
-                        </span>
+                        <div className="text-right">
+                          <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                            {tx.type === "income" ? "+" : "-"}{currency(Number(tx.amount))}
+                          </span>
+                          {startingBalance !== 0 && runningBalances.has(tx.id) && (
+                            <p className="text-[11px] text-muted-foreground tabular-nums">
+                              {currency(runningBalances.get(tx.id)!)}
+                            </p>
+                          )}
+                        </div>
                         {!selectMode && (
                           <Button
                             variant="ghost"
