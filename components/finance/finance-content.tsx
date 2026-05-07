@@ -267,7 +267,7 @@ export function FinanceContent({
         toast.error(result.error)
       } else if (result?.transaction) {
         const tx = result.transaction
-        setSavedTx({
+        const saved: Transaction = {
           id: tx.id,
           title: tx.title,
           amount: Number(tx.amount),
@@ -275,10 +275,13 @@ export function FinanceContent({
           category: tx.category,
           date: tx.date,
           notes: tx.notes ?? null,
-        })
+        }
+        // Pin the saved row at top permanently — do NOT call router.refresh() here
+        // because that resets optimisticTransactions before setSavedTx takes effect,
+        // making old-dated transactions disappear into the sorted list.
+        setSavedTx(saved)
         toast.success(`"${tempTx.title}" saved`)
       }
-      router.refresh()
     })
   }
 
