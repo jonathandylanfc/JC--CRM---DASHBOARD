@@ -35,6 +35,7 @@ import {
   X,
   Pencil,
   Check,
+  Filter,
 } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
@@ -167,8 +168,9 @@ export function FinanceContent({
   // Real DB row returned after a manual add — pinned at top permanently until next page load
   const [savedTx, setSavedTx] = useState<Transaction | null>(null)
 
-  // Date-range filter for KPI cards (client-side, no extra DB call)
+  // Date-range and category filters
   const [dateRange, setDateRange] = useState<DateRange>("this_month")
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
   // Starting balance — editable inline on the Net Balance card
   const [startingBalance, setStartingBalance] = useState(initialStartingBalance)
@@ -188,11 +190,17 @@ export function FinanceContent({
     })
   }
 
+  const allCategories = useMemo(() => {
+    const cats = new Set(optimisticTransactions.map((tx) => tx.category))
+    return Array.from(cats).sort()
+  }, [optimisticTransactions])
+
   const { filteredIncome, filteredExpenses, filteredNet } = useMemo(() => {
     const { start, end } = getDateBounds(dateRange)
     const filtered = optimisticTransactions.filter((tx) => {
       if (start && tx.date < start) return false
       if (end && tx.date > end) return false
+      if (selectedCategory && tx.category !== selectedCategory) return false
       return true
     })
     const income = filtered
@@ -201,22 +209,25 @@ export function FinanceContent({
     const expenses = filtered
       .filter((tx) => tx.type === "expense")
       .reduce((s, tx) => s + Number(tx.amount), 0)
-    const base = dateRange === "all_time" ? startingBalance : 0
+    const base = dateRange === "all_time" && !selectedCategory ? startingBalance : 0
     return { filteredIncome: income, filteredExpenses: expenses, filteredNet: base + income - expenses }
-  }, [optimisticTransactions, dateRange, startingBalance])
+  }, [optimisticTransactions, dateRange, startingBalance, selectedCategory])
 
   // Keep the just-saved transaction at the top regardless of sort order or limit windows.
   // Uses the real DB row (not the optimistic placeholder) so the UUID always matches
   // after router.refresh() brings in the authoritative initialTransactions.
   const displayTransactions = useMemo(() => {
-    if (!savedTx) return optimisticTransactions
-    // If savedTx was deleted, optimisticTransactions no longer contains it — don't re-add it
-    const stillExists = optimisticTransactions.some((tx) => tx.id === savedTx.id)
-    if (!stillExists) return optimisticTransactions
-    // Remove savedTx from wherever refresh placed it, then re-prepend it
-    const rest = optimisticTransactions.filter((tx) => tx.id !== savedTx.id)
-    return [savedTx, ...rest]
-  }, [optimisticTransactions, savedTx])
+    let list = optimisticTransactions
+    if (savedTx) {
+      const stillExists = optimisticTransactions.some((tx) => tx.id === savedTx.id)
+      if (stillExists) {
+        const rest = optimisticTransactions.filter((tx) => tx.id !== savedTx.id)
+        list = [savedTx, ...rest]
+      }
+    }
+    if (selectedCategory) list = list.filter((tx) => tx.category === selectedCategory)
+    return list
+  }, [optimisticTransactions, savedTx, selectedCategory])
 
   function exitSelectMode() {
     setSelectMode(false)
@@ -408,6 +419,23 @@ export function FinanceContent({
               {!selectMode ? (
                 /* ── Normal mode buttons ─────────────────────────── */
                 <>
+                  {/* Category filter */}
+                  <Select
+                    value={selectedCategory ?? "all"}
+                    onValueChange={(v) => setSelectedCategory(v === "all" ? null : v)}
+                  >
+                    <SelectTrigger size="sm" className={`w-auto gap-1.5 bg-transparent text-xs ${selectedCategory ? "border-primary text-primary" : ""}`}>
+                      <Filter className="w-3.5 h-3.5 shrink-0" />
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {allCategories.map((cat) => (
+                        <SelectItem key={cat} value={cat} className="capitalize">{cat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
                   <CsvImporter />
 
                   <Button
@@ -565,14 +593,18 @@ export function FinanceContent({
           </Dialog>
 
           {/* Transaction list */}
-          {optimisticTransactions.length === 0 ? (
+          {displayTransactions.length === 0 ? (
             <Card className="p-8 text-center">
               <DollarSign className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">No transactions yet</p>
-              <Button size="sm" className="mt-3 gap-2" onClick={() => setOpen(true)}>
-                <Plus className="w-4 h-4" />
-                Add your first transaction
-              </Button>
+              <p className="text-sm text-muted-foreground">
+                {selectedCategory ? `No transactions in "${selectedCategory}"` : "No transactions yet"}
+              </p>
+              {!selectedCategory && (
+                <Button size="sm" className="mt-3 gap-2" onClick={() => setOpen(true)}>
+                  <Plus className="w-4 h-4" />
+                  Add your first transaction
+                </Button>
+              )}
             </Card>
           ) : (
             <div className="space-y-2">
