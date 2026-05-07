@@ -56,6 +56,19 @@ export type ImportRow = {
   category: string
 }
 
+export async function getTransactionCount(): Promise<number> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return 0
+  const { count } = await supabase
+    .from("transactions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id)
+  return count ?? 0
+}
+
 export async function deleteAllTransactions(): Promise<{ error?: string }> {
   const supabase = await createClient()
   const {
@@ -67,6 +80,27 @@ export async function deleteAllTransactions(): Promise<{ error?: string }> {
     .from("transactions")
     .delete()
     .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/finance")
+  revalidatePath("/")
+  return {}
+}
+
+export async function deleteSelectedTransactions(
+  ids: string[],
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  if (!ids.length) return {}
+
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("user_id", user.id)
+    .in("id", ids)
   if (error) return { error: error.message }
   revalidatePath("/finance")
   revalidatePath("/")
