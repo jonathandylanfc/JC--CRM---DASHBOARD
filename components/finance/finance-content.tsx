@@ -159,8 +159,8 @@ export function FinanceContent({
     },
   )
 
-  // Pin the most-recently manually added transaction at the top of the list
-  const [justAddedId, setJustAddedId] = useState<string | null>(null)
+  // Real DB row returned after a manual add — pinned at top permanently until next page load
+  const [savedTx, setSavedTx] = useState<Transaction | null>(null)
 
   // Date-range filter for KPI cards (client-side, no extra DB call)
   const [dateRange, setDateRange] = useState<DateRange>("this_month")
@@ -181,17 +181,15 @@ export function FinanceContent({
     return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
   }, [optimisticTransactions, dateRange])
 
-  // Keep the just-added transaction at the top regardless of its date
+  // Keep the just-saved transaction at the top regardless of sort order or limit windows.
+  // Uses the real DB row (not the optimistic placeholder) so the UUID always matches
+  // after router.refresh() brings in the authoritative initialTransactions.
   const displayTransactions = useMemo(() => {
-    if (!justAddedId) return optimisticTransactions
-    const idx = optimisticTransactions.findIndex((tx) => tx.id === justAddedId)
-    if (idx <= 0) return optimisticTransactions
-    return [
-      optimisticTransactions[idx],
-      ...optimisticTransactions.slice(0, idx),
-      ...optimisticTransactions.slice(idx + 1),
-    ]
-  }, [optimisticTransactions, justAddedId])
+    if (!savedTx) return optimisticTransactions
+    // Remove savedTx from wherever refresh placed it, then re-prepend it
+    const rest = optimisticTransactions.filter((tx) => tx.id !== savedTx.id)
+    return [savedTx, ...rest]
+  }, [optimisticTransactions, savedTx])
 
   function exitSelectMode() {
     setSelectMode(false)
@@ -267,8 +265,17 @@ export function FinanceContent({
       const result = await createTransaction(fd)
       if (result?.error) {
         toast.error(result.error)
-      } else {
-        setJustAddedId(id)
+      } else if (result?.transaction) {
+        const tx = result.transaction
+        setSavedTx({
+          id: tx.id,
+          title: tx.title,
+          amount: Number(tx.amount),
+          type: tx.type,
+          category: tx.category,
+          date: tx.date,
+          notes: tx.notes ?? null,
+        })
         toast.success(`"${tempTx.title}" saved`)
       }
       router.refresh()

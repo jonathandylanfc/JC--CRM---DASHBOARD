@@ -176,7 +176,8 @@ export async function getAllTransactions() {
     .select("id, title, amount, type, category, date, notes")
     .eq("user_id", userId)
     .order("date", { ascending: false })
-    .limit(5000)
+    .limit(10000)
+  console.log(`[getAllTransactions] returned ${data?.length ?? 0} rows`)
   return data ?? []
 }
 

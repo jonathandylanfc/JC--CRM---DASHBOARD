@@ -24,21 +24,25 @@ export async function createTransaction(formData: FormData) {
     (formData.get("date") as string) || new Date().toISOString().split("T")[0]
   const clientId = (formData.get("id") as string) || undefined
 
-  const { error } = await supabase.from("transactions").insert({
-    ...(clientId ? { id: clientId } : {}),
-    user_id: user.id,
-    title: title.trim(),
-    amount,
-    type,
-    category,
-    date,
-    notes: (formData.get("notes") as string) || null,
-  })
+  const { data: saved, error } = await supabase
+    .from("transactions")
+    .insert({
+      ...(clientId ? { id: clientId } : {}),
+      user_id: user.id,
+      title: title.trim(),
+      amount,
+      type,
+      category,
+      date,
+      notes: (formData.get("notes") as string) || null,
+    })
+    .select("id, title, amount, type, category, date, notes")
+    .single()
 
   if (error) return { error: error.message }
   revalidatePath("/finance")
   revalidatePath("/")
-  return { success: true }
+  return { transaction: saved }
 }
 
 export async function deleteTransaction(id: string) {
