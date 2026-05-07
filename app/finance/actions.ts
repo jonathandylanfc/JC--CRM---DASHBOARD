@@ -22,8 +22,10 @@ export async function createTransaction(formData: FormData) {
   const category = (formData.get("category") as string)?.trim() || "other"
   const date =
     (formData.get("date") as string) || new Date().toISOString().split("T")[0]
+  const clientId = (formData.get("id") as string) || undefined
 
   const { error } = await supabase.from("transactions").insert({
+    ...(clientId ? { id: clientId } : {}),
     user_id: user.id,
     title: title.trim(),
     amount,

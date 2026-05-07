@@ -159,6 +159,9 @@ export function FinanceContent({
     },
   )
 
+  // Pin the most-recently manually added transaction at the top of the list
+  const [justAddedId, setJustAddedId] = useState<string | null>(null)
+
   // Date-range filter for KPI cards (client-side, no extra DB call)
   const [dateRange, setDateRange] = useState<DateRange>("this_month")
 
@@ -177,6 +180,18 @@ export function FinanceContent({
       .reduce((s, tx) => s + Number(tx.amount), 0)
     return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
   }, [optimisticTransactions, dateRange])
+
+  // Keep the just-added transaction at the top regardless of its date
+  const displayTransactions = useMemo(() => {
+    if (!justAddedId) return optimisticTransactions
+    const idx = optimisticTransactions.findIndex((tx) => tx.id === justAddedId)
+    if (idx <= 0) return optimisticTransactions
+    return [
+      optimisticTransactions[idx],
+      ...optimisticTransactions.slice(0, idx),
+      ...optimisticTransactions.slice(idx + 1),
+    ]
+  }, [optimisticTransactions, justAddedId])
 
   function exitSelectMode() {
     setSelectMode(false)
@@ -235,8 +250,10 @@ export function FinanceContent({
     e.preventDefault()
     setFormError(null)
     const fd = new FormData(e.currentTarget)
+    const id = crypto.randomUUID()
+    fd.set("id", id)
     const tempTx: Transaction = {
-      id: crypto.randomUUID(),
+      id,
       title: fd.get("title") as string,
       amount: parseFloat(fd.get("amount") as string),
       type: fd.get("type") as string,
@@ -248,7 +265,12 @@ export function FinanceContent({
     startTransition(async () => {
       updateOptimistic({ type: "add", tx: tempTx })
       const result = await createTransaction(fd)
-      if (result?.error) setFormError(result.error)
+      if (result?.error) {
+        toast.error(result.error)
+      } else {
+        setJustAddedId(id)
+        toast.success(`"${tempTx.title}" saved`)
+      }
       router.refresh()
     })
   }
@@ -488,7 +510,7 @@ export function FinanceContent({
             </Card>
           ) : (
             <div className="space-y-2">
-              {optimisticTransactions.map((tx) => {
+              {displayTransactions.map((tx) => {
                 const isSelected = selectedIds.has(tx.id)
                 return (
                   <Card
