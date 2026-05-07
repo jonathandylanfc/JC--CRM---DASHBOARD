@@ -33,6 +33,8 @@ import {
   AlertTriangle,
   CheckSquare,
   X,
+  Pencil,
+  Check,
 } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
@@ -42,6 +44,7 @@ import {
   deleteAllTransactions,
   deleteSelectedTransactions,
   getTransactionCount,
+  updateStartingBalance,
 } from "@/app/finance/actions"
 import { CsvImporter } from "@/components/finance/csv-importer"
 
@@ -70,6 +73,7 @@ interface FinanceContentProps {
   initialSubscriptions: Subscription[]
   monthlyIncome: number
   monthlyExpenses: number
+  initialStartingBalance: number
 }
 
 function formatDate(dateStr: string) {
@@ -130,6 +134,7 @@ export function FinanceContent({
   initialSubscriptions,
   monthlyIncome,
   monthlyExpenses,
+  initialStartingBalance,
 }: FinanceContentProps) {
   const router = useRouter()
 
@@ -165,6 +170,24 @@ export function FinanceContent({
   // Date-range filter for KPI cards (client-side, no extra DB call)
   const [dateRange, setDateRange] = useState<DateRange>("this_month")
 
+  // Starting balance — editable inline on the Net Balance card
+  const [startingBalance, setStartingBalance] = useState(initialStartingBalance)
+  const [editingBalance, setEditingBalance] = useState(false)
+  const [balanceInput, setBalanceInput] = useState(String(initialStartingBalance))
+  const [isSavingBalance, startSavingBalance] = useTransition()
+
+  function handleSaveBalance() {
+    const val = parseFloat(balanceInput)
+    if (isNaN(val)) return
+    startSavingBalance(async () => {
+      const result = await updateStartingBalance(val)
+      if (result.error) { toast.error(result.error); return }
+      setStartingBalance(val)
+      setEditingBalance(false)
+      router.refresh()
+    })
+  }
+
   const { filteredIncome, filteredExpenses, filteredNet } = useMemo(() => {
     const { start, end } = getDateBounds(dateRange)
     const filtered = optimisticTransactions.filter((tx) => {
@@ -178,8 +201,9 @@ export function FinanceContent({
     const expenses = filtered
       .filter((tx) => tx.type === "expense")
       .reduce((s, tx) => s + Number(tx.amount), 0)
-    return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
-  }, [optimisticTransactions, dateRange])
+    const base = dateRange === "all_time" ? startingBalance : 0
+    return { filteredIncome: income, filteredExpenses: expenses, filteredNet: base + income - expenses }
+  }, [optimisticTransactions, dateRange, startingBalance])
 
   // Keep the just-saved transaction at the top regardless of sort order or limit windows.
   // Uses the real DB row (not the optimistic placeholder) so the UUID always matches
@@ -341,6 +365,35 @@ export function FinanceContent({
           <p className={`text-2xl font-bold ${filteredNet >= 0 ? "text-blue-800 dark:text-blue-300" : "text-amber-800 dark:text-amber-300"}`}>
             {filteredNet >= 0 ? "+" : ""}{currency(filteredNet)}
           </p>
+          <div className="mt-2 flex items-center gap-1.5">
+            <p className="text-xs text-muted-foreground">Starting:</p>
+            {editingBalance ? (
+              <>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={balanceInput}
+                  onChange={(e) => setBalanceInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveBalance(); if (e.key === "Escape") setEditingBalance(false) }}
+                  className="h-5 w-24 text-xs px-1.5 py-0"
+                  autoFocus
+                />
+                <button onClick={handleSaveBalance} disabled={isSavingBalance} className="text-green-600 hover:text-green-700">
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => setEditingBalance(false)} className="text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-xs font-medium text-muted-foreground">{currency(startingBalance)}</p>
+                <button onClick={() => { setBalanceInput(String(startingBalance)); setEditingBalance(true) }} className="text-muted-foreground hover:text-foreground">
+                  <Pencil className="w-3 h-3" />
+                </button>
+              </>
+            )}
+          </div>
         </Card>
       </div>
 

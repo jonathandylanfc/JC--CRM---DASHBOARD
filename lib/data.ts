@@ -221,3 +221,14 @@ export async function getUserProfile() {
     avatar_url: profile?.avatar_url ?? null,
   }
 }
+
+export async function getStartingBalance(): Promise<number> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return 0
+  const { data } = await supabase
+    .from("profiles")
+    .select("starting_balance")
+    .eq("id", userId)
+    .single()
+  return Number(data?.starting_balance ?? 0)
+}

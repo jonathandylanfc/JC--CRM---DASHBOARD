@@ -113,6 +113,23 @@ export async function deleteSelectedTransactions(
   return {}
 }
 
+export async function updateStartingBalance(
+  amount: number,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { error } = await supabase
+    .from("profiles")
+    .update({ starting_balance: amount })
+    .eq("id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/finance")
+  return {}
+}
+
 export async function importTransactions(
   rows: ImportRow[],
 ): Promise<{ count?: number; error?: string }> {
