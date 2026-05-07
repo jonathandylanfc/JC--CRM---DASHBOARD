@@ -186,6 +186,9 @@ export function FinanceContent({
   // after router.refresh() brings in the authoritative initialTransactions.
   const displayTransactions = useMemo(() => {
     if (!savedTx) return optimisticTransactions
+    // If savedTx was deleted, optimisticTransactions no longer contains it — don't re-add it
+    const stillExists = optimisticTransactions.some((tx) => tx.id === savedTx.id)
+    if (!stillExists) return optimisticTransactions
     // Remove savedTx from wherever refresh placed it, then re-prepend it
     const rest = optimisticTransactions.filter((tx) => tx.id !== savedTx.id)
     return [savedTx, ...rest]
@@ -208,6 +211,7 @@ export function FinanceContent({
     startTransition(async () => {
       updateOptimistic({ type: "delete", id })
       await deleteTransaction(id)
+      if (savedTx?.id === id) setSavedTx(null)
       router.refresh()
     })
   }
