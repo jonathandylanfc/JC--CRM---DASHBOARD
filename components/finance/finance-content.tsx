@@ -29,9 +29,11 @@ import {
   Trash2,
   CalendarDays,
   CreditCard,
+  AlertTriangle,
 } from "lucide-react"
 import { format } from "date-fns"
-import { createTransaction, deleteTransaction } from "@/app/finance/actions"
+import { toast } from "sonner"
+import { createTransaction, deleteTransaction, deleteAllTransactions } from "@/app/finance/actions"
 import { CsvImporter } from "@/components/finance/csv-importer"
 
 interface Transaction {
@@ -86,6 +88,8 @@ export function FinanceContent({
   const [isPending, startTransition] = useTransition()
   const [open, setOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false)
+  const [isClearing, startClearing] = useTransition()
 
   const [optimisticTransactions, updateOptimistic] = useOptimistic(
     initialTransactions,
@@ -102,6 +106,19 @@ export function FinanceContent({
     startTransition(async () => {
       updateOptimistic({ type: "delete", id })
       await deleteTransaction(id)
+      router.refresh()
+    })
+  }
+
+  function handleClearAll() {
+    startClearing(async () => {
+      const result = await deleteAllTransactions()
+      setConfirmClearOpen(false)
+      if (result.error) {
+        toast.error(result.error)
+        return
+      }
+      toast.success("All transactions deleted")
       router.refresh()
     })
   }
@@ -205,6 +222,56 @@ export function FinanceContent({
 
             <div className="flex items-center gap-2">
               <CsvImporter />
+
+              {/* Clear All confirmation dialog */}
+              <Dialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 bg-transparent text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Clear All
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-destructive">
+                      <AlertTriangle className="w-5 h-5" />
+                      Delete all transactions?
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 mt-2">
+                    <p className="text-sm text-muted-foreground">
+                      This will permanently delete{" "}
+                      <span className="font-semibold text-foreground">
+                        all {optimisticTransactions.length} transaction
+                        {optimisticTransactions.length !== 1 ? "s" : ""}
+                      </span>{" "}
+                      for your account. This cannot be undone.
+                    </p>
+                    <div className="flex gap-3">
+                      <Button
+                        variant="outline"
+                        className="flex-1 bg-transparent"
+                        onClick={() => setConfirmClearOpen(false)}
+                        disabled={isClearing}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        className="flex-1"
+                        onClick={handleClearAll}
+                        disabled={isClearing}
+                      >
+                        {isClearing ? "Deleting…" : "Yes, delete all"}
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
 
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
