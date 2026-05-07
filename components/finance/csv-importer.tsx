@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useRef } from "react"
+import { useState, useRef } from "react"
 import { toast } from "sonner"
 import { Upload, FileSpreadsheet, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -30,6 +30,8 @@ import {
 } from "@/components/ui/table"
 import { importTransactions } from "@/app/finance/actions"
 
+const CHUNK_SIZE = 500
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ColMap {
@@ -50,34 +52,59 @@ interface ImportRow {
   category: string
 }
 
-// ─── CSV parser (handles quoted fields, CRLF, escaped quotes) ─────────────────
+// ─── RFC 4180 CSV parser (character-by-character, handles quoted newlines) ────
+//
+// Splitting on \n before parsing breaks rows that contain newlines inside
+// quoted fields. This parser reads the entire text as a single stream.
 
 function parseCSV(text: string): string[][] {
   const rows: string[][] = []
-  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n")
-  for (const line of lines) {
-    if (!line.trim()) continue
-    const row: string[] = []
-    let field = ""
-    let inQuotes = false
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i]
-      if (inQuotes) {
-        if (ch === '"') {
-          if (line[i + 1] === '"') { field += '"'; i++ }
-          else inQuotes = false
+  let row: string[] = []
+  let field = ""
+  let inQuotes = false
+
+  // Normalise Windows and old Mac line endings
+  const src = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+
+  // i runs one past the end; the sentinel triggers the final row flush
+  for (let i = 0; i <= src.length; i++) {
+    const ch = i === src.length ? "\n" : src[i]
+
+    if (inQuotes) {
+      if (ch === '"') {
+        // Peek: "" inside quotes is an escaped quote
+        if (i + 1 < src.length && src[i + 1] === '"') {
+          field += '"'
+          i++
         } else {
-          field += ch
+          inQuotes = false
         }
       } else {
-        if (ch === '"') inQuotes = true
-        else if (ch === ',') { row.push(field); field = "" }
-        else field += ch
+        // Newlines inside quotes are part of the field value
+        field += ch
+      }
+    } else {
+      switch (ch) {
+        case '"':
+          inQuotes = true
+          break
+        case ',':
+          row.push(field)
+          field = ""
+          break
+        case "\n":
+          row.push(field)
+          field = ""
+          // Skip completely blank lines
+          if (row.some((c) => c.trim())) rows.push(row)
+          row = []
+          break
+        default:
+          field += ch
       }
     }
-    row.push(field)
-    rows.push(row)
   }
+
   return rows
 }
 
@@ -105,30 +132,33 @@ function detectColumns(headers: string[]): ColMap {
   }
 }
 
-// ─── Data-pattern column detection (for headerless CSVs like Wells Fargo) ─────
+// ─── Data-pattern detection for headerless CSVs (e.g. Wells Fargo) ───────────
 
 function detectColumnsFromData(rows: string[][]): ColMap {
-  const sample = rows.slice(0, Math.min(5, rows.length))
+  const sample = rows.slice(0, Math.min(10, rows.length))
   const numCols = Math.max(...sample.map((r) => r.length))
   let dateCol = -1, descCol = -1, amountCol = -1
 
   for (let col = 0; col < numCols; col++) {
     const vals = sample.map((r) => r[col]?.trim() ?? "")
-    const dateHits = vals.filter((v) =>
-      /^\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}$/.test(v) || /^\d{4}-\d{2}-\d{2}$/.test(v),
+    const dateHits = vals.filter(
+      (v) => /^\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}$/.test(v) || /^\d{4}-\d{2}-\d{2}$/.test(v),
     ).length
-    const amtHits = vals.filter((v) =>
-      /^-?\$?[\d,]+\.\d{2}$/.test(v.trim()),
-    ).length
-    if (dateHits >= sample.length * 0.6 && dateCol === -1) dateCol = col
-    else if (amtHits >= sample.length * 0.5 && amountCol === -1) amountCol = col
-    else if (vals.some((v) => v.length > 5) && descCol === -1 && col !== dateCol) descCol = col
+    const amtHits = vals.filter((v) => /^-?\$?[\d,]+\.\d{2}$/.test(v.trim())).length
+
+    if (dateHits >= sample.length * 0.6 && dateCol === -1) {
+      dateCol = col
+    } else if (amtHits >= sample.length * 0.5 && amountCol === -1) {
+      amountCol = col
+    } else if (vals.some((v) => v.length > 5) && descCol === -1 && col !== dateCol) {
+      descCol = col
+    }
   }
 
   return { date: dateCol, description: descCol, amount: amountCol, debit: -1, credit: -1, type: -1 }
 }
 
-// ─── Date normalization ────────────────────────────────────────────────────────
+// ─── Date normalisation ────────────────────────────────────────────────────────
 
 function normalizeDate(raw: string): string {
   const s = raw.trim()
@@ -155,7 +185,7 @@ function parseAmount(raw: string): number {
   return isNaN(n) ? 0 : Math.abs(n) * (negative ? -1 : 1)
 }
 
-// ─── Auto-categorize by description keywords ──────────────────────────────────
+// ─── Auto-categorise ──────────────────────────────────────────────────────────
 
 const ALL_CATEGORIES = [
   "Food", "Transport", "Shopping", "Car", "Subscriptions",
@@ -185,12 +215,12 @@ function detectCategory(desc: string): string {
   return "Other"
 }
 
-// ─── Build ImportRow[] from raw parsed CSV ────────────────────────────────────
+// ─── Build ImportRow[] from parsed CSV ────────────────────────────────────────
 
 function buildRows(rawRows: string[][], colMap: ColMap, hasHeader: boolean): ImportRow[] {
   const dataRows = hasHeader ? rawRows.slice(1) : rawRows
   return dataRows
-    .filter((row) => row.length > 1 && row.some((c) => c.trim()))
+    .filter((row) => row.some((c) => c.trim()))
     .map((row, i) => {
       const cell = (col: number) => (col >= 0 && col < row.length ? row[col] : "")
 
@@ -211,7 +241,6 @@ function buildRows(rawRows: string[][], colMap: ColMap, hasHeader: boolean): Imp
         amount = Math.abs(raw)
         // Negative = expense (Chase), positive = income
         type = raw < 0 ? "expense" : "income"
-        // Override with type column if present
         if (colMap.type >= 0) {
           const tv = cell(colMap.type).toLowerCase()
           if (/credit|income|deposit/i.test(tv)) type = "income"
@@ -231,9 +260,14 @@ function buildRows(rawRows: string[][], colMap: ColMap, hasHeader: boolean): Imp
     .filter((r) => r.amount > 0)
 }
 
-// ─── CsvImporter component ────────────────────────────────────────────────────
+// ─── Component ────────────────────────────────────────────────────────────────
 
 type Step = "upload" | "preview"
+
+interface Progress {
+  done: number
+  total: number
+}
 
 export function CsvImporter() {
   const [open, setOpen] = useState(false)
@@ -247,7 +281,8 @@ export function CsvImporter() {
   const [hasHeader, setHasHeader] = useState(true)
   const [rawRows, setRawRows] = useState<string[][]>([])
   const [rows, setRows] = useState<ImportRow[]>([])
-  const [isPending, startTransition] = useTransition()
+  const [isImporting, setIsImporting] = useState(false)
+  const [progress, setProgress] = useState<Progress | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   function reset() {
@@ -258,6 +293,7 @@ export function CsvImporter() {
     setRawRows([])
     setColMap({ date: -1, description: -1, amount: -1, debit: -1, credit: -1, type: -1 })
     setHasHeader(true)
+    setProgress(null)
   }
 
   function processFile(file: File) {
@@ -272,7 +308,8 @@ export function CsvImporter() {
       const parsed = parseCSV(text)
       if (parsed.length < 1) { toast.error("CSV appears to be empty"); return }
 
-      // Detect whether first row is headers or data
+      // Wells Fargo and similar banks export without a header row.
+      // Detect by checking whether the first cell looks like a date.
       const firstCell = parsed[0][0]?.trim() ?? ""
       const firstRowIsData =
         /^\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}$/.test(firstCell) ||
@@ -283,7 +320,6 @@ export function CsvImporter() {
       let detected: ColMap
 
       if (firstRowIsData) {
-        // Wells Fargo-style: no headers
         hdr = false
         hdrs = parsed[0].map((_, i) => `Column ${i + 1}`)
         detected = detectColumnsFromData(parsed)
@@ -331,34 +367,51 @@ export function CsvImporter() {
     setRows((prev) => prev.map((r) => (r._id === id ? { ...r, category } : r)))
   }
 
-  function handleImport() {
-    startTransition(async () => {
-      const result = await importTransactions(
-        rows.map(({ date, description, amount, type, category }) => ({
-          date,
-          title: description,
-          amount,
-          type,
-          category,
-        })),
-      )
-      if (result.error) { toast.error(result.error); return }
-      toast.success(`${result.count} transaction${result.count !== 1 ? "s" : ""} imported`)
-      setOpen(false)
-      reset()
-    })
+  // Import in chunks of CHUNK_SIZE, updating progress between each batch.
+  async function handleImport() {
+    setIsImporting(true)
+    setProgress({ done: 0, total: rows.length })
+
+    const payload = rows.map(({ date, description, amount, type, category }) => ({
+      date,
+      title: description,
+      amount,
+      type,
+      category,
+    }))
+
+    let totalImported = 0
+
+    for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
+      const chunk = payload.slice(i, i + CHUNK_SIZE)
+      const result = await importTransactions(chunk)
+
+      if (result.error) {
+        toast.error(`Import stopped at row ${i + 1}: ${result.error}`)
+        setIsImporting(false)
+        setProgress(null)
+        return
+      }
+
+      totalImported += result.count ?? 0
+      setProgress({ done: totalImported, total: rows.length })
+    }
+
+    toast.success(
+      `${totalImported} transaction${totalImported !== 1 ? "s" : ""} imported successfully`,
+    )
+    setIsImporting(false)
+    setProgress(null)
+    setOpen(false)
+    reset()
   }
 
   const incomeCount = rows.filter((r) => r.type === "income").length
   const expenseCount = rows.filter((r) => r.type === "expense").length
   const colOptions = headers.map((h, i) => ({ label: h || `Column ${i + 1}`, value: String(i) }))
+  const progressPct = progress ? Math.round((progress.done / progress.total) * 100) : 0
 
-  const ColSelect = ({
-    label, field,
-  }: {
-    label: string
-    field: keyof ColMap
-  }) => (
+  const ColSelect = ({ label, field }: { label: string; field: keyof ColMap }) => (
     <div className="space-y-1">
       <Label className="text-xs text-muted-foreground">{label}</Label>
       <Select
@@ -379,7 +432,7 @@ export function CsvImporter() {
   )
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset() }}>
+    <Dialog open={open} onOpenChange={(o) => { if (!isImporting) { setOpen(o); if (!o) reset() } }}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2 bg-transparent">
           <Upload className="w-4 h-4" />
@@ -396,7 +449,7 @@ export function CsvImporter() {
       >
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
-            {step === "preview" && (
+            {step === "preview" && !isImporting && (
               <button
                 onClick={() => setStep("upload")}
                 className="rounded-md p-1 hover:bg-muted transition-colors"
@@ -411,7 +464,7 @@ export function CsvImporter() {
           </DialogTitle>
         </DialogHeader>
 
-        {/* ── Upload step ──────────────────────────────────────────── */}
+        {/* ── Upload step ─────────────────────────────────────────────── */}
         {step === "upload" && (
           <div className="space-y-4 mt-1">
             <p className="text-sm text-muted-foreground">
@@ -433,14 +486,10 @@ export function CsvImporter() {
                 <FileSpreadsheet className="w-7 h-7 text-muted-foreground" />
               </div>
               <div className="text-center">
-                <p className="font-medium text-sm text-foreground">
-                  Drop your CSV here
-                </p>
+                <p className="font-medium text-sm text-foreground">Drop your CSV here</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   or{" "}
-                  <span className="text-primary underline underline-offset-2">
-                    click to browse
-                  </span>
+                  <span className="text-primary underline underline-offset-2">click to browse</span>
                 </p>
               </div>
               <Badge variant="outline" className="text-xs">.csv files only</Badge>
@@ -464,7 +513,7 @@ export function CsvImporter() {
           </div>
         )}
 
-        {/* ── Preview step ─────────────────────────────────────────── */}
+        {/* ── Preview step ─────────────────────────────────────────────── */}
         {step === "preview" && (
           <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-hidden">
             {/* Column mapping */}
@@ -496,7 +545,10 @@ export function CsvImporter() {
                   {expenseCount} expense
                 </Badge>
                 {fileName && (
-                  <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={fileName}>
+                  <span
+                    className="text-xs text-muted-foreground truncate max-w-[120px]"
+                    title={fileName}
+                  >
                     {fileName}
                   </span>
                 )}
@@ -542,8 +594,7 @@ export function CsvImporter() {
                                 : "text-rose-600 dark:text-rose-400"
                             }`}
                           >
-                            {row.type === "income" ? "+" : "−"}$
-                            {row.amount.toFixed(2)}
+                            {row.type === "income" ? "+" : "−"}${row.amount.toFixed(2)}
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -567,9 +618,7 @@ export function CsvImporter() {
                               </SelectTrigger>
                               <SelectContent>
                                 {ALL_CATEGORIES.map((c) => (
-                                  <SelectItem key={c} value={c} className="text-xs">
-                                    {c}
-                                  </SelectItem>
+                                  <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -582,28 +631,53 @@ export function CsvImporter() {
               </div>
             )}
 
-            {/* Footer */}
-            <div className="flex items-center justify-between shrink-0 pt-1 border-t">
-              <p className="text-xs text-muted-foreground">
-                {rows.length} transaction{rows.length !== 1 ? "s" : ""} ready to import
-              </p>
-              <Button
-                onClick={handleImport}
-                disabled={isPending || rows.length === 0}
-                className="gap-2"
-              >
-                {isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Importing…
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    Import {rows.length} transaction{rows.length !== 1 ? "s" : ""}
-                  </>
-                )}
-              </Button>
+            {/* Footer — progress bar + import button */}
+            <div className="shrink-0 pt-1 border-t space-y-2">
+              {progress && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      Importing batch {Math.ceil(progress.done / CHUNK_SIZE)} of{" "}
+                      {Math.ceil(progress.total / CHUNK_SIZE)}…
+                    </span>
+                    <span>{progress.done} / {progress.total}</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-300"
+                      style={{ width: `${progressPct}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  {rows.length} transaction{rows.length !== 1 ? "s" : ""} ready
+                  {rows.length > CHUNK_SIZE && (
+                    <span className="text-muted-foreground/70">
+                      {" "}· {Math.ceil(rows.length / CHUNK_SIZE)} batches of {CHUNK_SIZE}
+                    </span>
+                  )}
+                </p>
+                <Button
+                  onClick={handleImport}
+                  disabled={isImporting || rows.length === 0}
+                  className="gap-2"
+                >
+                  {isImporting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Importing…
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      Import {rows.length} transaction{rows.length !== 1 ? "s" : ""}
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         )}
