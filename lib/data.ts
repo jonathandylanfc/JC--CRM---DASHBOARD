@@ -171,11 +171,25 @@ export async function getAllTasks() {
 export async function getAllTransactions() {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return []
-  const { data } = await supabase.rpc("get_all_transactions")
-  return (data ?? []) as Array<{
-    id: string; title: string; amount: number; type: string
-    category: string; date: string; notes: string | null
-  }>
+
+  const PAGE = 1000
+  const rows: Array<{ id: string; title: string; amount: number; type: string; category: string; date: string; notes: string | null }> = []
+  let from = 0
+
+  while (true) {
+    const { data } = await supabase
+      .from("transactions")
+      .select("id, title, amount, type, category, date, notes")
+      .eq("user_id", userId)
+      .order("date", { ascending: false })
+      .range(from, from + PAGE - 1)
+    if (!data || data.length === 0) break
+    rows.push(...data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+
+  return rows
 }
 
 export async function getAllSubscriptions() {
