@@ -29,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { importTransactions } from "@/app/finance/actions"
+import { importTransactions, updateStartingBalance } from "@/app/finance/actions"
 
 const CHUNK_SIZE = 500
 
@@ -42,6 +42,7 @@ interface ColMap {
   debit: number
   credit: number
   type: number
+  balance: number
 }
 
 interface ImportRow {
@@ -51,6 +52,7 @@ interface ImportRow {
   amount: number
   type: "income" | "expense"
   category: string
+  balance: number | null
 }
 
 // ─── RFC 4180 CSV parser (character-by-character, handles quoted newlines) ────
@@ -130,6 +132,7 @@ function detectColumns(headers: string[]): ColMap {
     debit: find(/^debit(\s*amount)?$/),
     credit: find(/^credit(\s*amount)?$/),
     type: find(/^type$/),
+    balance: find(/^balance$/, /^running\s*balance$/, /^ledger\s*balance$/, /balance/),
   }
 }
 
@@ -156,7 +159,7 @@ function detectColumnsFromData(rows: string[][]): ColMap {
     }
   }
 
-  return { date: dateCol, description: descCol, amount: amountCol, debit: -1, credit: -1, type: -1 }
+  return { date: dateCol, description: descCol, amount: amountCol, debit: -1, credit: -1, type: -1, balance: -1 }
 }
 
 // ─── Date normalisation ────────────────────────────────────────────────────────
@@ -249,6 +252,9 @@ function buildRows(rawRows: string[][], colMap: ColMap, hasHeader: boolean): Imp
         }
       }
 
+      const rawBal = cell(colMap.balance)
+      const balance = rawBal ? parseAmount(rawBal) || null : null
+
       return {
         _id: `row-${i}`,
         date,
@@ -256,6 +262,7 @@ function buildRows(rawRows: string[][], colMap: ColMap, hasHeader: boolean): Imp
         amount,
         type,
         category: detectCategory(description),
+        balance,
       }
     })
     .filter((r) => r.amount > 0)
@@ -278,7 +285,7 @@ export function CsvImporter() {
   const [fileName, setFileName] = useState("")
   const [headers, setHeaders] = useState<string[]>([])
   const [colMap, setColMap] = useState<ColMap>({
-    date: -1, description: -1, amount: -1, debit: -1, credit: -1, type: -1,
+    date: -1, description: -1, amount: -1, debit: -1, credit: -1, type: -1, balance: -1,
   })
   const [hasHeader, setHasHeader] = useState(true)
   const [rawRows, setRawRows] = useState<string[][]>([])
@@ -293,7 +300,7 @@ export function CsvImporter() {
     setHeaders([])
     setRows([])
     setRawRows([])
-    setColMap({ date: -1, description: -1, amount: -1, debit: -1, credit: -1, type: -1 })
+    setColMap({ date: -1, description: -1, amount: -1, debit: -1, credit: -1, type: -1, balance: -1 })
     setHasHeader(true)
     setProgress(null)
   }
@@ -397,6 +404,19 @@ export function CsvImporter() {
 
       totalImported += result.count ?? 0
       setProgress({ done: totalImported, total: rows.length })
+    }
+
+    // Auto-set starting balance from the oldest row that has a balance value.
+    // Opening balance = balance_after_oldest_tx +/- oldest_tx_amount
+    const withBalance = [...rows]
+      .filter((r) => r.balance !== null)
+      .sort((a, b) => a.date.localeCompare(b.date))
+    if (withBalance.length > 0) {
+      const oldest = withBalance[0]
+      const opening = oldest.type === "expense"
+        ? oldest.balance! + oldest.amount
+        : oldest.balance! - oldest.amount
+      await updateStartingBalance(Math.round(opening * 100) / 100)
     }
 
     toast.success(
