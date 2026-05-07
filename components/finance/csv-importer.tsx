@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Upload, FileSpreadsheet, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -270,6 +271,7 @@ interface Progress {
 }
 
 export function CsvImporter() {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState<Step>("upload")
   const [isDragging, setIsDragging] = useState(false)
@@ -404,6 +406,7 @@ export function CsvImporter() {
     setProgress(null)
     setOpen(false)
     reset()
+    router.refresh()
   }
 
   const incomeCount = rows.filter((r) => r.type === "income").length
