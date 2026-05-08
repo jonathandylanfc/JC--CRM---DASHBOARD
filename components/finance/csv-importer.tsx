@@ -585,6 +585,7 @@ export function CsvImporter() {
                         <TableHead>Description</TableHead>
                         <TableHead className="w-28 text-right">Amount</TableHead>
                         <TableHead className="w-20">Type</TableHead>
+                        <TableHead className="w-28 text-right">Balance</TableHead>
                         <TableHead className="w-36">Category</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -619,6 +620,9 @@ export function CsvImporter() {
                             >
                               {row.type}
                             </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-right tabular-nums text-muted-foreground">
+                            {row.balance != null ? `$${row.balance.toFixed(2)}` : "—"}
                           </TableCell>
                           <TableCell className="py-1">
                             <Select
