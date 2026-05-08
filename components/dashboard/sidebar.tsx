@@ -4,8 +4,8 @@ import {
   LayoutDashboard,
   CheckSquare,
   Calendar,
-  BarChart3,
   DollarSign,
+  PiggyBank,
   Settings,
   HelpCircle,
   LogOut,
@@ -19,8 +19,8 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/" },
   { icon: CheckSquare, label: "Tasks", href: "/tasks" },
   { icon: DollarSign, label: "Finance", href: "/finance" },
+  { icon: PiggyBank, label: "Budget", href: "/budget" },
   { icon: Calendar, label: "Calendar", href: "/calendar" },
-  { icon: BarChart3, label: "Analytics", href: "/analytics" },
   { icon: Settings, label: "Settings", href: "/settings" },
 ]
 

@@ -1,0 +1,77 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { createClient } from "@/lib/supabase/server"
+
+export async function createBudgetCategory(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const name = (formData.get("name") as string)?.trim()
+  if (!name) return { error: "Name is required" }
+
+  const type = formData.get("type") as string
+  if (type !== "percentage" && type !== "fixed") return { error: "Invalid type" }
+
+  const value = parseFloat(formData.get("value") as string)
+  if (isNaN(value) || value < 0) return { error: "Valid value is required" }
+
+  const { count } = await supabase
+    .from("budget_categories")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id)
+
+  const { data, error } = await supabase
+    .from("budget_categories")
+    .insert({ user_id: user.id, name, type, value, sort_order: count ?? 0 })
+    .select("id, name, type, value, sort_order")
+    .single()
+
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  return { category: data }
+}
+
+export async function updateBudgetCategory(id: string, formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const name = (formData.get("name") as string)?.trim()
+  if (!name) return { error: "Name is required" }
+
+  const type = formData.get("type") as string
+  if (type !== "percentage" && type !== "fixed") return { error: "Invalid type" }
+
+  const value = parseFloat(formData.get("value") as string)
+  if (isNaN(value) || value < 0) return { error: "Valid value is required" }
+
+  const { data, error } = await supabase
+    .from("budget_categories")
+    .update({ name, type, value })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("id, name, type, value, sort_order")
+    .single()
+
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  return { category: data }
+}
+
+export async function deleteBudgetCategory(id: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const { error } = await supabase
+    .from("budget_categories")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id)
+
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  return { success: true }
+}

@@ -195,6 +195,28 @@ export function FinanceContent({
     }
   })
 
+  // Custom renewal dates — persisted in localStorage
+  const [subRenewalDates, setSubRenewalDates] = useState<Map<string, string>>(() => {
+    try {
+      const stored = localStorage.getItem("subRenewalDates")
+      return stored ? new Map(JSON.parse(stored)) : new Map()
+    } catch {
+      return new Map()
+    }
+  })
+  const [editingRenewalId, setEditingRenewalId] = useState<string | null>(null)
+  const [renewalDateInput, setRenewalDateInput] = useState("")
+
+  function saveRenewalDate(id: string, date: string) {
+    setSubRenewalDates((prev) => {
+      const next = new Map(prev)
+      next.set(id, date)
+      try { localStorage.setItem("subRenewalDates", JSON.stringify([...next])) } catch {}
+      return next
+    })
+    setEditingRenewalId(null)
+  }
+
   function dismissSubscription(id: string) {
     setDismissedSubs((prev) => {
       const next = new Set(prev)
@@ -867,6 +889,36 @@ export function FinanceContent({
         {/* Subscriptions */}
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Active Subscriptions</h2>
+          {/* Edit renewal date dialog */}
+          <Dialog open={!!editingRenewalId} onOpenChange={(o) => { if (!o) setEditingRenewalId(null) }}>
+            <DialogContent className="sm:max-w-xs">
+              <DialogHeader>
+                <DialogTitle>Edit renewal date</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="renewal-date">Next billing date</Label>
+                  <Input
+                    id="renewal-date"
+                    type="date"
+                    value={renewalDateInput}
+                    onChange={(e) => setRenewalDateInput(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setEditingRenewalId(null)}>Cancel</Button>
+                  <Button
+                    className="flex-1"
+                    disabled={!renewalDateInput}
+                    onClick={() => { if (editingRenewalId) saveRenewalDate(editingRenewalId, renewalDateInput) }}
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           {/* Dismiss subscription confirmation */}
           <Dialog open={!!confirmDismissId} onOpenChange={(o) => { if (!o) setConfirmDismissId(null) }}>
             <DialogContent className="sm:max-w-sm">
@@ -910,7 +962,15 @@ export function FinanceContent({
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                         <span>{sub.occurrences}× charged</span>
                         <span>·</span>
-                        <span>Next ~{formatDate(sub.nextBillingDate)}</span>
+                        <span>
+                          Next {subRenewalDates.has(sub.id) ? "" : "~"}{formatDate(subRenewalDates.get(sub.id) ?? sub.nextBillingDate)}
+                        </span>
+                        <button
+                          className="text-primary underline underline-offset-2 hover:opacity-70 transition-opacity"
+                          onClick={() => { setEditingRenewalId(sub.id); setRenewalDateInput(subRenewalDates.get(sub.id) ?? sub.nextBillingDate) }}
+                        >
+                          edit
+                        </button>
                       </div>
                       <Badge variant="outline" className="text-[10px] h-4 px-1.5 capitalize mt-1.5">
                         {sub.category}

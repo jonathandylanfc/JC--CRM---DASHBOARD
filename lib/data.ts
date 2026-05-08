@@ -222,6 +222,39 @@ export async function getUserProfile() {
   }
 }
 
+export async function getBudgetCategories() {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const { data } = await supabase
+    .from("budget_categories")
+    .select("id, name, type, value, sort_order")
+    .eq("user_id", userId)
+    .order("sort_order", { ascending: true })
+  return data ?? []
+}
+
+export async function getMonthlyExpensesByCategory(): Promise<Record<string, number>> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return {}
+  const now = new Date()
+  const monthStart = format(startOfMonth(now), "yyyy-MM-dd")
+  const monthEnd = format(endOfMonth(now), "yyyy-MM-dd")
+  const { data } = await supabase
+    .from("transactions")
+    .select("category, amount")
+    .eq("user_id", userId)
+    .eq("type", "expense")
+    .gte("date", monthStart)
+    .lte("date", monthEnd)
+  if (!data) return {}
+  const result: Record<string, number> = {}
+  for (const tx of data) {
+    const cat = tx.category.toLowerCase()
+    result[cat] = (result[cat] ?? 0) + Number(tx.amount)
+  }
+  return result
+}
+
 export async function getStartingBalance(): Promise<number> {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return 0
