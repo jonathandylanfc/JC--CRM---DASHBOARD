@@ -310,6 +310,10 @@ export function CsvImporter() {
   }
 
   function processFile(file: File) {
+    if (!accountName.trim()) {
+      toast.error("Please enter an account name before uploading.")
+      return
+    }
     if (!file.name.toLowerCase().endsWith(".csv")) {
       toast.error("Please upload a .csv file")
       return
@@ -505,14 +509,16 @@ export function CsvImporter() {
             </div>
 
             <div
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+              onDragOver={(e) => { e.preventDefault(); if (accountName.trim()) setIsDragging(true) }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              onClick={() => fileRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-12 flex flex-col items-center gap-3 cursor-pointer transition-colors select-none ${
-                isDragging
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:border-primary/40 hover:bg-muted/30"
+              onClick={() => accountName.trim() && fileRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-12 flex flex-col items-center gap-3 transition-colors select-none ${
+                !accountName.trim()
+                  ? "border-border opacity-40 cursor-not-allowed"
+                  : isDragging
+                  ? "border-primary bg-primary/5 cursor-pointer"
+                  : "border-border hover:border-primary/40 hover:bg-muted/30 cursor-pointer"
               }`}
             >
               <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center">
