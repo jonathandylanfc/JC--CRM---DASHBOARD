@@ -191,13 +191,13 @@ export function FinanceContent({
     return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
   }, [optimisticTransactions, dateRange, selectedCategory])
 
-  // Use the balance stored directly on each transaction (from CSV Balance column).
-  // For "All Time" Net Balance, use the most recent transaction's stored balance.
-  const currentBalance = useMemo(() => {
+  // Find the oldest stored balance (from CSV) to use as the opening balance offset.
+  // Net Balance in All Time mode = oldest_balance + income - expenses.
+  const oldestStoredBalance = useMemo(() => {
     const withBal = optimisticTransactions.filter((tx) => tx.balance != null)
     if (!withBal.length) return null
-    // transactions are sorted date desc — first one with a balance is most recent
-    return withBal[0].balance as number
+    // transactions are sorted date desc — last one with a balance is the oldest
+    return withBal[withBal.length - 1].balance as number
   }, [optimisticTransactions])
 
   // Keep the just-saved transaction at the top regardless of sort order or limit windows.
@@ -350,8 +350,8 @@ export function FinanceContent({
         </Card>
 
         {(() => {
-          const display = dateRange === "all_time" && !selectedCategory && currentBalance != null
-            ? currentBalance
+          const display = dateRange === "all_time" && !selectedCategory && oldestStoredBalance != null
+            ? oldestStoredBalance + filteredNet
             : filteredNet
           const pos = display >= 0
           return (

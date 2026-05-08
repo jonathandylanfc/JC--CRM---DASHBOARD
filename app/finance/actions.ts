@@ -60,6 +60,7 @@ export type ImportRow = {
   amount: number
   type: string
   category: string
+  balance: number | null
 }
 
 export async function getTransactionCount(): Promise<number> {
@@ -140,19 +141,22 @@ export async function importTransactions(
   if (!user) return { error: "Not authenticated" }
   if (!rows.length) return { error: "No rows to import" }
 
-  const { error } = await supabase.from("transactions").insert(
-    rows.map((r) => ({
-      user_id: user.id,
-      title: r.title.slice(0, 255),
-      amount: Math.abs(r.amount),
-      type: r.type === "income" ? "income" : "expense",
-      category: r.category,
-      date: r.date,
-      notes: null,
-    })),
-  )
+  const payload = rows.map((r) => ({
+    title: r.title.slice(0, 255),
+    amount: Math.abs(r.amount),
+    type: r.type === "income" ? "income" : "expense",
+    category: r.category,
+    date: r.date,
+    balance: r.balance ?? null,
+  }))
+
+  const { data, error } = await supabase.rpc("import_transactions_with_balance", {
+    p_user_id: user.id,
+    p_rows: payload,
+  })
+
   if (error) return { error: error.message }
   revalidatePath("/finance")
   revalidatePath("/")
-  return { count: rows.length }
+  return { count: data ?? rows.length }
 }
