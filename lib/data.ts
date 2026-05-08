@@ -173,13 +173,13 @@ export async function getAllTransactions() {
   if (!userId) return []
 
   const PAGE = 1000
-  const rows: Array<{ id: string; title: string; amount: number; type: string; category: string; date: string; notes: string | null }> = []
+  const rows: Array<{ id: string; title: string; amount: number; type: string; category: string; date: string; notes: string | null; balance: number | null }> = []
   let from = 0
 
   while (true) {
     const { data } = await supabase
       .from("transactions")
-      .select("id, title, amount, type, category, date, notes")
+      .select("id, title, amount, type, category, date, notes, balance")
       .eq("user_id", userId)
       .order("date", { ascending: false })
       .range(from, from + PAGE - 1)

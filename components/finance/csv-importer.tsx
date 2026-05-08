@@ -29,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { importTransactions } from "@/app/finance/actions"
+import { importTransactions, updateStartingBalance } from "@/app/finance/actions"
 
 const CHUNK_SIZE = 500
 
@@ -405,6 +405,13 @@ export function CsvImporter() {
 
       totalImported += result.count ?? 0
       setProgress({ done: totalImported, total: rows.length })
+    }
+
+    // Auto-detect starting balance: highest balance on the oldest date in the CSV.
+    // rows is sorted newest-first, so the oldest row with a balance is near the end.
+    const oldestWithBalance = [...rows].reverse().find((r) => r.balance != null)
+    if (oldestWithBalance?.balance != null) {
+      await updateStartingBalance(oldestWithBalance.balance)
     }
 
     toast.success(

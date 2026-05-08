@@ -72,6 +72,7 @@ interface FinanceContentProps {
   initialSubscriptions: Subscription[]
   monthlyIncome: number
   monthlyExpenses: number
+  initialStartingBalance: number
 }
 
 function formatDate(dateStr: string) {
@@ -132,6 +133,7 @@ export function FinanceContent({
   initialSubscriptions,
   monthlyIncome,
   monthlyExpenses,
+  initialStartingBalance,
 }: FinanceContentProps) {
   const router = useRouter()
 
@@ -191,13 +193,7 @@ export function FinanceContent({
     return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
   }, [optimisticTransactions, dateRange, selectedCategory])
 
-  // Most recent stored balance from CSV — this IS the current account balance.
-  const currentBalance = useMemo(() => {
-    const withBal = optimisticTransactions.filter((tx) => tx.balance != null)
-    if (!withBal.length) return null
-    // transactions sorted date desc, so first with a balance = most recent
-    return withBal[0].balance as number
-  }, [optimisticTransactions])
+  const startingBalance = initialStartingBalance
 
   // Keep the just-saved transaction at the top regardless of sort order or limit windows.
   // Uses the real DB row (not the optimistic placeholder) so the UUID always matches
@@ -349,8 +345,8 @@ export function FinanceContent({
         </Card>
 
         {(() => {
-          const display = dateRange === "all_time" && !selectedCategory && currentBalance != null
-            ? currentBalance
+          const display = dateRange === "all_time" && !selectedCategory && startingBalance > 0
+            ? startingBalance + filteredNet
             : filteredNet
           const pos = display >= 0
           return (
