@@ -213,6 +213,46 @@ export function FinanceContent({
     return anchorBalance + adjustment
   }, [optimisticTransactions])
 
+  // Auto-detect subscriptions: same title+amount in 2+ months, or "subscription" keyword.
+  const detectedSubscriptions = useMemo(() => {
+    const groups = new Map<string, Transaction[]>()
+    for (const tx of optimisticTransactions) {
+      if (tx.type !== "expense") continue
+      const key = `${tx.title.toLowerCase().trim()}|${Number(tx.amount).toFixed(2)}`
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(tx)
+    }
+    const result: Array<{
+      id: string
+      name: string
+      amount: number
+      category: string
+      nextBillingDate: string
+      latestTx: Transaction
+      occurrences: number
+    }> = []
+    for (const [, txs] of groups) {
+      const hasKeyword = /subscription|subscribe|member/i.test(txs[0].title)
+      const months = new Set(txs.map((tx) => tx.date.slice(0, 7)))
+      if (months.size < 2 && !hasKeyword) continue
+      const sorted = [...txs].sort((a, b) => b.date.localeCompare(a.date))
+      const latest = sorted[0]
+      const lastDate = new Date(latest.date + "T12:00:00")
+      const next = new Date(lastDate)
+      next.setMonth(next.getMonth() + 1)
+      result.push({
+        id: `${txs[0].title}|${txs[0].amount}`,
+        name: txs[0].title,
+        amount: Number(txs[0].amount),
+        category: txs[0].category,
+        nextBillingDate: next.toISOString().split("T")[0],
+        latestTx: latest,
+        occurrences: txs.length,
+      })
+    }
+    return result.sort((a, b) => b.amount - a.amount)
+  }, [optimisticTransactions])
+
   // Keep the just-saved transaction at the top regardless of sort order or limit windows.
   // Uses the real DB row (not the optimistic placeholder) so the UUID always matches
   // after router.refresh() brings in the authoritative initialTransactions.
@@ -749,29 +789,37 @@ export function FinanceContent({
         {/* Subscriptions */}
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Active Subscriptions</h2>
-          {initialSubscriptions.length === 0 ? (
+          {detectedSubscriptions.length === 0 ? (
             <Card className="p-6 text-center">
               <CreditCard className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">No active subscriptions</p>
+              <p className="text-sm text-muted-foreground">No recurring charges detected</p>
             </Card>
           ) : (
             <div className="space-y-2">
-              {initialSubscriptions.map((sub) => (
-                <Card key={sub.id} className="p-4 hover:shadow-md transition-all duration-200">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-medium text-foreground text-sm truncate">{sub.name}</p>
+              {detectedSubscriptions.map((sub) => (
+                <Card key={sub.id} className="p-4 hover:shadow-md transition-all duration-200 group">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-foreground text-sm truncate" title={sub.name}>{sub.name}</p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                        <span className="capitalize">{sub.billing_cycle}</span>
+                        <span>{sub.occurrences}× charged</span>
                         <span>·</span>
-                        <span>Next: {formatDate(sub.next_billing_date)}</span>
+                        <span>Next ~{formatDate(sub.nextBillingDate)}</span>
                       </div>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="font-semibold text-foreground text-sm">{currency(Number(sub.amount))}</p>
-                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 capitalize mt-0.5">
+                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 capitalize mt-1.5">
                         {sub.category}
                       </Badge>
+                    </div>
+                    <div className="shrink-0 flex flex-col items-end gap-1">
+                      <p className="font-semibold text-foreground text-sm">{currency(sub.amount)}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-6 h-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                        onClick={() => { setEditError(null); setEditingTx(sub.latestTx) }}
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </Button>
                     </div>
                   </div>
                 </Card>
