@@ -193,34 +193,18 @@ export function FinanceContent({
     return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
   }, [optimisticTransactions, dateRange, selectedCategory])
 
-  // For any date range: (stored balance at/before period start) + (net of transactions in period).
-  // For All Time: most recent stored balance + net of post-anchor transactions.
+  // Most recent stored balance as anchor, plus net of any transactions after it.
   const currentBalance = useMemo(() => {
     const withBal = optimisticTransactions.filter((tx) => tx.balance != null)
     if (!withBal.length) return null
-
-    const { start } = getDateBounds(dateRange)
-
-    if (!start) {
-      // All Time: anchor = most recent stored balance, add net of post-anchor txs
-      const anchor = withBal[0]
-      const anchorBalance = anchor.balance as number
-      const anchorDate = anchor.date
-      const adjustment = optimisticTransactions
-        .filter((tx) => tx.date > anchorDate || (tx.date === anchorDate && tx.balance == null))
-        .reduce((sum, tx) => sum + (tx.type === "income" ? Number(tx.amount) : -Number(tx.amount)), 0)
-      return anchorBalance + adjustment
-    }
-
-    // Time-bounded: find the most recent stored balance AT or BEFORE the period start
-    const anchorTx = withBal.find((tx) => tx.date <= start) ?? withBal[withBal.length - 1]
-    const anchorBalance = anchorTx.balance as number
-    // Net of all transactions within the period
-    const periodNet = optimisticTransactions
-      .filter((tx) => tx.date >= start)
+    const anchor = withBal[0]
+    const anchorBalance = anchor.balance as number
+    const anchorDate = anchor.date
+    const adjustment = optimisticTransactions
+      .filter((tx) => tx.date > anchorDate || (tx.date === anchorDate && tx.balance == null))
       .reduce((sum, tx) => sum + (tx.type === "income" ? Number(tx.amount) : -Number(tx.amount)), 0)
-    return anchorBalance + periodNet
-  }, [optimisticTransactions, dateRange])
+    return anchorBalance + adjustment
+  }, [optimisticTransactions])
 
   // Keep the just-saved transaction at the top regardless of sort order or limit windows.
   // Uses the real DB row (not the optimistic placeholder) so the UUID always matches
@@ -372,7 +356,7 @@ export function FinanceContent({
         </Card>
 
         {(() => {
-          const display = !selectedCategory && currentBalance != null
+          const display = dateRange === "all_time" && !selectedCategory && currentBalance != null
             ? currentBalance
             : filteredNet
           const pos = display >= 0
