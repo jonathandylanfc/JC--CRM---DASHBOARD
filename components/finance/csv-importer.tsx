@@ -29,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { importTransactions, updateStartingBalance } from "@/app/finance/actions"
+import { importTransactions } from "@/app/finance/actions"
 
 const CHUNK_SIZE = 500
 
@@ -381,12 +381,13 @@ export function CsvImporter() {
     setIsImporting(true)
     setProgress({ done: 0, total: rows.length })
 
-    const payload = rows.map(({ date, description, amount, type, category }) => ({
+    const payload = rows.map(({ date, description, amount, type, category, balance }) => ({
       date,
       title: description,
       amount,
       type,
       category,
+      balance: balance ?? null,
     }))
 
     let totalImported = 0
@@ -404,19 +405,6 @@ export function CsvImporter() {
 
       totalImported += result.count ?? 0
       setProgress({ done: totalImported, total: rows.length })
-    }
-
-    // Auto-set starting balance from the oldest row that has a balance value.
-    // Opening balance = balance_after_oldest_tx +/- oldest_tx_amount
-    const withBalance = [...rows]
-      .filter((r) => r.balance !== null)
-      .sort((a, b) => a.date.localeCompare(b.date))
-    if (withBalance.length > 0) {
-      const oldest = withBalance[0]
-      const opening = oldest.type === "expense"
-        ? oldest.balance! + oldest.amount
-        : oldest.balance! - oldest.amount
-      await updateStartingBalance(Math.round(opening * 100) / 100)
     }
 
     toast.success(
@@ -540,11 +528,12 @@ export function CsvImporter() {
         {step === "preview" && (
           <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-hidden">
             {/* Column mapping */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 shrink-0">
               <ColSelect label="Date column" field="date" />
               <ColSelect label="Description column" field="description" />
               <ColSelect label="Amount column" field="amount" />
               <ColSelect label="Type column" field="type" />
+              <ColSelect label="Balance column" field="balance" />
             </div>
 
             {/* Stats + header toggle */}
