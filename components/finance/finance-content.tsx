@@ -273,18 +273,40 @@ export function FinanceContent({
     return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
   }, [accountTransactions, dateRange, selectedCategory])
 
-  // Most recent stored balance as anchor, plus net of any transactions after it.
-  const currentBalance = useMemo(() => {
-    const withBal = accountTransactions.filter((tx) => tx.balance != null)
+  // Computes anchor balance + post-anchor net for a given set of transactions.
+  function anchorBalance(txs: Transaction[]): number | null {
+    const withBal = txs.filter((tx) => tx.balance != null)
     if (!withBal.length) return null
     const anchor = withBal[0]
-    const anchorBalance = anchor.balance as number
-    const anchorDate = anchor.date
-    const adjustment = accountTransactions
-      .filter((tx) => tx.date > anchorDate || (tx.date === anchorDate && tx.balance == null))
+    const adj = txs
+      .filter((tx) => tx.date > anchor.date || (tx.date === anchor.date && tx.balance == null))
       .reduce((sum, tx) => sum + (tx.type === "income" ? Number(tx.amount) : -Number(tx.amount)), 0)
-    return anchorBalance + adjustment
-  }, [accountTransactions])
+    return (anchor.balance as number) + adj
+  }
+
+  const currentBalance = useMemo(() => {
+    if (selectedAccount) {
+      // Single account view — straightforward anchor
+      return anchorBalance(accountTransactions)
+    }
+    // All Accounts — sum each named account's balance independently
+    const named = [...new Set(
+      optimisticTransactions.map((tx) => tx.account_name).filter(Boolean) as string[]
+    )]
+    if (!named.length) return anchorBalance(optimisticTransactions)
+    let total = 0
+    let hasAny = false
+    for (const acct of named) {
+      const acctTxs = optimisticTransactions.filter((tx) => tx.account_name === acct)
+      const bal = anchorBalance(acctTxs)
+      if (bal != null) { total += bal; hasAny = true }
+    }
+    // Add net of untagged (manually-added) transactions
+    const untaggedNet = optimisticTransactions
+      .filter((tx) => tx.account_name == null)
+      .reduce((sum, tx) => sum + (tx.type === "income" ? Number(tx.amount) : -Number(tx.amount)), 0)
+    return hasAny ? total + untaggedNet : null
+  }, [optimisticTransactions, accountTransactions, selectedAccount])
 
   // Auto-detect subscriptions: same title+amount in 2+ months, or "subscription" keyword.
   const detectedSubscriptions = useMemo(() => {
@@ -404,7 +426,9 @@ export function FinanceContent({
     const fd = new FormData(e.currentTarget)
     const id = crypto.randomUUID()
     fd.set("id", id)
-    if (selectedAccount) fd.set("account_name", selectedAccount)
+    const rawAccount = fd.get("account_name") as string | null
+    const chosenAccount = rawAccount && rawAccount !== "__none" ? rawAccount : (selectedAccount ?? null)
+    fd.set("account_name", chosenAccount ?? "")
     const tempTx: Transaction = {
       id,
       title: fd.get("title") as string,
@@ -414,7 +438,7 @@ export function FinanceContent({
       date: (fd.get("date") as string) || new Date().toISOString().split("T")[0],
       notes: (fd.get("notes") as string) || null,
       balance: null,
-      account_name: selectedAccount,
+      account_name: chosenAccount,
     }
     setOpen(false)
     startTransition(async () => {
@@ -642,6 +666,20 @@ export function FinanceContent({
                             <Input id="tx-date" name="date" type="date" defaultValue={new Date().toISOString().split("T")[0]} />
                           </div>
                         </div>
+                        {allAccounts.length > 0 && (
+                          <div className="space-y-1.5">
+                            <Label htmlFor="tx-account">Account <span className="text-muted-foreground">(optional)</span></Label>
+                            <Select name="account_name" defaultValue={selectedAccount ?? "__none"}>
+                              <SelectTrigger id="tx-account"><SelectValue placeholder="No account" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none">No account</SelectItem>
+                                {allAccounts.map((acct) => (
+                                  <SelectItem key={acct} value={acct}>{acct}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
                         <div className="space-y-1.5">
                           <Label htmlFor="tx-notes">Notes <span className="text-muted-foreground">(optional)</span></Label>
                           <Input id="tx-notes" name="notes" placeholder="Additional notes…" />
@@ -905,7 +943,7 @@ export function FinanceContent({
                           <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                             {tx.type === "income" ? "+" : "-"}{currency(Number(tx.amount))}
                           </span>
-                          {tx.balance != null && (
+                          {tx.balance != null && selectedAccount && (
                             <p className="text-[11px] text-muted-foreground tabular-nums">
                               {currency(tx.balance)}
                             </p>
