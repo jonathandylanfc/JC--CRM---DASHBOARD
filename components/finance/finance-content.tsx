@@ -358,7 +358,7 @@ export function FinanceContent({
             <Card className={`p-5 ${pos ? "bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800" : "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"}`}>
               <div className="flex items-center justify-between mb-2">
                 <p className={`text-sm font-medium ${pos ? "text-blue-700 dark:text-blue-400" : "text-amber-700 dark:text-amber-400"}`}>
-                  {dateRange === "all_time" && currentBalance != null ? "Current Balance" : "Net Balance"}
+                  Net Balance
                 </p>
                 <DollarSign className={`w-4 h-4 ${pos ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400"}`} />
               </div>
