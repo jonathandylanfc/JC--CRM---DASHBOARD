@@ -145,7 +145,7 @@ function detectColumns(headers: string[]): ColMap {
     debit: find(/^debit(\s*amount)?$/),
     credit: find(/^credit(\s*amount)?$/),
     type: find(/^type$/),
-    balance: find(/^balance$/, /^running\s*balance$/, /^ledger\s*balance$/, /balance/),
+    balance: find(/^balance$/, /^running\s*balance$/, /^ledger\s*balance$/, /^running\s*bal\.?$/, /balance/, /running\s*bal/i),
   }
 }
 
