@@ -24,6 +24,8 @@ export async function createTransaction(formData: FormData) {
     (formData.get("date") as string) || new Date().toISOString().split("T")[0]
   const clientId = (formData.get("id") as string) || undefined
 
+  const accountName = (formData.get("account_name") as string) || null
+
   const { data: saved, error } = await supabase
     .from("transactions")
     .insert({
@@ -35,8 +37,9 @@ export async function createTransaction(formData: FormData) {
       category,
       date,
       notes: (formData.get("notes") as string) || null,
+      account_name: accountName,
     })
-    .select("id, title, amount, type, category, date, notes")
+    .select("id, title, amount, type, category, date, notes, account_name, balance")
     .single()
 
   if (error) return { error: error.message }
@@ -76,7 +79,7 @@ export async function updateTransaction(id: string, formData: FormData) {
     })
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, title, amount, type, category, date, notes, balance")
+    .select("id, title, amount, type, category, date, notes, balance, account_name")
     .single()
 
   if (error) return { error: error.message }

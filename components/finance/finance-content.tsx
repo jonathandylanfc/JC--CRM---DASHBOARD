@@ -404,6 +404,7 @@ export function FinanceContent({
     const fd = new FormData(e.currentTarget)
     const id = crypto.randomUUID()
     fd.set("id", id)
+    if (selectedAccount) fd.set("account_name", selectedAccount)
     const tempTx: Transaction = {
       id,
       title: fd.get("title") as string,
@@ -413,7 +414,7 @@ export function FinanceContent({
       date: (fd.get("date") as string) || new Date().toISOString().split("T")[0],
       notes: (fd.get("notes") as string) || null,
       balance: null,
-      account_name: null,
+      account_name: selectedAccount,
     }
     setOpen(false)
     startTransition(async () => {
@@ -431,8 +432,8 @@ export function FinanceContent({
           category: tx.category,
           date: tx.date,
           notes: tx.notes ?? null,
-          balance: null,
-          account_name: null,
+          balance: (tx as { balance?: number | null }).balance ?? null,
+          account_name: (tx as { account_name?: string | null }).account_name ?? null,
         }
         setSavedTx(saved)
         setDateRange("all_time")
