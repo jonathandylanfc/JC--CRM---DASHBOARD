@@ -35,6 +35,7 @@ import {
   X,
   Filter,
   Pencil,
+  ChevronDown,
 } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
@@ -168,8 +169,21 @@ export function FinanceContent({
   // Real DB row returned after a manual add — pinned at top permanently until next page load
   const [savedTx, setSavedTx] = useState<Transaction | null>(null)
 
+  // Expanded transaction titles
+  const [expandedTitles, setExpandedTitles] = useState<Set<string>>(new Set())
+  function toggleTitle(id: string) {
+    setExpandedTitles((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
   // Single-delete confirmation
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+
+  // Confirm dismiss subscription
+  const [confirmDismissId, setConfirmDismissId] = useState<string | null>(null)
 
   // Dismissed subscription IDs — persisted in localStorage
   const [dismissedSubs, setDismissedSubs] = useState<Set<string>>(() => {
@@ -788,7 +802,19 @@ export function FinanceContent({
                         {tx.type === "income" ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-foreground text-sm truncate">{tx.title}</p>
+                        <div className="flex items-start gap-1 min-w-0">
+                          <p className={`font-medium text-foreground text-sm ${expandedTitles.has(tx.id) ? "break-words" : "truncate"}`}>
+                            {tx.title}
+                          </p>
+                          {tx.title.length > 35 && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleTitle(tx.id) }}
+                              className="shrink-0 mt-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedTitles.has(tx.id) ? "rotate-180" : ""}`} />
+                            </button>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span>{tx.category}</span>
                           <span>·</span>
@@ -841,6 +867,34 @@ export function FinanceContent({
         {/* Subscriptions */}
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Active Subscriptions</h2>
+          {/* Dismiss subscription confirmation */}
+          <Dialog open={!!confirmDismissId} onOpenChange={(o) => { if (!o) setConfirmDismissId(null) }}>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="w-5 h-5" />
+                  Remove subscription?
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-2">
+                <p className="text-sm text-muted-foreground">This will hide it from the subscriptions panel. Your transactions won't be affected.</p>
+                <div className="flex gap-3">
+                  <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setConfirmDismissId(null)}>Cancel</Button>
+                  <Button
+                    variant="destructive"
+                    className="flex-1"
+                    onClick={() => {
+                      if (confirmDismissId) dismissSubscription(confirmDismissId)
+                      setConfirmDismissId(null)
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           {visibleSubscriptions.length === 0 ? (
             <Card className="p-6 text-center">
               <CreditCard className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
@@ -877,7 +931,7 @@ export function FinanceContent({
                           variant="ghost"
                           size="icon"
                           className="w-6 h-6 text-muted-foreground hover:text-destructive"
-                          onClick={() => dismissSubscription(sub.id)}
+                          onClick={() => setConfirmDismissId(sub.id)}
                         >
                           <X className="w-3 h-3" />
                         </Button>
