@@ -168,6 +168,9 @@ export function FinanceContent({
   // Real DB row returned after a manual add — pinned at top permanently until next page load
   const [savedTx, setSavedTx] = useState<Transaction | null>(null)
 
+  // Single-delete confirmation
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+
   // Edit transaction
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
@@ -635,6 +638,34 @@ export function FinanceContent({
             </DialogContent>
           </Dialog>
 
+          {/* Single delete confirmation dialog */}
+          <Dialog open={!!confirmDeleteId} onOpenChange={(o) => { if (!o) setConfirmDeleteId(null) }}>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="w-5 h-5" />
+                  Delete transaction?
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-2">
+                <p className="text-sm text-muted-foreground">This will permanently delete the transaction. This cannot be undone.</p>
+                <div className="flex gap-3">
+                  <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
+                  <Button
+                    variant="destructive"
+                    className="flex-1"
+                    onClick={() => {
+                      if (confirmDeleteId) handleDelete(confirmDeleteId)
+                      setConfirmDeleteId(null)
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           {/* Edit transaction dialog */}
           <Dialog open={!!editingTx} onOpenChange={(o) => { if (!o) setEditingTx(null) }}>
             <DialogContent className="sm:max-w-md">
@@ -771,7 +802,7 @@ export function FinanceContent({
                               variant="ghost"
                               size="icon"
                               className="w-7 h-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => handleDelete(tx.id)}
+                              onClick={() => setConfirmDeleteId(tx.id)}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
