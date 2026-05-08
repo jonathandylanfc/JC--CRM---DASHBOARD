@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Upload, FileSpreadsheet, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Dialog,
@@ -293,6 +294,7 @@ export function CsvImporter() {
   const [rows, setRows] = useState<ImportRow[]>([])
   const [isImporting, setIsImporting] = useState(false)
   const [progress, setProgress] = useState<Progress | null>(null)
+  const [accountName, setAccountName] = useState("")
   const fileRef = useRef<HTMLInputElement>(null)
 
   function reset() {
@@ -304,6 +306,7 @@ export function CsvImporter() {
     setColMap({ date: -1, description: -1, amount: -1, debit: -1, credit: -1, type: -1, balance: -1 })
     setHasHeader(true)
     setProgress(null)
+    setAccountName("")
   }
 
   function processFile(file: File) {
@@ -395,7 +398,7 @@ export function CsvImporter() {
 
     for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
       const chunk = payload.slice(i, i + CHUNK_SIZE)
-      const result = await importTransactions(chunk)
+      const result = await importTransactions(chunk, accountName.trim() || null)
 
       if (result.error) {
         toast.error(`Import stopped at row ${i + 1}: ${result.error}`)
@@ -489,6 +492,17 @@ export function CsvImporter() {
             <p className="text-sm text-muted-foreground">
               Supports Chase, Bank of America, Wells Fargo, Capital One, and most standard bank CSV exports.
             </p>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="account-name">Account name</Label>
+              <Input
+                id="account-name"
+                placeholder="e.g. Chase Checking, Bank of America"
+                value={accountName}
+                onChange={(e) => setAccountName(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">Label this import so you can filter by account later.</p>
+            </div>
 
             <div
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}

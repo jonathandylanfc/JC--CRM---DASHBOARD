@@ -58,6 +58,7 @@ interface Transaction {
   date: string
   notes: string | null
   balance: number | null
+  account_name: string | null
 }
 
 interface Subscription {
@@ -231,19 +232,33 @@ export function FinanceContent({
   const [editError, setEditError] = useState<string | null>(null)
   const [isEditing, startEditing] = useTransition()
 
-  // Date-range and category filters
+  // Date-range, category, and account filters
   const [dateRange, setDateRange] = useState<DateRange>("this_month")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [selectedAccount, setSelectedAccount] = useState<string | null>(null)
 
+
+  const allAccounts = useMemo(() => {
+    const accounts = new Set(
+      optimisticTransactions.map((tx) => tx.account_name).filter(Boolean) as string[]
+    )
+    return Array.from(accounts).sort()
+  }, [optimisticTransactions])
+
+  // Transactions scoped to the selected account (before date/category filters)
+  const accountTransactions = useMemo(() => {
+    if (!selectedAccount) return optimisticTransactions
+    return optimisticTransactions.filter((tx) => tx.account_name === selectedAccount)
+  }, [optimisticTransactions, selectedAccount])
 
   const allCategories = useMemo(() => {
-    const cats = new Set(optimisticTransactions.map((tx) => tx.category))
+    const cats = new Set(accountTransactions.map((tx) => tx.category))
     return Array.from(cats).sort()
-  }, [optimisticTransactions])
+  }, [accountTransactions])
 
   const { filteredIncome, filteredExpenses, filteredNet } = useMemo(() => {
     const { start, end } = getDateBounds(dateRange)
-    const filtered = optimisticTransactions.filter((tx) => {
+    const filtered = accountTransactions.filter((tx) => {
       if (start && tx.date < start) return false
       if (end && tx.date > end) return false
       if (selectedCategory && tx.category !== selectedCategory) return false
@@ -256,25 +271,25 @@ export function FinanceContent({
       .filter((tx) => tx.type === "expense")
       .reduce((s, tx) => s + Number(tx.amount), 0)
     return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
-  }, [optimisticTransactions, dateRange, selectedCategory])
+  }, [accountTransactions, dateRange, selectedCategory])
 
   // Most recent stored balance as anchor, plus net of any transactions after it.
   const currentBalance = useMemo(() => {
-    const withBal = optimisticTransactions.filter((tx) => tx.balance != null)
+    const withBal = accountTransactions.filter((tx) => tx.balance != null)
     if (!withBal.length) return null
     const anchor = withBal[0]
     const anchorBalance = anchor.balance as number
     const anchorDate = anchor.date
-    const adjustment = optimisticTransactions
+    const adjustment = accountTransactions
       .filter((tx) => tx.date > anchorDate || (tx.date === anchorDate && tx.balance == null))
       .reduce((sum, tx) => sum + (tx.type === "income" ? Number(tx.amount) : -Number(tx.amount)), 0)
     return anchorBalance + adjustment
-  }, [optimisticTransactions])
+  }, [accountTransactions])
 
   // Auto-detect subscriptions: same title+amount in 2+ months, or "subscription" keyword.
   const detectedSubscriptions = useMemo(() => {
     const groups = new Map<string, Transaction[]>()
-    for (const tx of optimisticTransactions) {
+    for (const tx of accountTransactions) {
       if (tx.type !== "expense") continue
       const key = `${tx.title.toLowerCase().trim()}|${Number(tx.amount).toFixed(2)}`
       if (!groups.has(key)) groups.set(key, [])
@@ -309,7 +324,7 @@ export function FinanceContent({
       })
     }
     return result.sort((a, b) => b.amount - a.amount)
-  }, [optimisticTransactions])
+  }, [accountTransactions])
 
   const visibleSubscriptions = detectedSubscriptions.filter((s) => !dismissedSubs.has(s.id))
 
@@ -317,17 +332,17 @@ export function FinanceContent({
   // Uses the real DB row (not the optimistic placeholder) so the UUID always matches
   // after router.refresh() brings in the authoritative initialTransactions.
   const displayTransactions = useMemo(() => {
-    let list = optimisticTransactions
+    let list = accountTransactions
     if (savedTx) {
-      const stillExists = optimisticTransactions.some((tx) => tx.id === savedTx.id)
+      const stillExists = accountTransactions.some((tx) => tx.id === savedTx.id)
       if (stillExists) {
-        const rest = optimisticTransactions.filter((tx) => tx.id !== savedTx.id)
+        const rest = accountTransactions.filter((tx) => tx.id !== savedTx.id)
         list = [savedTx, ...rest]
       }
     }
     if (selectedCategory) list = list.filter((tx) => tx.category === selectedCategory)
     return list
-  }, [optimisticTransactions, savedTx, selectedCategory])
+  }, [accountTransactions, savedTx, selectedCategory])
 
   function exitSelectMode() {
     setSelectMode(false)
@@ -398,6 +413,7 @@ export function FinanceContent({
       date: (fd.get("date") as string) || new Date().toISOString().split("T")[0],
       notes: (fd.get("notes") as string) || null,
       balance: null,
+      account_name: null,
     }
     setOpen(false)
     startTransition(async () => {
@@ -416,6 +432,7 @@ export function FinanceContent({
           date: tx.date,
           notes: tx.notes ?? null,
           balance: null,
+          account_name: null,
         }
         setSavedTx(saved)
         setDateRange("all_time")
@@ -455,6 +472,35 @@ export function FinanceContent({
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Account + date range selectors */}
+      <div className="flex flex-wrap items-center gap-3">
+      {allAccounts.length > 0 && (
+        <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-fit">
+          <button
+            onClick={() => setSelectedAccount(null)}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
+              !selectedAccount
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            All Accounts
+          </button>
+          {allAccounts.map((acc) => (
+            <button
+              key={acc}
+              onClick={() => setSelectedAccount(acc)}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
+                selectedAccount === acc
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {acc}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Date range selector */}
       <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-fit">
         {DATE_RANGES.map((r) => (
@@ -470,6 +516,7 @@ export function FinanceContent({
             {r.label}
           </button>
         ))}
+      </div>
       </div>
 
       {/* KPI cards */}
@@ -844,6 +891,12 @@ export function FinanceContent({
                             <CalendarDays className="w-3 h-3" />
                             {formatDate(tx.date)}
                           </span>
+                          {tx.account_name && (
+                            <>
+                              <span>·</span>
+                              <span className="text-primary/70">{tx.account_name}</span>
+                            </>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">

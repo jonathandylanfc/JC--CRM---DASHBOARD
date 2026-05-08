@@ -173,6 +173,7 @@ export async function updateStartingBalance(
 
 export async function importTransactions(
   rows: ImportRow[],
+  accountName?: string | null,
 ): Promise<{ count?: number; error?: string }> {
   const supabase = await createClient()
   const {
@@ -194,6 +195,7 @@ export async function importTransactions(
   const { data, error } = await (supabase as any).rpc("import_transactions_with_balance", {
     p_user_id: user.id,
     p_rows: payload,
+    p_account_name: accountName ?? null,
   })
 
   if (error) return { error: (error as { message: string }).message }
