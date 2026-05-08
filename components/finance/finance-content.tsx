@@ -34,11 +34,13 @@ import {
   CheckSquare,
   X,
   Filter,
+  Pencil,
 } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import {
   createTransaction,
+  updateTransaction,
   deleteTransaction,
   deleteAllTransactions,
   deleteSelectedTransactions,
@@ -165,6 +167,11 @@ export function FinanceContent({
 
   // Real DB row returned after a manual add — pinned at top permanently until next page load
   const [savedTx, setSavedTx] = useState<Transaction | null>(null)
+
+  // Edit transaction
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [isEditing, startEditing] = useTransition()
 
   // Date-range and category filters
   const [dateRange, setDateRange] = useState<DateRange>("this_month")
@@ -313,6 +320,34 @@ export function FinanceContent({
         setSavedTx(saved)
         setDateRange("all_time")
         toast.success(`"${tempTx.title}" saved`)
+        router.refresh()
+      }
+    })
+  }
+
+  async function handleEditSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!editingTx) return
+    setEditError(null)
+    const fd = new FormData(e.currentTarget)
+    const updatedTx: Transaction = {
+      ...editingTx,
+      title: fd.get("title") as string,
+      amount: parseFloat(fd.get("amount") as string),
+      type: fd.get("type") as string,
+      category: (fd.get("category") as string) || "other",
+      date: (fd.get("date") as string) || editingTx.date,
+      notes: (fd.get("notes") as string) || null,
+    }
+    setEditingTx(null)
+    startEditing(async () => {
+      updateOptimistic({ type: "delete", id: editingTx.id })
+      updateOptimistic({ type: "add", tx: updatedTx })
+      const result = await updateTransaction(editingTx.id, fd)
+      if (result?.error) {
+        toast.error(result.error)
+      } else {
+        toast.success(`"${updatedTx.title}" updated`)
         router.refresh()
       }
     })
@@ -560,6 +595,60 @@ export function FinanceContent({
             </DialogContent>
           </Dialog>
 
+          {/* Edit transaction dialog */}
+          <Dialog open={!!editingTx} onOpenChange={(o) => { if (!o) setEditingTx(null) }}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Edit Transaction</DialogTitle>
+              </DialogHeader>
+              {editingTx && (
+                <form onSubmit={handleEditSubmit} className="space-y-4 mt-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-title">Title</Label>
+                    <Input id="edit-title" name="title" defaultValue={editingTx.title} required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-amount">Amount ($)</Label>
+                      <Input id="edit-amount" name="amount" type="number" step="0.01" min="0.01" defaultValue={editingTx.amount} required />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-type">Type</Label>
+                      <Select name="type" defaultValue={editingTx.type}>
+                        <SelectTrigger id="edit-type"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="income">Income</SelectItem>
+                          <SelectItem value="expense">Expense</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-category">Category</Label>
+                      <Input id="edit-category" name="category" defaultValue={editingTx.category} required />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-date">Date</Label>
+                      <Input id="edit-date" name="date" type="date" defaultValue={editingTx.date} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-notes">Notes <span className="text-muted-foreground">(optional)</span></Label>
+                    <Input id="edit-notes" name="notes" defaultValue={editingTx.notes ?? ""} placeholder="Additional notes…" />
+                  </div>
+                  {editError && <p className="text-sm text-destructive">{editError}</p>}
+                  <div className="flex gap-3 pt-1">
+                    <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => setEditingTx(null)}>Cancel</Button>
+                    <Button type="submit" className="flex-1" disabled={isEditing}>
+                      {isEditing ? "Saving…" : "Save Changes"}
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </DialogContent>
+          </Dialog>
+
           {/* Transaction list */}
           {displayTransactions.length === 0 ? (
             <Card className="p-8 text-center">
@@ -629,14 +718,24 @@ export function FinanceContent({
                           )}
                         </div>
                         {!selectMode && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                            onClick={() => handleDelete(tx.id)}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="w-7 h-7 text-muted-foreground hover:text-foreground"
+                              onClick={() => { setEditError(null); setEditingTx(tx) }}
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="w-7 h-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => handleDelete(tx.id)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                         )}
                       </div>
                     </div>

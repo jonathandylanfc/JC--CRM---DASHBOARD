@@ -45,6 +45,46 @@ export async function createTransaction(formData: FormData) {
   return { transaction: saved }
 }
 
+export async function updateTransaction(id: string, formData: FormData) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const title = formData.get("title") as string
+  if (!title?.trim()) return { error: "Title is required" }
+
+  const amount = parseFloat(formData.get("amount") as string)
+  if (isNaN(amount) || amount <= 0) return { error: "Valid amount is required" }
+
+  const type = formData.get("type") as string
+  if (type !== "income" && type !== "expense") return { error: "Type must be income or expense" }
+
+  const category = (formData.get("category") as string)?.trim() || "other"
+  const date = (formData.get("date") as string) || new Date().toISOString().split("T")[0]
+
+  const { data: saved, error } = await supabase
+    .from("transactions")
+    .update({
+      title: title.trim(),
+      amount,
+      type,
+      category,
+      date,
+      notes: (formData.get("notes") as string) || null,
+    })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("id, title, amount, type, category, date, notes, balance")
+    .single()
+
+  if (error) return { error: error.message }
+  revalidatePath("/finance")
+  revalidatePath("/")
+  return { transaction: saved }
+}
+
 export async function deleteTransaction(id: string) {
   const supabase = await createClient()
   const { error } = await supabase.from("transactions").delete().eq("id", id)
