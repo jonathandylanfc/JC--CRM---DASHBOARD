@@ -225,6 +225,7 @@ function buildRows(rawRows: string[][], colMap: ColMap, hasHeader: boolean): Imp
   const dataRows = hasHeader ? rawRows.slice(1) : rawRows
   return dataRows
     .filter((row) => row.some((c) => c.trim()))
+    .filter((row) => !row.some((cell) => cell.trim().toUpperCase() === "PENDING"))
     .map((row, i) => {
       const cell = (col: number) => (col >= 0 && col < row.length ? row[col] : "")
 
