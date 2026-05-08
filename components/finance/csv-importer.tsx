@@ -263,7 +263,6 @@ function buildRows(rawRows: string[][], colMap: ColMap, hasHeader: boolean): Imp
         type,
         category: detectCategory(description),
         balance,
-        _rawBalance: rawBal,
       }
     })
     .filter((r) => r.amount > 0)
@@ -622,8 +621,8 @@ export function CsvImporter() {
                               {row.type}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-xs text-right tabular-nums text-muted-foreground font-mono">
-                            {row.balance != null ? `$${row.balance.toFixed(2)}` : `raw:"${(row as any)._rawBalance}"`}
+                          <TableCell className="text-xs text-right tabular-nums text-muted-foreground">
+                            {row.balance != null ? `$${row.balance.toFixed(2)}` : "—"}
                           </TableCell>
                           <TableCell className="py-1">
                             <Select

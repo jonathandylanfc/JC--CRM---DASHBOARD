@@ -150,13 +150,14 @@ export async function importTransactions(
     balance: r.balance ?? null,
   }))
 
-  const { data, error } = await supabase.rpc("import_transactions_with_balance", {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc("import_transactions_with_balance", {
     p_user_id: user.id,
     p_rows: payload,
   })
 
-  if (error) return { error: error.message }
+  if (error) return { error: (error as { message: string }).message }
   revalidatePath("/finance")
   revalidatePath("/")
-  return { count: data ?? rows.length }
+  return { count: (data as number) ?? rows.length }
 }
