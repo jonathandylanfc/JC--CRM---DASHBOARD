@@ -99,10 +99,35 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setDialogOpen(true)
   }
 
+  // How much % of income is already committed by other categories (excluding the one being edited)
+  const otherAllocatedPct = useMemo(() => {
+    return categories
+      .filter((c) => c.id !== editingCategory?.id)
+      .reduce((sum, c) => {
+        if (c.type === "percentage") return sum + c.value
+        if (monthlyIncome > 0) return sum + (c.value / monthlyIncome) * 100
+        return sum
+      }, 0)
+  }, [categories, editingCategory, monthlyIncome])
+
+  const remainingPct = Math.max(0, 100 - otherAllocatedPct)
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setFormError(null)
     const fd = new FormData(e.currentTarget)
+
+    // Validate total won't exceed 100%
+    const val = parseFloat(formValue)
+    const thisPct = formType === "percentage" ? val : monthlyIncome > 0 ? (val / monthlyIncome) * 100 : 0
+    if (thisPct > remainingPct + 0.001) {
+      setFormError(
+        formType === "percentage"
+          ? `Only ${remainingPct.toFixed(1)}% remaining — reduce this value.`
+          : `Only ${currency((remainingPct / 100) * monthlyIncome)} remaining in your budget.`
+      )
+      return
+    }
 
     if (editingCategory) {
       const optimistic: BudgetCategory = {
@@ -340,9 +365,14 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="budget-value">
-                {formType === "percentage" ? "Percentage (%)" : "Monthly amount ($)"}
-              </Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="budget-value">
+                  {formType === "percentage" ? "Percentage (%)" : "Monthly amount ($)"}
+                </Label>
+                <span className={`text-xs ${remainingPct < 5 ? "text-rose-500 font-medium" : "text-muted-foreground"}`}>
+                  {remainingPct.toFixed(1)}% remaining
+                </span>
+              </div>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
                   {formType === "percentage" ? "%" : "$"}
@@ -353,8 +383,8 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                   type="number"
                   step="0.01"
                   min="0"
-                  max={formType === "percentage" ? "100" : undefined}
-                  placeholder={formType === "percentage" ? "20" : "500"}
+                  max={formType === "percentage" ? String(remainingPct) : monthlyIncome > 0 ? String((remainingPct / 100) * monthlyIncome) : undefined}
+                  placeholder={formType === "percentage" ? `up to ${remainingPct.toFixed(0)}` : "500"}
                   value={formValue}
                   onChange={(e) => setFormValue(e.target.value)}
                   className="pl-7"
@@ -364,6 +394,11 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               {formType === "percentage" && monthlyIncome > 0 && formValue && (
                 <p className="text-xs text-muted-foreground">
                   = {currency((parseFloat(formValue) / 100) * monthlyIncome)}/mo based on current income
+                </p>
+              )}
+              {formType === "fixed" && monthlyIncome > 0 && formValue && (
+                <p className="text-xs text-muted-foreground">
+                  = {((parseFloat(formValue) / monthlyIncome) * 100).toFixed(1)}% of this month's income
                 </p>
               )}
             </div>
