@@ -171,6 +171,25 @@ export function FinanceContent({
   // Single-delete confirmation
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
+  // Dismissed subscription IDs — persisted in localStorage
+  const [dismissedSubs, setDismissedSubs] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem("dismissedSubscriptions")
+      return stored ? new Set(JSON.parse(stored)) : new Set()
+    } catch {
+      return new Set()
+    }
+  })
+
+  function dismissSubscription(id: string) {
+    setDismissedSubs((prev) => {
+      const next = new Set(prev)
+      next.add(id)
+      try { localStorage.setItem("dismissedSubscriptions", JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }
+
   // Edit transaction
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
@@ -255,6 +274,8 @@ export function FinanceContent({
     }
     return result.sort((a, b) => b.amount - a.amount)
   }, [optimisticTransactions])
+
+  const visibleSubscriptions = detectedSubscriptions.filter((s) => !dismissedSubs.has(s.id))
 
   // Keep the just-saved transaction at the top regardless of sort order or limit windows.
   // Uses the real DB row (not the optimistic placeholder) so the UUID always matches
@@ -820,14 +841,14 @@ export function FinanceContent({
         {/* Subscriptions */}
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Active Subscriptions</h2>
-          {detectedSubscriptions.length === 0 ? (
+          {visibleSubscriptions.length === 0 ? (
             <Card className="p-6 text-center">
               <CreditCard className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">No recurring charges detected</p>
             </Card>
           ) : (
             <div className="space-y-2">
-              {detectedSubscriptions.map((sub) => (
+              {visibleSubscriptions.map((sub) => (
                 <Card key={sub.id} className="p-4 hover:shadow-md transition-all duration-200 group">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -843,14 +864,24 @@ export function FinanceContent({
                     </div>
                     <div className="shrink-0 flex flex-col items-end gap-1">
                       <p className="font-semibold text-foreground text-sm">{currency(sub.amount)}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="w-6 h-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-                        onClick={() => { setEditError(null); setEditingTx(sub.latestTx) }}
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </Button>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-6 h-6 text-muted-foreground hover:text-foreground"
+                          onClick={() => { setEditError(null); setEditingTx(sub.latestTx) }}
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-6 h-6 text-muted-foreground hover:text-destructive"
+                          onClick={() => dismissSubscription(sub.id)}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </Card>
