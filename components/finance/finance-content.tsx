@@ -193,7 +193,12 @@ export function FinanceContent({
     return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
   }, [optimisticTransactions, dateRange, selectedCategory])
 
-  const startingBalance = initialStartingBalance
+  // Most recent stored balance from CSV = the actual current account balance.
+  const currentBalance = useMemo(() => {
+    const withBal = optimisticTransactions.filter((tx) => tx.balance != null)
+    if (!withBal.length) return initialStartingBalance > 0 ? null : null
+    return withBal[0].balance as number
+  }, [optimisticTransactions, initialStartingBalance])
 
   // Keep the just-saved transaction at the top regardless of sort order or limit windows.
   // Uses the real DB row (not the optimistic placeholder) so the UUID always matches
@@ -345,8 +350,8 @@ export function FinanceContent({
         </Card>
 
         {(() => {
-          const display = dateRange === "all_time" && !selectedCategory && startingBalance > 0
-            ? startingBalance + filteredNet
+          const display = dateRange === "all_time" && !selectedCategory && currentBalance != null
+            ? currentBalance
             : filteredNet
           const pos = display >= 0
           return (
