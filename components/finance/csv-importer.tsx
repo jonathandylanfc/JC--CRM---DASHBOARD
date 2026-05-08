@@ -76,15 +76,17 @@ function parseCSV(text: string): string[][] {
 
     if (inQuotes) {
       if (ch === '"') {
-        // Peek: "" inside quotes is an escaped quote
         if (i + 1 < src.length && src[i + 1] === '"') {
+          // Escaped quote ""
           field += '"'
           i++
+        } else if (i + 1 < src.length && src[i + 1] !== ',' && src[i + 1] !== '\n') {
+          // Unescaped inner quote (BofA-style) — treat as literal character
+          field += '"'
         } else {
           inQuotes = false
         }
       } else {
-        // Newlines inside quotes are part of the field value
         field += ch
       }
     } else {
@@ -110,6 +112,16 @@ function parseCSV(text: string): string[][] {
   }
 
   return rows
+}
+
+// ─── Strip summary/preamble rows before the real header (e.g. BofA) ──────────
+// Some banks prepend a summary block before the transaction rows.
+// Find the first row whose first cell is a recognisable date-column header.
+
+function stripPreamble(rows: string[][]): string[][] {
+  const dateHeaders = /^(date|transaction\s*date|posting\s*date|trans\.?\s*date)$/i
+  const idx = rows.findIndex((row) => dateHeaders.test(row[0]?.trim() ?? ""))
+  return idx > 0 ? rows.slice(idx) : rows
 }
 
 // ─── Column detection from header names ───────────────────────────────────────
@@ -322,7 +334,7 @@ export function CsvImporter() {
     const reader = new FileReader()
     reader.onload = (e) => {
       const text = e.target?.result as string
-      const parsed = parseCSV(text)
+      const parsed = stripPreamble(parseCSV(text))
       if (parsed.length < 1) { toast.error("CSV appears to be empty"); return }
 
       // Wells Fargo and similar banks export without a header row.
