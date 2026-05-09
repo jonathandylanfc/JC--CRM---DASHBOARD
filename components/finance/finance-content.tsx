@@ -322,19 +322,69 @@ export function FinanceContent({
     return hasAny ? total + untaggedNet : null
   }, [optimisticTransactions, accountTransactions, selectedAccount])
 
-  // Last 6 months bar chart data
-  const monthlyChartData = useMemo(() => {
+  // Chart data — buckets match the selected date range
+  const chartData = useMemo(() => {
     const now = new Date()
-    return Array.from({ length: 6 }, (_, i) => {
-      const month = subMonths(now, 5 - i)
+    const pad = (n: number) => String(n).padStart(2, "0")
+
+    if (dateRange === "this_month") {
+      const year = now.getFullYear()
+      const month = now.getMonth()
+      const daysInMonth = new Date(year, month + 1, 0).getDate()
+      return Array.from({ length: daysInMonth }, (_, i) => {
+        const day = i + 1
+        const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
+        const txs = accountTransactions.filter((tx) => tx.date === dateStr)
+        return {
+          label: String(day),
+          income: txs.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0),
+          expenses: txs.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0),
+        }
+      })
+    }
+
+    if (dateRange === "all_time") {
+      if (!accountTransactions.length) return []
+      const sorted = [...accountTransactions].sort((a, b) => a.date.localeCompare(b.date))
+      const earliest = new Date(sorted[0].date + "T12:00:00")
+      const buckets: { label: string; income: number; expenses: number }[] = []
+      let cur = startOfMonth(earliest)
+      while (cur <= now) {
+        const s = format(cur, "yyyy-MM-dd")
+        const e = format(endOfMonth(cur), "yyyy-MM-dd")
+        const txs = accountTransactions.filter((tx) => tx.date >= s && tx.date <= e)
+        buckets.push({
+          label: format(cur, "MMM yy"),
+          income: txs.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0),
+          expenses: txs.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0),
+        })
+        cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
+      }
+      return buckets
+    }
+
+    // last_3_months, last_6_months, last_year
+    const count = dateRange === "last_3_months" ? 3 : dateRange === "last_6_months" ? 6 : 12
+    return Array.from({ length: count }, (_, i) => {
+      const month = subMonths(now, count - 1 - i)
       const start = format(startOfMonth(month), "yyyy-MM-dd")
       const end = format(endOfMonth(month), "yyyy-MM-dd")
       const txs = accountTransactions.filter((tx) => tx.date >= start && tx.date <= end)
-      const income = txs.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0)
-      const expenses = txs.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0)
-      return { month: format(month, "MMM"), income, expenses }
+      return {
+        label: format(month, count <= 6 ? "MMM" : "MMM yy"),
+        income: txs.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0),
+        expenses: txs.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0),
+      }
     })
-  }, [accountTransactions])
+  }, [accountTransactions, dateRange])
+
+  const chartTitle = {
+    this_month: "This Month — Daily",
+    last_3_months: "Last 3 Months",
+    last_6_months: "Last 6 Months",
+    last_year: "Last 12 Months",
+    all_time: "All Time",
+  }[dateRange]
 
   // Auto-detect subscriptions: same title+amount in 2+ months, or "subscription" keyword.
   const detectedSubscriptions = useMemo(() => {
@@ -647,11 +697,24 @@ export function FinanceContent({
 
       {/* Spending chart */}
       <Card className="p-5">
-        <p className="text-sm font-semibold text-foreground mb-4">6-Month Overview</p>
-        <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={monthlyChartData} barGap={4} barCategoryGap="30%">
+        <p className="text-sm font-semibold text-foreground mb-4">{chartTitle}</p>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart
+            data={chartData}
+            barGap={4}
+            barCategoryGap={dateRange === "this_month" ? "10%" : "30%"}
+            margin={{ bottom: chartData.length > 12 ? 24 : 0 }}
+          >
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 10 }}
+              axisLine={false}
+              tickLine={false}
+              angle={chartData.length > 12 ? -35 : 0}
+              textAnchor={chartData.length > 12 ? "end" : "middle"}
+              interval={dateRange === "this_month" ? 4 : 0}
+            />
             <YAxis
               tick={{ fontSize: 11 }}
               axisLine={false}
