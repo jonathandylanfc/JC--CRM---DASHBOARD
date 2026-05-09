@@ -322,6 +322,15 @@ export function FinanceContent({
     return hasAny ? total + untaggedNet : null
   }, [optimisticTransactions, accountTransactions, selectedAccount])
 
+  // When viewing All Time with a real anchor balance, the difference between
+  // currentBalance and filteredNet is money already in the account before the
+  // first recorded transaction. Fold it into income so the cards add up.
+  const impliedStartingBalance = useMemo(() => {
+    const isAllTime = dateRange === "all_time" && !selectedCategory && currentBalance != null
+    if (!isAllTime) return 0
+    return Math.max(0, currentBalance - filteredNet)
+  }, [dateRange, selectedCategory, currentBalance, filteredNet])
+
   // Chart data — buckets match the selected date range
   const chartData = useMemo(() => {
     const now = new Date()
@@ -664,7 +673,7 @@ export function FinanceContent({
             <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Income</p>
             <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           </div>
-          <p className="text-2xl font-bold text-emerald-800 dark:text-emerald-300">{currency(filteredIncome)}</p>
+          <p className="text-2xl font-bold text-emerald-800 dark:text-emerald-300">{currency(filteredIncome + impliedStartingBalance)}</p>
         </Card>
 
         <Card className="p-5 bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800">
