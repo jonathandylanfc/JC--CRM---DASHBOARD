@@ -250,6 +250,12 @@ export function FinanceContent({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [chartPage, setChartPage] = useState(0) // 0 = most recent window
+
+  function changeRange(r: DateRange) {
+    setDateRange(r)
+    setChartPage(0)
+  }
 
 
   const allAccounts = useMemo(() => {
@@ -332,60 +338,66 @@ export function FinanceContent({
   }, [dateRange, selectedCategory, currentBalance, filteredNet])
 
   // Chart data — buckets match the selected date range
-  const chartData = useMemo(() => {
+  const { chartData, chartHasOlder, chartHasNewer } = useMemo(() => {
     const now = new Date()
     const pad = (n: number) => String(n).padStart(2, "0")
+    const PAGE = 12
+
+    const bucket = (txs: Transaction[], label: string) => ({
+      label,
+      income: txs.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0),
+      expenses: txs.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0),
+    })
 
     if (dateRange === "this_month") {
       const year = now.getFullYear()
       const month = now.getMonth()
       const daysInMonth = new Date(year, month + 1, 0).getDate()
-      return Array.from({ length: daysInMonth }, (_, i) => {
-        const day = i + 1
-        const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
-        const txs = accountTransactions.filter((tx) => tx.date === dateStr)
-        return {
-          label: String(day),
-          income: txs.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0),
-          expenses: txs.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0),
-        }
-      })
+      return {
+        chartData: Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1
+          const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
+          return bucket(accountTransactions.filter((tx) => tx.date === dateStr), String(day))
+        }),
+        chartHasOlder: false,
+        chartHasNewer: false,
+      }
     }
 
     if (dateRange === "all_time") {
-      if (!accountTransactions.length) return []
+      if (!accountTransactions.length) return { chartData: [], chartHasOlder: false, chartHasNewer: false }
       const sorted = [...accountTransactions].sort((a, b) => a.date.localeCompare(b.date))
       const earliest = new Date(sorted[0].date + "T12:00:00")
-      const buckets: { label: string; income: number; expenses: number }[] = []
+      const allMonths: { label: string; income: number; expenses: number }[] = []
       let cur = startOfMonth(earliest)
       while (cur <= now) {
         const s = format(cur, "yyyy-MM-dd")
         const e = format(endOfMonth(cur), "yyyy-MM-dd")
-        const txs = accountTransactions.filter((tx) => tx.date >= s && tx.date <= e)
-        buckets.push({
-          label: format(cur, "MMM yy"),
-          income: txs.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0),
-          expenses: txs.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0),
-        })
+        allMonths.push(bucket(accountTransactions.filter((tx) => tx.date >= s && tx.date <= e), format(cur, "MMM yy")))
         cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
       }
-      return buckets
+      const endIdx = Math.max(0, allMonths.length - chartPage * PAGE)
+      const startIdx = Math.max(0, endIdx - PAGE)
+      return {
+        chartData: allMonths.slice(startIdx, endIdx),
+        chartHasOlder: startIdx > 0,
+        chartHasNewer: chartPage > 0,
+      }
     }
 
     // last_3_months, last_6_months, last_year
     const count = dateRange === "last_3_months" ? 3 : dateRange === "last_6_months" ? 6 : 12
-    return Array.from({ length: count }, (_, i) => {
-      const month = subMonths(now, count - 1 - i)
-      const start = format(startOfMonth(month), "yyyy-MM-dd")
-      const end = format(endOfMonth(month), "yyyy-MM-dd")
-      const txs = accountTransactions.filter((tx) => tx.date >= start && tx.date <= end)
-      return {
-        label: format(month, count <= 6 ? "MMM" : "MMM yy"),
-        income: txs.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0),
-        expenses: txs.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0),
-      }
-    })
-  }, [accountTransactions, dateRange])
+    return {
+      chartData: Array.from({ length: count }, (_, i) => {
+        const month = subMonths(now, count - 1 - i)
+        const start = format(startOfMonth(month), "yyyy-MM-dd")
+        const end = format(endOfMonth(month), "yyyy-MM-dd")
+        return bucket(accountTransactions.filter((tx) => tx.date >= start && tx.date <= end), format(month, count <= 6 ? "MMM" : "MMM yy"))
+      }),
+      chartHasOlder: false,
+      chartHasNewer: false,
+    }
+  }, [accountTransactions, dateRange, chartPage])
 
   const chartTitle = {
     this_month: "This Month — Daily",
@@ -558,7 +570,7 @@ export function FinanceContent({
           account_name: (tx as { account_name?: string | null }).account_name ?? null,
         }
         setSavedTx(saved)
-        setDateRange("all_time")
+        changeRange("all_time")
         toast.success(`"${tempTx.title}" saved`)
         router.refresh()
       }
@@ -653,7 +665,7 @@ export function FinanceContent({
         {DATE_RANGES.map((r) => (
           <button
             key={r.value}
-            onClick={() => setDateRange(r.value)}
+            onClick={() => changeRange(r.value)}
             className={`px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
               dateRange === r.value
                 ? "bg-background text-foreground shadow-sm"
@@ -706,7 +718,29 @@ export function FinanceContent({
 
       {/* Spending chart */}
       <Card className="p-5">
-        <p className="text-sm font-semibold text-foreground mb-4">{chartTitle}</p>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm font-semibold text-foreground">{chartTitle}</p>
+          {dateRange === "all_time" && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setChartPage((p) => p + 1)}
+                disabled={!chartHasOlder}
+                className="p-1.5 rounded-md hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                aria-label="Older months"
+              >
+                <ChevronDown className="w-4 h-4 rotate-90" />
+              </button>
+              <button
+                onClick={() => setChartPage((p) => p - 1)}
+                disabled={!chartHasNewer}
+                className="p-1.5 rounded-md hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                aria-label="Newer months"
+              >
+                <ChevronDown className="w-4 h-4 -rotate-90" />
+              </button>
+            </div>
+          )}
+        </div>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart
             data={chartData}
