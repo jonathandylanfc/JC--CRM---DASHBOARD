@@ -44,6 +44,7 @@ import {
   updateTransaction,
   deleteTransaction,
   deleteAllTransactions,
+  deleteAccountTransactions,
   deleteSelectedTransactions,
   getTransactionCount,
 } from "@/app/finance/actions"
@@ -391,17 +392,24 @@ export function FinanceContent({
   async function openClearAllDialog() {
     setRealCount(null)
     setConfirmClearOpen(true)
-    const count = await getTransactionCount()
+    const count = await getTransactionCount(selectedAccount)
     setRealCount(count)
   }
 
   function handleClearAll() {
     startClearing(async () => {
-      const result = await deleteAllTransactions()
+      let result: { error?: string }
+      if (selectedAccount) {
+        const ids = accountTransactions.map((tx) => tx.id)
+        updateOptimistic({ type: "deleteMany", ids })
+        result = await deleteAccountTransactions(selectedAccount)
+      } else {
+        result = await deleteAllTransactions()
+      }
       setConfirmClearOpen(false)
       setRealCount(null)
       if (result.error) { toast.error(result.error); return }
-      toast.success("All transactions deleted")
+      toast.success(selectedAccount ? `All ${selectedAccount} transactions deleted` : "All transactions deleted")
       exitSelectMode()
       router.refresh()
     })
@@ -714,7 +722,7 @@ export function FinanceContent({
                       <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-destructive">
                           <AlertTriangle className="w-5 h-5" />
-                          Delete all transactions?
+                          {selectedAccount ? `Delete all ${selectedAccount} transactions?` : "Delete all transactions?"}
                         </DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 mt-2">
@@ -724,7 +732,7 @@ export function FinanceContent({
                             all {realCount ?? "…"} transaction
                             {(realCount ?? 2) !== 1 ? "s" : ""}
                           </span>{" "}
-                          for your account. This cannot be undone.
+                          {selectedAccount ? `from ${selectedAccount}` : "for your account"}. This cannot be undone.
                         </p>
                         <div className="flex gap-3">
                           <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setConfirmClearOpen(false)} disabled={isClearing}>Cancel</Button>

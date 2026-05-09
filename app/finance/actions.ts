@@ -106,17 +106,38 @@ export type ImportRow = {
   balance: number | null
 }
 
-export async function getTransactionCount(): Promise<number> {
+export async function getTransactionCount(accountName?: string | null): Promise<number> {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return 0
-  const { count } = await supabase
+  const q = supabase
     .from("transactions")
     .select("*", { count: "exact", head: true })
     .eq("user_id", user.id)
+  const { count } = accountName ? await q.eq("account_name", accountName) : await q
   return count ?? 0
+}
+
+export async function deleteAccountTransactions(
+  accountName: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("account_name", accountName)
+  if (error) return { error: error.message }
+  revalidatePath("/finance")
+  revalidatePath("/")
+  return {}
 }
 
 export async function deleteAllTransactions(): Promise<{ error?: string }> {
