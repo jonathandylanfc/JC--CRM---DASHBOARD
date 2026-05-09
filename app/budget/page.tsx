@@ -5,14 +5,16 @@ import {
   getBudgetCategories,
   getMonthlyFinanceSummary,
   getMonthlyExpensesByCategory,
+  getMonthlyExpenseTransactions,
   getUserProfile,
 } from "@/lib/data"
 
 export default async function BudgetPage() {
-  const [categories, financeSummary, expensesByCategory, user] = await Promise.all([
+  const [categories, financeSummary, expensesByCategory, monthlyTransactions, user] = await Promise.all([
     getBudgetCategories(),
     getMonthlyFinanceSummary(),
     getMonthlyExpensesByCategory(),
+    getMonthlyExpenseTransactions(),
     getUserProfile(),
   ])
 
@@ -32,6 +34,7 @@ export default async function BudgetPage() {
             initialCategories={categories}
             monthlyIncome={financeSummary.income}
             expensesByCategory={expensesByCategory}
+            monthlyTransactions={monthlyTransactions}
           />
         </div>
       </main>

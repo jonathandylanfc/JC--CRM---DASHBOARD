@@ -233,6 +233,23 @@ export async function getBudgetCategories() {
   return data ?? []
 }
 
+export async function getMonthlyExpenseTransactions() {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const now = new Date()
+  const monthStart = format(startOfMonth(now), "yyyy-MM-dd")
+  const monthEnd = format(endOfMonth(now), "yyyy-MM-dd")
+  const { data } = await supabase
+    .from("transactions")
+    .select("id, title, amount, category, date")
+    .eq("user_id", userId)
+    .eq("type", "expense")
+    .gte("date", monthStart)
+    .lte("date", monthEnd)
+    .order("date", { ascending: false })
+  return data ?? []
+}
+
 export async function getMonthlyExpensesByCategory(): Promise<Record<string, number>> {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return {}

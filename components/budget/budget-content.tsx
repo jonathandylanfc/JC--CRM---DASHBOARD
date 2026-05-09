@@ -23,7 +23,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent } from "lucide-react"
+import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown } from "lucide-react"
+import { format } from "date-fns"
 import { toast } from "sonner"
 import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory } from "@/app/budget/actions"
 
@@ -35,10 +36,19 @@ interface BudgetCategory {
   sort_order: number
 }
 
+interface MonthlyTransaction {
+  id: string
+  title: string
+  amount: number
+  category: string
+  date: string
+}
+
 interface BudgetContentProps {
   initialCategories: BudgetCategory[]
   monthlyIncome: number
   expensesByCategory: Record<string, number>
+  monthlyTransactions: MonthlyTransaction[]
 }
 
 type OptimisticAction =
@@ -56,7 +66,7 @@ function budgetedAmount(cat: BudgetCategory, income: number): number {
 
 const SUGGESTED = ["Investments", "Savings", "Food", "Car", "Housing", "Bills", "Transport", "Health", "Entertainment", "Other"]
 
-export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory }: BudgetContentProps) {
+export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions }: BudgetContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -69,6 +79,16 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       return state
     }
   )
+
+  // Expanded categories
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  function toggleExpand(id: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -257,6 +277,11 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               const over = actual > budgeted && budgeted > 0
               const warn = pct >= 80 && !over
 
+              const catTxs = monthlyTransactions.filter(
+                (tx) => tx.category.toLowerCase() === cat.name.toLowerCase()
+              )
+              const isExpanded = expandedIds.has(cat.id)
+
               return (
                 <Card key={cat.id} className="p-5 group hover:shadow-md transition-all duration-200">
                   <div className="flex items-start justify-between gap-4 mb-3">
@@ -306,6 +331,34 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                       }
                     </div>
                   </div>
+
+                  {/* Transactions toggle */}
+                  {catTxs.length > 0 && (
+                    <div className="mt-3">
+                      <button
+                        onClick={() => toggleExpand(cat.id)}
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                        {catTxs.length} transaction{catTxs.length !== 1 ? "s" : ""} this month
+                      </button>
+                      {isExpanded && (
+                        <div className="mt-2 space-y-1.5 border-t pt-2">
+                          {catTxs.map((tx) => (
+                            <div key={tx.id} className="flex items-center justify-between gap-2 text-xs">
+                              <div className="min-w-0">
+                                <span className="truncate block text-foreground font-medium" title={tx.title}>{tx.title}</span>
+                                <span className="text-muted-foreground">{format(new Date(tx.date + "T12:00:00"), "MMM d")}</span>
+                              </div>
+                              <span className="shrink-0 text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
+                                -{currency(Number(tx.amount))}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </Card>
               )
             })}
