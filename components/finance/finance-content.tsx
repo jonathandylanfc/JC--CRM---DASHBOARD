@@ -661,8 +661,17 @@ export function FinanceContent({
             />
             <Tooltip
               formatter={(value: number, name: string) => [currency(value), name === "income" ? "Income" : "Expenses"]}
-              contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid hsl(var(--border))", background: "hsl(var(--background))" }}
-              labelStyle={{ fontWeight: 600, marginBottom: 4 }}
+              contentStyle={{
+                fontSize: 12,
+                borderRadius: 8,
+                border: "1.5px solid #000",
+                background: "#fff",
+                color: "#000",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+              }}
+              labelStyle={{ fontWeight: 700, color: "#000", marginBottom: 4 }}
+              itemStyle={{ color: "#000" }}
+              cursor={{ fill: "rgba(0,0,0,0.04)" }}
             />
             <Legend formatter={(v) => v === "income" ? "Income" : "Expenses"} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
             <Bar dataKey="income" fill="#10b981" radius={[3, 3, 0, 0]} />
