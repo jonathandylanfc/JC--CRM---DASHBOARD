@@ -36,9 +36,21 @@ import {
   Filter,
   Pencil,
   ChevronDown,
+  Search,
+  Download,
 } from "lucide-react"
-import { format } from "date-fns"
+import { format, subMonths, startOfMonth, endOfMonth } from "date-fns"
 import { toast } from "sonner"
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts"
 import {
   createTransaction,
   updateTransaction,
@@ -233,10 +245,11 @@ export function FinanceContent({
   const [editError, setEditError] = useState<string | null>(null)
   const [isEditing, startEditing] = useTransition()
 
-  // Date-range, category, and account filters
+  // Date-range, category, account filters, and search
   const [dateRange, setDateRange] = useState<DateRange>("this_month")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
 
   const allAccounts = useMemo(() => {
@@ -309,6 +322,20 @@ export function FinanceContent({
     return hasAny ? total + untaggedNet : null
   }, [optimisticTransactions, accountTransactions, selectedAccount])
 
+  // Last 6 months bar chart data
+  const monthlyChartData = useMemo(() => {
+    const now = new Date()
+    return Array.from({ length: 6 }, (_, i) => {
+      const month = subMonths(now, 5 - i)
+      const start = format(startOfMonth(month), "yyyy-MM-dd")
+      const end = format(endOfMonth(month), "yyyy-MM-dd")
+      const txs = accountTransactions.filter((tx) => tx.date >= start && tx.date <= end)
+      const income = txs.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0)
+      const expenses = txs.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0)
+      return { month: format(month, "MMM"), income, expenses }
+    })
+  }, [accountTransactions])
+
   // Auto-detect subscriptions: same title+amount in 2+ months, or "subscription" keyword.
   const detectedSubscriptions = useMemo(() => {
     const groups = new Map<string, Transaction[]>()
@@ -364,8 +391,12 @@ export function FinanceContent({
       }
     }
     if (selectedCategory) list = list.filter((tx) => tx.category === selectedCategory)
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase()
+      list = list.filter((tx) => tx.title.toLowerCase().includes(q))
+    }
     return list
-  }, [accountTransactions, savedTx, selectedCategory])
+  }, [accountTransactions, savedTx, selectedCategory, searchQuery])
 
   function exitSelectMode() {
     setSelectMode(false)
@@ -503,6 +534,30 @@ export function FinanceContent({
     })
   }
 
+  function handleExportCSV() {
+    const rows = [
+      ["Date", "Title", "Type", "Category", "Amount", "Balance", "Account", "Notes"],
+      ...displayTransactions.map((tx) => [
+        tx.date,
+        `"${tx.title.replace(/"/g, '""')}"`,
+        tx.type,
+        tx.category,
+        tx.amount.toFixed(2),
+        tx.balance != null ? tx.balance.toFixed(2) : "",
+        tx.account_name ?? "",
+        tx.notes ? `"${tx.notes.replace(/"/g, '""')}"` : "",
+      ]),
+    ]
+    const csv = rows.map((r) => r.join(",")).join("\n")
+    const blob = new Blob([csv], { type: "text/csv" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `transactions-${dateRange}${selectedAccount ? `-${selectedAccount}` : ""}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Account + date range selectors */}
@@ -571,15 +626,14 @@ export function FinanceContent({
         </Card>
 
         {(() => {
-          const display = dateRange === "all_time" && !selectedCategory && currentBalance != null
-            ? currentBalance
-            : filteredNet
+          const showingAnchor = dateRange === "all_time" && !selectedCategory && currentBalance != null
+          const display = showingAnchor ? currentBalance! : filteredNet
           const pos = display >= 0
           return (
             <Card className={`p-5 ${pos ? "bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800" : "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"}`}>
               <div className="flex items-center justify-between mb-2">
                 <p className={`text-sm font-medium ${pos ? "text-blue-700 dark:text-blue-400" : "text-amber-700 dark:text-amber-400"}`}>
-                  Net Balance
+                  {showingAnchor ? "Current Balance" : "Net Balance"}
                 </p>
                 <DollarSign className={`w-4 h-4 ${pos ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400"}`} />
               </div>
@@ -590,6 +644,32 @@ export function FinanceContent({
           )
         })()}
       </div>
+
+      {/* Spending chart */}
+      <Card className="p-5">
+        <p className="text-sm font-semibold text-foreground mb-4">6-Month Overview</p>
+        <ResponsiveContainer width="100%" height={180}>
+          <BarChart data={monthlyChartData} barGap={4} barCategoryGap="30%">
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+            <XAxis dataKey="month" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis
+              tick={{ fontSize: 11 }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={(v) => `$${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`}
+              width={42}
+            />
+            <Tooltip
+              formatter={(value: number, name: string) => [currency(value), name === "income" ? "Income" : "Expenses"]}
+              contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid hsl(var(--border))", background: "hsl(var(--background))" }}
+              labelStyle={{ fontWeight: 600, marginBottom: 4 }}
+            />
+            <Legend formatter={(v) => v === "income" ? "Income" : "Expenses"} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+            <Bar dataKey="income" fill="#10b981" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="expenses" fill="#f43f5e" radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </Card>
 
       {/* Transactions + Subscriptions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -602,6 +682,17 @@ export function FinanceContent({
               {!selectMode ? (
                 /* ── Normal mode buttons ─────────────────────────── */
                 <>
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search…"
+                      className="h-8 pl-8 pr-3 text-xs w-36 bg-transparent"
+                    />
+                  </div>
+
                   {/* Category filter */}
                   <Select
                     value={selectedCategory ?? "all"}
@@ -618,6 +709,18 @@ export function FinanceContent({
                       ))}
                     </SelectContent>
                   </Select>
+
+                  {/* Export */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 bg-transparent"
+                    onClick={handleExportCSV}
+                    disabled={displayTransactions.length === 0}
+                  >
+                    <Download className="w-4 h-4" />
+                    Export
+                  </Button>
 
                   <CsvImporter />
 
@@ -945,6 +1048,9 @@ export function FinanceContent({
                             </>
                           )}
                         </div>
+                        {tx.notes && (
+                          <p className="text-xs text-muted-foreground/70 truncate mt-0.5 italic">{tx.notes}</p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <div className="text-right">
