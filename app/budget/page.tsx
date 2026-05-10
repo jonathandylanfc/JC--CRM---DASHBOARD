@@ -8,13 +8,21 @@ import {
   getMonthlyExpenseTransactions,
   getUserProfile,
 } from "@/lib/data"
+import { format } from "date-fns"
 
-export default async function BudgetPage() {
+export default async function BudgetPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>
+}) {
+  const { month } = await searchParams
+  const currentMonth = month ?? format(new Date(), "yyyy-MM")
+
   const [categories, financeSummary, expensesByCategory, monthlyTransactions, user] = await Promise.all([
     getBudgetCategories(),
-    getMonthlyFinanceSummary(),
-    getMonthlyExpensesByCategory(),
-    getMonthlyExpenseTransactions(),
+    getMonthlyFinanceSummary(currentMonth),
+    getMonthlyExpensesByCategory(currentMonth),
+    getMonthlyExpenseTransactions(currentMonth),
     getUserProfile(),
   ])
 
@@ -35,6 +43,7 @@ export default async function BudgetPage() {
             monthlyIncome={financeSummary.income}
             expensesByCategory={expensesByCategory}
             monthlyTransactions={monthlyTransactions}
+            currentMonth={currentMonth}
           />
         </div>
       </main>

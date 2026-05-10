@@ -23,10 +23,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check } from "lucide-react"
-import { format } from "date-fns"
+import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight } from "lucide-react"
+import { format, addMonths, subMonths, parseISO } from "date-fns"
 import { toast } from "sonner"
-import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories } from "@/app/budget/actions"
+import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory } from "@/app/budget/actions"
 
 interface BudgetCategory {
   id: string
@@ -49,6 +49,7 @@ interface BudgetContentProps {
   monthlyIncome: number
   expensesByCategory: Record<string, number>
   monthlyTransactions: MonthlyTransaction[]
+  currentMonth: string // "yyyy-MM"
 }
 
 type OptimisticAction =
@@ -102,9 +103,35 @@ const ONBOARDING_GROUPS = [
   },
 ]
 
-export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions }: BudgetContentProps) {
+export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, currentMonth }: BudgetContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+
+  // Month navigation
+  const monthDate = parseISO(currentMonth + "-02")
+  const monthLabel = format(monthDate, "MMMM yyyy")
+  const isCurrentMonth = currentMonth === format(new Date(), "yyyy-MM")
+
+  function goToMonth(date: Date) {
+    const m = format(date, "yyyy-MM")
+    router.push(`/budget?month=${m}`)
+  }
+
+  // Assign transaction state
+  const [assignCatId, setAssignCatId] = useState<string | null>(null)
+  const [isAssigning, startAssigning] = useTransition()
+
+  function handleAssign(tx: MonthlyTransaction, catName: string) {
+    startAssigning(async () => {
+      const result = await assignTransactionToCategory(tx.id, tx.title, catName)
+      if (result.error) toast.error(result.error)
+      else {
+        toast.success(`"${tx.title}" → ${catName} (all future matches will auto-sort here)`)
+        setAssignCatId(null)
+        router.refresh()
+      }
+    })
+  }
 
   const [categories, updateOptimistic] = useOptimistic(
     initialCategories,
@@ -255,6 +282,34 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Month navigation */}
+      <div className="flex items-center gap-3 w-fit">
+        <button
+          onClick={() => goToMonth(subMonths(monthDate, 1))}
+          className="p-1.5 rounded-md hover:bg-muted transition-colors"
+          aria-label="Previous month"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-sm font-semibold text-foreground w-36 text-center">{monthLabel}</span>
+        <button
+          onClick={() => goToMonth(addMonths(monthDate, 1))}
+          disabled={isCurrentMonth}
+          className="p-1.5 rounded-md hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          aria-label="Next month"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+        {!isCurrentMonth && (
+          <button
+            onClick={() => router.push("/budget")}
+            className="text-xs text-primary underline underline-offset-2 hover:opacity-70 transition-opacity"
+          >
+            Back to current
+          </button>
+        )}
+      </div>
+
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <Card className="p-5 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800">
@@ -429,9 +484,9 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                     </div>
                   </div>
 
-                  {/* Transactions toggle */}
-                  {catTxs.length > 0 && (
-                    <div className="mt-3">
+                  {/* Transactions toggle + assign button */}
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    {catTxs.length > 0 ? (
                       <button
                         onClick={() => toggleExpand(cat.id)}
                         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -439,21 +494,29 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                         {catTxs.length} transaction{catTxs.length !== 1 ? "s" : ""} this month
                       </button>
-                      {isExpanded && (
-                        <div className="mt-2 space-y-1.5 border-t pt-2">
-                          {catTxs.map((tx) => (
-                            <div key={tx.id} className="flex items-center justify-between gap-2 text-xs">
-                              <div className="min-w-0">
-                                <span className="truncate block text-foreground font-medium" title={tx.title}>{tx.title}</span>
-                                <span className="text-muted-foreground">{format(new Date(tx.date + "T12:00:00"), "MMM d")}</span>
-                              </div>
-                              <span className="shrink-0 text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
-                                -{currency(Number(tx.amount))}
-                              </span>
-                            </div>
-                          ))}
+                    ) : (
+                      <span className="text-xs text-muted-foreground/50">No transactions this month</span>
+                    )}
+                    <button
+                      onClick={() => setAssignCatId(cat.id)}
+                      className="text-xs text-primary underline underline-offset-2 hover:opacity-70 transition-opacity shrink-0"
+                    >
+                      + Add transaction
+                    </button>
+                  </div>
+                  {isExpanded && catTxs.length > 0 && (
+                    <div className="mt-2 space-y-1.5 border-t pt-2">
+                      {catTxs.map((tx) => (
+                        <div key={tx.id} className="flex items-center justify-between gap-2 text-xs">
+                          <div className="min-w-0">
+                            <span className="truncate block text-foreground font-medium" title={tx.title}>{tx.title}</span>
+                            <span className="text-muted-foreground">{format(new Date(tx.date + "T12:00:00"), "MMM d")}</span>
+                          </div>
+                          <span className="shrink-0 text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
+                            -{currency(Number(tx.amount))}
+                          </span>
                         </div>
-                      )}
+                      ))}
                     </div>
                   )}
                 </Card>
@@ -462,6 +525,53 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           </div>
         )}
       </div>
+
+      {/* Assign transaction dialog */}
+      {(() => {
+        const cat = categories.find((c) => c.id === assignCatId)
+        if (!cat) return null
+        const otherTxs = monthlyTransactions.filter(
+          (tx) => tx.category.toLowerCase() !== cat.name.toLowerCase()
+        )
+        return (
+          <Dialog open={!!assignCatId} onOpenChange={(o) => { if (!o) setAssignCatId(null) }}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Add transaction to {cat.name}</DialogTitle>
+              </DialogHeader>
+              <div className="mt-2 space-y-2 max-h-80 overflow-y-auto">
+                {otherTxs.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    No other transactions this month to assign.
+                  </p>
+                ) : (
+                  otherTxs.map((tx) => (
+                    <button
+                      key={tx.id}
+                      disabled={isAssigning}
+                      onClick={() => handleAssign(tx, cat.name)}
+                      className="w-full flex items-center justify-between gap-3 p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-all text-left"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{tx.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {format(new Date(tx.date + "T12:00:00"), "MMM d")} · currently in <span className="italic">{tx.category}</span>
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-rose-600 dark:text-rose-400 font-semibold text-sm tabular-nums">
+                        -{currency(Number(tx.amount))}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground pt-1 border-t">
+                Assigning a transaction will also auto-sort all future transactions with the same name into this category.
+              </p>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
 
       {/* Add / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={(o) => { if (!o) setDialogOpen(false) }}>

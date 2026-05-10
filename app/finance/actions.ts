@@ -19,12 +19,21 @@ export async function createTransaction(formData: FormData) {
   const type = formData.get("type") as string
   if (type !== "income" && type !== "expense") return { error: "Type must be income or expense" }
 
-  const category = (formData.get("category") as string)?.trim() || "other"
+  let category = (formData.get("category") as string)?.trim() || "other"
   const date =
     (formData.get("date") as string) || new Date().toISOString().split("T")[0]
   const clientId = (formData.get("id") as string) || undefined
 
   const accountName = (formData.get("account_name") as string) || null
+
+  // Apply category mapping if one exists for this title
+  const { data: mapping } = await supabase
+    .from("category_mappings")
+    .select("category")
+    .eq("user_id", user.id)
+    .ilike("title", title.trim())
+    .maybeSingle()
+  if (mapping?.category) category = mapping.category
 
   const { data: saved, error } = await supabase
     .from("transactions")
@@ -206,11 +215,18 @@ export async function importTransactions(
   if (!user) return { error: "Not authenticated" }
   if (!rows.length) return { error: "No rows to import" }
 
+  // Fetch category mappings to auto-categorize matching titles
+  const { data: mappingRows } = await supabase
+    .from("category_mappings")
+    .select("title, category")
+    .eq("user_id", user.id)
+  const mappings = new Map((mappingRows ?? []).map((m) => [m.title.toLowerCase(), m.category]))
+
   const payload = rows.map((r) => ({
     title: r.title.slice(0, 255),
     amount: Math.abs(r.amount),
     type: r.type === "income" ? "income" : "expense",
-    category: r.category,
+    category: mappings.get(r.title.toLowerCase().trim()) ?? r.category,
     date: r.date,
     balance: r.balance ?? null,
   }))

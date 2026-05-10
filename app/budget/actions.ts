@@ -60,6 +60,39 @@ export async function updateBudgetCategory(id: string, formData: FormData) {
   return { category: data }
 }
 
+export async function assignTransactionToCategory(
+  transactionId: string,
+  title: string,
+  category: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  // Re-categorize all transactions with this exact title (case-insensitive)
+  const { error: txError } = await supabase
+    .from("transactions")
+    .update({ category })
+    .eq("user_id", user.id)
+    .ilike("title", title)
+
+  if (txError) return { error: txError.message }
+
+  // Save/update the mapping so future transactions are auto-categorized
+  const { error: mapError } = await supabase
+    .from("category_mappings")
+    .upsert(
+      { user_id: user.id, title: title.toLowerCase().trim(), category },
+      { onConflict: "user_id,title" },
+    )
+
+  if (mapError) return { error: mapError.message }
+
+  revalidatePath("/budget")
+  revalidatePath("/finance")
+  return {}
+}
+
 export async function bulkCreateBudgetCategories(
   names: string[],
 ): Promise<{ error?: string }> {

@@ -42,12 +42,23 @@ export async function getAssignmentCount() {
   return count ?? 0
 }
 
-export async function getMonthlyFinanceSummary() {
+export async function getCategoryMappings(): Promise<Record<string, string>> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return {}
+  const { data } = await supabase
+    .from("category_mappings")
+    .select("title, category")
+    .eq("user_id", userId)
+  if (!data) return {}
+  return Object.fromEntries(data.map((m) => [m.title.toLowerCase(), m.category]))
+}
+
+export async function getMonthlyFinanceSummary(month?: string) {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return { income: 0, expenses: 0 }
-  const now = new Date()
-  const monthStart = format(startOfMonth(now), "yyyy-MM-dd")
-  const monthEnd = format(endOfMonth(now), "yyyy-MM-dd")
+  const base = month ? new Date(month + "-02") : new Date()
+  const monthStart = format(startOfMonth(base), "yyyy-MM-dd")
+  const monthEnd = format(endOfMonth(base), "yyyy-MM-dd")
   const { data } = await supabase
     .from("transactions")
     .select("amount, type")
@@ -233,12 +244,12 @@ export async function getBudgetCategories() {
   return data ?? []
 }
 
-export async function getMonthlyExpenseTransactions() {
+export async function getMonthlyExpenseTransactions(month?: string) {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return []
-  const now = new Date()
-  const monthStart = format(startOfMonth(now), "yyyy-MM-dd")
-  const monthEnd = format(endOfMonth(now), "yyyy-MM-dd")
+  const base = month ? new Date(month + "-02") : new Date()
+  const monthStart = format(startOfMonth(base), "yyyy-MM-dd")
+  const monthEnd = format(endOfMonth(base), "yyyy-MM-dd")
   const { data } = await supabase
     .from("transactions")
     .select("id, title, amount, category, date")
@@ -250,12 +261,12 @@ export async function getMonthlyExpenseTransactions() {
   return data ?? []
 }
 
-export async function getMonthlyExpensesByCategory(): Promise<Record<string, number>> {
+export async function getMonthlyExpensesByCategory(month?: string): Promise<Record<string, number>> {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return {}
-  const now = new Date()
-  const monthStart = format(startOfMonth(now), "yyyy-MM-dd")
-  const monthEnd = format(endOfMonth(now), "yyyy-MM-dd")
+  const base = month ? new Date(month + "-02") : new Date()
+  const monthStart = format(startOfMonth(base), "yyyy-MM-dd")
+  const monthEnd = format(endOfMonth(base), "yyyy-MM-dd")
   const { data } = await supabase
     .from("transactions")
     .select("category, amount")
