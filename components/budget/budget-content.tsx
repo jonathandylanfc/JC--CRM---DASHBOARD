@@ -194,15 +194,10 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setFormError(null)
     const fd = new FormData(e.currentTarget)
 
-    // Validate total won't exceed 100%
+    // Cap only applies to percentage types
     const val = parseFloat(formValue)
-    const thisPct = formType === "percentage" ? val : monthlyIncome > 0 ? (val / monthlyIncome) * 100 : 0
-    if (thisPct > remainingPct + 0.001) {
-      setFormError(
-        formType === "percentage"
-          ? `Only ${remainingPct.toFixed(1)}% remaining — reduce this value.`
-          : `Only ${currency((remainingPct / 100) * monthlyIncome)} remaining in your budget.`
-      )
+    if (formType === "percentage" && val > remainingPct + 0.001) {
+      setFormError(`Only ${remainingPct.toFixed(1)}% remaining — reduce this value.`)
       return
     }
 
@@ -538,7 +533,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                   type="number"
                   step="0.01"
                   min="0"
-                  max={formType === "percentage" ? String(remainingPct) : monthlyIncome > 0 ? String((remainingPct / 100) * monthlyIncome) : undefined}
+                  max={formType === "percentage" ? String(remainingPct) : undefined}
                   placeholder={formType === "percentage" ? `up to ${remainingPct.toFixed(0)}` : "500"}
                   value={formValue}
                   onChange={(e) => setFormValue(e.target.value)}
