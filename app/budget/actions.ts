@@ -60,6 +60,28 @@ export async function updateBudgetCategory(id: string, formData: FormData) {
   return { category: data }
 }
 
+export async function bulkCreateBudgetCategories(
+  names: string[],
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  if (!names.length) return {}
+
+  const rows = names.map((name, i) => ({
+    user_id: user.id,
+    name,
+    type: "percentage" as const,
+    value: 0,
+    sort_order: i,
+  }))
+
+  const { error } = await supabase.from("budget_categories").insert(rows)
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  return {}
+}
+
 export async function deleteBudgetCategory(id: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

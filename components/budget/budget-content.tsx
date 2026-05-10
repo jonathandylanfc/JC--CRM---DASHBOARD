@@ -23,10 +23,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown } from "lucide-react"
+import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
-import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory } from "@/app/budget/actions"
+import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories } from "@/app/budget/actions"
 
 interface BudgetCategory {
   id: string
@@ -64,7 +64,43 @@ function budgetedAmount(cat: BudgetCategory, income: number): number {
   return cat.type === "percentage" ? (cat.value / 100) * income : cat.value
 }
 
-const SUGGESTED = ["Investments", "Savings", "Food", "Car", "Housing", "Bills", "Transport", "Health", "Entertainment", "Other"]
+const ONBOARDING_GROUPS = [
+  {
+    group: "Essentials",
+    items: [
+      { name: "Housing", description: "Rent or mortgage" },
+      { name: "Car", description: "Payment, insurance, gas" },
+      { name: "Bills", description: "Utilities, phone, internet" },
+      { name: "Groceries", description: "Food from stores" },
+    ],
+  },
+  {
+    group: "Lifestyle",
+    items: [
+      { name: "Food & Dining", description: "Restaurants, delivery" },
+      { name: "Subscriptions", description: "Netflix, Spotify, Apple" },
+      { name: "Shopping", description: "Amazon, retail" },
+      { name: "Entertainment", description: "Fun money catchall" },
+    ],
+  },
+  {
+    group: "Financial",
+    items: [
+      { name: "Savings", description: "Emergency fund, general" },
+      { name: "Investments", description: "Stocks, brokerage" },
+      { name: "Credit Card Payments", description: "Card payoff tracking" },
+    ],
+  },
+  {
+    group: "Occasional",
+    items: [
+      { name: "Health", description: "Doctors, pharmacy" },
+      { name: "Travel", description: "Flights, hotels, Airbnb" },
+      { name: "Transport", description: "Uber, transit, parking" },
+      { name: "Other", description: "Everything else" },
+    ],
+  },
+]
 
 export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions }: BudgetContentProps) {
   const router = useRouter()
@@ -79,6 +115,27 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       return state
     }
   )
+
+  // Onboarding selection
+  const [onboardingSelected, setOnboardingSelected] = useState<Set<string>>(new Set())
+  const [isOnboarding, startOnboarding] = useTransition()
+
+  function toggleOnboarding(name: string) {
+    setOnboardingSelected((prev) => {
+      const next = new Set(prev)
+      next.has(name) ? next.delete(name) : next.add(name)
+      return next
+    })
+  }
+
+  function handleBulkCreate() {
+    const names = [...onboardingSelected]
+    startOnboarding(async () => {
+      const result = await bulkCreateBudgetCategories(names)
+      if (result.error) toast.error(result.error)
+      else router.refresh()
+    })
+  }
 
   // Expanded categories
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
@@ -253,19 +310,64 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         </div>
 
         {categories.length === 0 ? (
-          <Card className="p-10 text-center">
-            <PiggyBank className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground mb-4">No budget categories yet. Add one to get started.</p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {SUGGESTED.map((name) => (
-                <button
-                  key={name}
-                  onClick={() => { setFormName(name); setFormType("percentage"); setFormValue(""); setEditingCategory(null); setFormError(null); setDialogOpen(true) }}
-                  className="px-3 py-1 text-xs rounded-full border border-border hover:border-primary hover:text-primary transition-colors"
-                >
-                  + {name}
-                </button>
+          <Card className="p-6 sm:p-8">
+            <div className="text-center mb-6">
+              <PiggyBank className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+              <h3 className="font-semibold text-foreground text-base">Set up your budget</h3>
+              <p className="text-sm text-muted-foreground mt-1">Pick the categories that fit your lifestyle. You can always add, remove, or adjust them later.</p>
+            </div>
+
+            <div className="space-y-5">
+              {ONBOARDING_GROUPS.map((group) => (
+                <div key={group.group}>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{group.group}</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {group.items.map((item) => {
+                      const selected = onboardingSelected.has(item.name)
+                      return (
+                        <button
+                          key={item.name}
+                          onClick={() => toggleOnboarding(item.name)}
+                          className={`relative flex flex-col items-start gap-0.5 p-3 rounded-lg border text-left transition-all ${
+                            selected
+                              ? "border-primary bg-primary/5 text-foreground"
+                              : "border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {selected && (
+                            <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                              <Check className="w-2.5 h-2.5 text-primary-foreground" />
+                            </span>
+                          )}
+                          <span className="font-medium text-sm text-foreground">{item.name}</span>
+                          <span className="text-[11px] text-muted-foreground leading-tight">{item.description}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               ))}
+            </div>
+
+            <div className="flex items-center justify-between mt-6 pt-4 border-t gap-3">
+              <button
+                onClick={() => {
+                  const all = ONBOARDING_GROUPS.flatMap((g) => g.items.map((i) => i.name))
+                  setOnboardingSelected(
+                    onboardingSelected.size === all.length ? new Set() : new Set(all)
+                  )
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
+              >
+                {onboardingSelected.size === ONBOARDING_GROUPS.flatMap((g) => g.items).length ? "Deselect all" : "Select all"}
+              </button>
+              <Button
+                onClick={handleBulkCreate}
+                disabled={onboardingSelected.size === 0 || isOnboarding}
+                className="gap-2"
+              >
+                {isOnboarding ? "Adding…" : `Add ${onboardingSelected.size > 0 ? onboardingSelected.size : ""} categor${onboardingSelected.size === 1 ? "y" : "ies"}`}
+              </Button>
             </div>
           </Card>
         ) : (
