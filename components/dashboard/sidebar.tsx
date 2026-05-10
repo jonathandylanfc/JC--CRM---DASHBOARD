@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 
 const menuItems = [
@@ -37,17 +38,13 @@ export function Sidebar() {
     <aside className="fixed top-0 left-0 w-64 bg-card border-r border-border p-4 h-screen overflow-y-auto lg:block">
       <div className="flex items-center gap-2 mb-6 group cursor-pointer">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center transition-transform group-hover:scale-110 duration-300 relative">
-            <div
-              className="w-1.5 h-1.5 rounded-full bg-primary-foreground absolute"
-              style={{ top: "30%", left: "30%" }}
-            />
-            <div
-              className="w-1.5 h-1.5 rounded-full bg-primary-foreground absolute"
-              style={{ top: "30%", right: "30%" }}
-            />
-            <div className="w-3 h-1.5 border-b-2 border-primary-foreground rounded-full absolute bottom-2.5" />
-          </div>
+          <Image
+            src="/logo.png"
+            alt="Dylan Pro logo"
+            width={32}
+            height={32}
+            className="rounded-md transition-transform group-hover:scale-110 duration-300"
+          />
           <span className="text-lg font-semibold text-foreground">Dylan Pro</span>
         </Link>
       </div>
