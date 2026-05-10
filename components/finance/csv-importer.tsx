@@ -291,7 +291,9 @@ interface Progress {
   total: number
 }
 
-export function CsvImporter() {
+const NEW_ACCOUNT = "__new__"
+
+export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: string[] }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState<Step>("upload")
@@ -307,7 +309,15 @@ export function CsvImporter() {
   const [isImporting, setIsImporting] = useState(false)
   const [progress, setProgress] = useState<Progress | null>(null)
   const [accountName, setAccountName] = useState("")
+  const [selectedExisting, setSelectedExisting] = useState<string>("")
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // The resolved account name used for import
+  const resolvedAccount =
+    existingAccounts.length > 0
+      ? selectedExisting === NEW_ACCOUNT ? accountName.trim()
+        : selectedExisting
+      : accountName.trim()
 
   function reset() {
     setStep("upload")
@@ -319,11 +329,12 @@ export function CsvImporter() {
     setHasHeader(true)
     setProgress(null)
     setAccountName("")
+    setSelectedExisting("")
   }
 
   function processFile(file: File) {
-    if (!accountName.trim()) {
-      toast.error("Please enter an account name before uploading.")
+    if (!resolvedAccount) {
+      toast.error("Please select or enter an account name before uploading.")
       return
     }
     if (!file.name.toLowerCase().endsWith(".csv")) {
@@ -414,7 +425,7 @@ export function CsvImporter() {
 
     for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
       const chunk = payload.slice(i, i + CHUNK_SIZE)
-      const result = await importTransactions(chunk, accountName.trim() || null)
+      const result = await importTransactions(chunk, resolvedAccount || null)
 
       if (result.error) {
         toast.error(`Import stopped at row ${i + 1}: ${result.error}`)
@@ -510,23 +521,50 @@ export function CsvImporter() {
             </p>
 
             <div className="space-y-1.5">
-              <Label htmlFor="account-name">Account name</Label>
-              <Input
-                id="account-name"
-                placeholder="e.g. Chase Checking, Bank of America"
-                value={accountName}
-                onChange={(e) => setAccountName(e.target.value)}
-              />
+              <Label htmlFor="account-name">Account</Label>
+              {existingAccounts.length > 0 ? (
+                <div className="space-y-2">
+                  <Select
+                    value={selectedExisting}
+                    onValueChange={setSelectedExisting}
+                  >
+                    <SelectTrigger id="account-name">
+                      <SelectValue placeholder="Select an account…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {existingAccounts.map((a) => (
+                        <SelectItem key={a} value={a}>{a}</SelectItem>
+                      ))}
+                      <SelectItem value={NEW_ACCOUNT}>+ New account…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {selectedExisting === NEW_ACCOUNT && (
+                    <Input
+                      placeholder="e.g. Chase Savings"
+                      value={accountName}
+                      onChange={(e) => setAccountName(e.target.value)}
+                      autoFocus
+                    />
+                  )}
+                </div>
+              ) : (
+                <Input
+                  id="account-name"
+                  placeholder="e.g. Chase Checking, Bank of America"
+                  value={accountName}
+                  onChange={(e) => setAccountName(e.target.value)}
+                />
+              )}
               <p className="text-xs text-muted-foreground">Label this import so you can filter by account later.</p>
             </div>
 
             <div
-              onDragOver={(e) => { e.preventDefault(); if (accountName.trim()) setIsDragging(true) }}
+              onDragOver={(e) => { e.preventDefault(); if (resolvedAccount) setIsDragging(true) }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              onClick={() => accountName.trim() && fileRef.current?.click()}
+              onClick={() => resolvedAccount && fileRef.current?.click()}
               className={`border-2 border-dashed rounded-xl p-12 flex flex-col items-center gap-3 transition-colors select-none ${
-                !accountName.trim()
+                !resolvedAccount
                   ? "border-border opacity-40 cursor-not-allowed"
                   : isDragging
                   ? "border-primary bg-primary/5 cursor-pointer"

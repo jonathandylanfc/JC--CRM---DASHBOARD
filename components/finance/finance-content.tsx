@@ -837,7 +837,7 @@ export function FinanceContent({
                     Export
                   </Button>
 
-                  <CsvImporter />
+                  <CsvImporter existingAccounts={allAccounts} />
 
                   <Button
                     variant="outline"
