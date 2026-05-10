@@ -119,6 +119,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
 
   // Assign transaction state
   const [assignCatId, setAssignCatId] = useState<string | null>(null)
+  const [assignSearch, setAssignSearch] = useState("")
   const [isAssigning, startAssigning] = useTransition()
 
   function handleAssign(tx: MonthlyTransaction, catName: string) {
@@ -533,19 +534,32 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         const otherTxs = monthlyTransactions.filter(
           (tx) => tx.category.toLowerCase() !== cat.name.toLowerCase()
         )
+        const filteredTxs = assignSearch.trim()
+          ? otherTxs.filter((tx) => tx.title.toLowerCase().includes(assignSearch.toLowerCase()))
+          : otherTxs
         return (
-          <Dialog open={!!assignCatId} onOpenChange={(o) => { if (!o) setAssignCatId(null) }}>
+          <Dialog open={!!assignCatId} onOpenChange={(o) => { if (!o) { setAssignCatId(null); setAssignSearch("") } }}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>Add transaction to {cat.name}</DialogTitle>
               </DialogHeader>
-              <div className="mt-2 space-y-2 max-h-80 overflow-y-auto">
-                {otherTxs.length === 0 ? (
+              <div className="relative mt-1">
+                <Input
+                  placeholder="Search transactions…"
+                  value={assignSearch}
+                  onChange={(e) => setAssignSearch(e.target.value)}
+                  className="pl-8 text-sm"
+                  autoFocus
+                />
+                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              </div>
+              <div className="mt-1 space-y-2 max-h-72 overflow-y-auto">
+                {filteredTxs.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-6">
-                    No other transactions this month to assign.
+                    {assignSearch ? "No transactions match your search." : "No other transactions this month to assign."}
                   </p>
                 ) : (
-                  otherTxs.map((tx) => (
+                  filteredTxs.map((tx) => (
                     <button
                       key={tx.id}
                       disabled={isAssigning}
