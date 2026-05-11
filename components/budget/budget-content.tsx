@@ -207,12 +207,8 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   // How much % of income is already committed by other categories (excluding the one being edited)
   const otherAllocatedPct = useMemo(() => {
     return categories
-      .filter((c) => c.id !== editingCategory?.id)
-      .reduce((sum, c) => {
-        if (c.type === "percentage") return sum + c.value
-        if (monthlyIncome > 0) return sum + (c.value / monthlyIncome) * 100
-        return sum
-      }, 0)
+      .filter((c) => c.id !== editingCategory?.id && c.type === "percentage")
+      .reduce((sum, c) => sum + c.value, 0)
   }, [categories, editingCategory, monthlyIncome])
 
   const remainingPct = Math.max(0, 100 - otherAllocatedPct)
