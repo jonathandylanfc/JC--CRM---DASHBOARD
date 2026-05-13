@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import ical, { VEvent } from "node-ical"
+import { fetchAndParseIcs } from "@/lib/ics-parser"
 
 export async function GET() {
   const supabase = await createClient()
@@ -22,31 +22,22 @@ export async function GET() {
   const allEvents = await Promise.all(
     subs.map(async (sub) => {
       try {
-        const data = await ical.async.fromURL(sub.ics_url)
-        const events = []
-        for (const key in data) {
-          const component = data[key]
-          if (!component || component.type !== "VEVENT") continue
-          const e = component as VEvent
-          const start = e.start ? new Date(e.start) : null
-          const end = e.end ? new Date(e.end) : null
-          if (!start || start < timeMin || start > timeMax) continue
-          const allDay = e.datetype === "date"
-          events.push({
-            id: `ics-${sub.id}-${key}`,
-            title: e.summary ?? "(No title)",
-            start: start.toISOString(),
-            end: end ? end.toISOString() : null,
-            allDay,
-            location: e.location ?? null,
-            description: e.description ?? null,
+        const parsed = await fetchAndParseIcs(sub.ics_url)
+        return parsed
+          .filter((e) => e.start >= timeMin && e.start <= timeMax)
+          .map((e) => ({
+            id: `ics-${sub.id}-${e.id}`,
+            title: e.title,
+            start: e.start.toISOString(),
+            end: e.end ? e.end.toISOString() : null,
+            allDay: e.allDay,
+            location: e.location,
+            description: e.description,
             color: sub.color,
             htmlLink: null,
             calendarName: sub.name,
             source: "ics" as const,
-          })
-        }
-        return events
+          }))
       } catch {
         return []
       }
@@ -69,13 +60,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Name and URL are required" }, { status: 400 })
   }
 
-  // Normalize webcal:// to https://
+  // Normalize webcal:// → https://
   const normalizedUrl = ics_url.trim().replace(/^webcal:\/\//i, "https://")
 
+  // Validate it's a real ICS feed
   try {
-    await ical.async.fromURL(normalizedUrl)
+    await fetchAndParseIcs(normalizedUrl)
   } catch {
-    return NextResponse.json({ error: "Could not read that calendar URL. Make sure it's a valid .ics link." }, { status: 400 })
+    return NextResponse.json(
+      { error: "Could not read that calendar URL. Make sure it's a valid .ics link." },
+      { status: 400 }
+    )
   }
 
   const { data, error } = await supabase
