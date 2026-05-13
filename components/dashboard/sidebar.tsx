@@ -45,7 +45,7 @@ export function Sidebar() {
             height={32}
             className="rounded-md transition-transform group-hover:scale-110 duration-300"
           />
-          <span className="text-lg font-semibold text-foreground">Dylan Pro</span>
+          <span className="text-lg font-semibold text-foreground">JDpro</span>
         </Link>
       </div>
 
