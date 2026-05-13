@@ -24,12 +24,16 @@ export async function GET() {
       try {
         const parsed = await fetchAndParseIcs(sub.ics_url)
         return parsed
-          .filter((e) => e.start >= timeMin && e.start <= timeMax)
+          .filter((e) => {
+            // Compare by parsing the string for window filtering
+            const d = new Date(e.start)
+            return d >= timeMin && d <= timeMax
+          })
           .map((e) => ({
             id: `ics-${sub.id}-${e.id}`,
             title: e.title,
-            start: e.start.toISOString(),
-            end: e.end ? e.end.toISOString() : null,
+            start: e.start,   // preserve as-is (no Z = local, Z = UTC)
+            end: e.end ?? null,
             allDay: e.allDay,
             location: e.location,
             description: e.description,

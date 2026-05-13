@@ -299,44 +299,43 @@ export function CalendarContent() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Calendars sidebar */}
-        <Card className="p-4 h-fit">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">My Calendars</p>
-          <div className="space-y-1.5">
-            {calendarSources.map((cal) => {
-              const key = cal.id ?? cal.name
-              const hidden = hiddenCalendars.has(key)
-              return (
-                <div key={key} className="flex items-center justify-between gap-2 group">
+      {/* My Calendars — inline pill row */}
+      {calendarSources.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground mr-1">My Calendars:</span>
+          {calendarSources.map((cal) => {
+            const key = cal.id ?? cal.name
+            const hidden = hiddenCalendars.has(key)
+            return (
+              <div key={key} className="flex items-center gap-1 group">
+                <button
+                  onClick={() => toggleCalendar(key)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all ${
+                    hidden
+                      ? "border-border text-muted-foreground bg-transparent opacity-50"
+                      : "border-transparent text-foreground"
+                  }`}
+                  style={{ backgroundColor: hidden ? undefined : cal.color + "22", borderColor: hidden ? undefined : cal.color + "66" }}
+                >
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cal.color, opacity: hidden ? 0.4 : 1 }} />
+                  <span className={hidden ? "line-through" : ""}>{cal.name}</span>
+                </button>
+                {cal.source === "ics" && cal.icsId && (
                   <button
-                    onClick={() => toggleCalendar(key)}
-                    className="flex items-center gap-2 text-sm flex-1 text-left"
+                    onClick={() => handleRemoveIcs(cal.icsId!, cal.name)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive -ml-1"
                   >
-                    <span
-                      className="w-3 h-3 rounded-sm shrink-0 transition-opacity"
-                      style={{ backgroundColor: cal.color, opacity: hidden ? 0.3 : 1 }}
-                    />
-                    <span className={`truncate ${hidden ? "line-through text-muted-foreground" : ""}`}>
-                      {cal.name}
-                    </span>
+                    <Trash2 className="w-3 h-3" />
                   </button>
-                  {cal.source === "ics" && cal.icsId && (
-                    <button
-                      onClick={() => handleRemoveIcs(cal.icsId!, cal.name)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </Card>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
-        {/* Main grid + day panel */}
-        <div className="lg:col-span-3 space-y-6">
+      {/* Main grid + day panel */}
+      <div className="space-y-6">
           {/* Calendar grid */}
           <Card className="p-4 sm:p-6">
             <div className="grid grid-cols-7 mb-2">
@@ -421,7 +420,6 @@ export function CalendarContent() {
               </div>
             )}
           </Card>
-        </div>
       </div>
 
       {/* Upcoming strip */}
