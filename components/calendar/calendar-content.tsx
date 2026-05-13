@@ -51,7 +51,8 @@ interface CalEvent {
   color: string | null
   htmlLink: string | null
   calendarName?: string
-  source?: "google" | "ics"
+  source?: "google" | "ics" | "local"
+  localId?: string
 }
 
 interface CalendarSource {
@@ -98,42 +99,70 @@ export function CalendarContent() {
   const [icsColor, setIcsColor] = useState(COLOR_OPTIONS[0])
   const [addingIcs, setAddingIcs] = useState(false)
 
+  // Add Event dialog
+  const [addEventOpen, setAddEventOpen] = useState(false)
+  const [evTitle, setEvTitle] = useState("")
+  const [evDate, setEvDate] = useState("")
+  const [evStartTime, setEvStartTime] = useState("")
+  const [evEndTime, setEvEndTime] = useState("")
+  const [evLocation, setEvLocation] = useState("")
+  const [evNotes, setEvNotes] = useState("")
+  const [evAllDay, setEvAllDay] = useState(false)
+  const [evColor, setEvColor] = useState("#10b981")
+  const [savingEvent, setSavingEvent] = useState(false)
+
   const fetchAll = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     else setRefreshing(true)
     try {
-      const [gRes, icsRes] = await Promise.all([
+      const [gRes, icsRes, localRes] = await Promise.all([
         fetch("/api/calendar/events"),
         fetch("/api/calendar/ics"),
+        fetch("/api/calendar/local-events"),
       ])
       const gData = await gRes.json()
       const icsData = await icsRes.json()
+      const localData = await localRes.json()
 
       if (gData.error === "not_connected") {
         setConnected(false)
       } else if (gData.events) {
         setConnected(true)
         setGoogleEmail(gData.googleEmail ?? null)
-        setCalendarSources(gData.calendarSources ?? [])
 
         const icsEvents: CalEvent[] = icsData.events ?? []
         const icsSubsList: IcsSub[] = icsData.subscriptions ?? []
         setIcsSubs(icsSubsList)
 
-        // Build ICS calendar sources for sidebar
+        const localEvents: CalEvent[] = (localData.events ?? []).map((e: {
+          id: string; title: string; start_at: string; end_at: string | null;
+          all_day: boolean; location: string | null; notes: string | null; color: string
+        }) => ({
+          id: `local-${e.id}`,
+          localId: e.id,
+          title: e.title,
+          start: e.start_at,
+          end: e.end_at,
+          allDay: e.all_day,
+          location: e.location,
+          description: e.notes,
+          color: e.color,
+          htmlLink: null,
+          calendarName: "My Events",
+          source: "local" as const,
+        }))
+
+        const googleSources = (gData.calendarSources ?? []) as CalendarSource[]
         const icsCalSources: CalendarSource[] = icsSubsList.map((s) => ({
           id: `ics-${s.id}`,
           name: s.name,
           color: s.color,
-          source: "ics",
+          source: "ics" as const,
           icsId: s.id,
         }))
 
-        setCalendarSources((prev) => {
-          const googleSources = (gData.calendarSources ?? []) as CalendarSource[]
-          return [...googleSources, ...icsCalSources]
-        })
-        setEvents([...gData.events, ...icsEvents])
+        setCalendarSources([...googleSources, ...icsCalSources])
+        setEvents([...gData.events, ...icsEvents, ...localEvents])
       }
     } finally {
       setLoading(false)
@@ -182,6 +211,47 @@ export function CalendarContent() {
     } finally {
       setAddingIcs(false)
     }
+  }
+
+  async function handleAddEvent() {
+    if (!evTitle.trim() || !evDate) return
+    setSavingEvent(true)
+    try {
+      const startAt = evAllDay ? `${evDate}T00:00:00` : `${evDate}T${evStartTime || "00:00"}:00`
+      const endAt = evAllDay ? null : evEndTime ? `${evDate}T${evEndTime}:00` : null
+      const res = await fetch("/api/calendar/local-events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: evTitle.trim(),
+          start_at: startAt,
+          end_at: endAt,
+          all_day: evAllDay,
+          location: evLocation.trim() || null,
+          notes: evNotes.trim() || null,
+          color: evColor,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) { toast.error(data.error); return }
+      toast.success(`"${evTitle}" added!`)
+      setAddEventOpen(false)
+      setEvTitle(""); setEvDate(""); setEvStartTime(""); setEvEndTime("")
+      setEvLocation(""); setEvNotes(""); setEvAllDay(false); setEvColor("#10b981")
+      fetchAll(true)
+    } finally {
+      setSavingEvent(false)
+    }
+  }
+
+  async function handleDeleteLocalEvent(localId: string, title: string) {
+    await fetch("/api/calendar/local-events", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: localId }),
+    })
+    toast.success(`"${title}" deleted`)
+    fetchAll(true)
   }
 
   async function handleRemoveIcs(id: string, name: string) {
@@ -287,6 +357,9 @@ export function CalendarContent() {
         </div>
         <div className="flex items-center gap-2">
           {googleEmail && <span className="text-xs text-muted-foreground hidden sm:block">{googleEmail}</span>}
+          <Button size="sm" className="gap-1.5 text-xs h-8" onClick={() => { setEvDate(format(selectedDay, "yyyy-MM-dd")); setAddEventOpen(true) }}>
+            <Plus className="w-3.5 h-3.5" /> Add Event
+          </Button>
           <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" onClick={() => setAddCalOpen(true)}>
             <Plus className="w-3.5 h-3.5" /> Add Calendar
           </Button>
@@ -396,11 +469,18 @@ export function CalendarContent() {
                     <div className="min-w-0 flex-1 space-y-0.5">
                       <div className="flex items-start justify-between gap-1">
                         <p className="text-sm font-medium leading-snug">{e.title}</p>
-                        {e.htmlLink && (
-                          <a href={e.htmlLink} target="_blank" rel="noopener noreferrer" className="shrink-0 text-muted-foreground hover:text-foreground">
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        )}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {e.htmlLink && (
+                            <a href={e.htmlLink} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                          {e.source === "local" && e.localId && (
+                            <button onClick={() => handleDeleteLocalEvent(e.localId!, e.title)} className="text-muted-foreground hover:text-destructive transition-colors">
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{formatEventTime(e)}</Badge>
@@ -445,6 +525,74 @@ export function CalendarContent() {
           </Card>
         )
       })()}
+
+      {/* Add Event dialog */}
+      <Dialog open={addEventOpen} onOpenChange={(o) => { if (!o) { setAddEventOpen(false) } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Event</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-1">
+            <div className="space-y-1.5">
+              <Label>Title</Label>
+              <Input placeholder="Event name" value={evTitle} onChange={(e) => setEvTitle(e.target.value)} autoFocus />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="allday"
+                checked={evAllDay}
+                onChange={(e) => setEvAllDay(e.target.checked)}
+                className="rounded"
+              />
+              <Label htmlFor="allday" className="cursor-pointer font-normal">All day</Label>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5 col-span-2 sm:col-span-1">
+                <Label>Date</Label>
+                <Input type="date" value={evDate} onChange={(e) => setEvDate(e.target.value)} />
+              </div>
+              {!evAllDay && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label>Start time</Label>
+                    <Input type="time" value={evStartTime} onChange={(e) => setEvStartTime(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>End time</Label>
+                    <Input type="time" value={evEndTime} onChange={(e) => setEvEndTime(e.target.value)} />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Location <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input placeholder="Add location" value={evLocation} onChange={(e) => setEvLocation(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input placeholder="Add notes" value={evNotes} onChange={(e) => setEvNotes(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Color</Label>
+              <div className="flex gap-2 flex-wrap">
+                {COLOR_OPTIONS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setEvColor(c)}
+                    className={`w-6 h-6 rounded-full transition-all ${evColor === c ? "ring-2 ring-offset-2 ring-foreground scale-110" : ""}`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </div>
+            <Button className="w-full" onClick={handleAddEvent} disabled={savingEvent || !evTitle.trim() || !evDate}>
+              {savingEvent ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              {savingEvent ? "Saving…" : "Save Event"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Calendar dialog */}
       <Dialog open={addCalOpen} onOpenChange={setAddCalOpen}>
