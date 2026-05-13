@@ -23,7 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight } from "lucide-react"
 import { format, addMonths, subMonths, parseISO } from "date-fns"
 import { toast } from "sonner"
 import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory } from "@/app/budget/actions"
@@ -120,17 +120,22 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   // Assign transaction state
   const [assignCatId, setAssignCatId] = useState<string | null>(null)
   const [assignSearch, setAssignSearch] = useState("")
+  const [moveTx, setMoveTx] = useState<MonthlyTransaction | null>(null)
+  const [moveSearch, setMoveSearch] = useState("")
   const [isAssigning, startAssigning] = useTransition()
 
-  function handleAssign(tx: MonthlyTransaction, catName: string) {
-    startAssigning(async () => {
-      const result = await assignTransactionToCategory(tx.id, tx.title, catName)
-      if (result.error) toast.error(result.error)
-      else {
-        toast.success(`"${tx.title}" → ${catName} (all future matches will auto-sort here)`)
-        setAssignCatId(null)
-        router.refresh()
-      }
+  function handleAssign(tx: MonthlyTransaction, catName: string): Promise<void> {
+    return new Promise((resolve) => {
+      startAssigning(async () => {
+        const result = await assignTransactionToCategory(tx.id, tx.title, catName)
+        if (result.error) toast.error(result.error)
+        else {
+          toast.success(`"${tx.title}" → ${catName} (all future matches will auto-sort here)`)
+          setAssignCatId(null)
+          router.refresh()
+        }
+        resolve()
+      })
     })
   }
 
@@ -504,14 +509,23 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                   {isExpanded && catTxs.length > 0 && (
                     <div className="mt-2 space-y-1.5 border-t pt-2">
                       {catTxs.map((tx) => (
-                        <div key={tx.id} className="flex items-center justify-between gap-2 text-xs">
+                        <div key={tx.id} className="flex items-center justify-between gap-2 text-xs group/tx">
                           <div className="min-w-0">
                             <span className="truncate block text-foreground font-medium" title={tx.title}>{tx.title}</span>
                             <span className="text-muted-foreground">{format(new Date(tx.date + "T12:00:00"), "MMM d")}</span>
                           </div>
-                          <span className="shrink-0 text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
-                            -{currency(Number(tx.amount))}
-                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
+                              -{currency(Number(tx.amount))}
+                            </span>
+                            <button
+                              title="Move to another category"
+                              onClick={() => { setMoveTx(tx); setMoveSearch("") }}
+                              className="opacity-0 group-hover/tx:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                            >
+                              <MoveRight className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -577,6 +591,58 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               </div>
               <p className="text-xs text-muted-foreground pt-1 border-t">
                 Assigning a transaction will also auto-sort all future transactions with the same name into this category.
+              </p>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
+
+      {/* Move transaction dialog */}
+      {moveTx && (() => {
+        const destCategories = categories.filter(
+          (c) => c.name.toLowerCase() !== moveTx.category.toLowerCase()
+        )
+        const filteredDest = moveSearch.trim()
+          ? destCategories.filter((c) => c.name.toLowerCase().includes(moveSearch.toLowerCase()))
+          : destCategories
+        return (
+          <Dialog open={!!moveTx} onOpenChange={(o) => { if (!o) { setMoveTx(null); setMoveSearch("") } }}>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Move "{moveTx.title}"</DialogTitle>
+              </DialogHeader>
+              <p className="text-xs text-muted-foreground -mt-1">
+                Currently in <span className="italic font-medium">{moveTx.category}</span> · {currency(Number(moveTx.amount))}
+              </p>
+              <div className="relative mt-1">
+                <Input
+                  placeholder="Search categories…"
+                  value={moveSearch}
+                  onChange={(e) => setMoveSearch(e.target.value)}
+                  className="pl-8 text-sm"
+                  autoFocus
+                />
+                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              </div>
+              <div className="mt-1 space-y-1.5 max-h-64 overflow-y-auto">
+                {filteredDest.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">No categories match.</p>
+                ) : (
+                  filteredDest.map((c) => (
+                    <button
+                      key={c.id}
+                      disabled={isAssigning}
+                      onClick={() => handleAssign(moveTx, c.name).then(() => setMoveTx(null))}
+                      className="w-full flex items-center justify-between gap-3 p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-all text-left"
+                    >
+                      <span className="text-sm font-medium">{c.name}</span>
+                      <MoveRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    </button>
+                  ))
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground pt-1 border-t">
+                Moving this transaction will also auto-sort all future transactions with the same name into that category.
               </p>
             </DialogContent>
           </Dialog>
