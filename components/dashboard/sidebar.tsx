@@ -9,12 +9,15 @@ import {
   Settings,
   HelpCircle,
   LogOut,
+  Sun,
+  Moon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
+import { useTheme } from "@/components/theme-provider"
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/" },
@@ -33,6 +36,8 @@ const generalItems = [
 export function Sidebar() {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
   const pathname = usePathname()
+  const { theme, setTheme } = useTheme()
+  const isDark = theme === "dark"
 
   return (
     <aside className="fixed top-0 left-0 w-64 bg-card border-r border-border p-4 h-screen overflow-y-auto lg:block">
@@ -101,6 +106,15 @@ export function Sidebar() {
                 </Link>
               )
             })}
+
+            {/* Dark mode toggle */}
+            <button
+              onClick={() => setTheme(isDark ? "light" : "dark")}
+              className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-300 text-muted-foreground hover:bg-secondary hover:text-foreground"
+            >
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              <span className="text-sm">{isDark ? "Light Mode" : "Dark Mode"}</span>
+            </button>
           </nav>
         </div>
       </div>
