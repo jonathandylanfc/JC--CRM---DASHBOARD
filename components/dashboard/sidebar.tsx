@@ -41,8 +41,8 @@ export function Sidebar() {
           <Image
             src="/logo.png"
             alt="Dylan Pro logo"
-            width={32}
-            height={32}
+            width={48}
+            height={48}
             className="rounded-md transition-transform group-hover:scale-110 duration-300"
           />
           <span className="text-lg font-semibold text-foreground">JDpro</span>
