@@ -238,10 +238,32 @@ export async function getBudgetCategories() {
   if (!userId) return []
   const { data } = await supabase
     .from("budget_categories")
-    .select("id, name, type, value, sort_order")
+    .select("id, name, type, value, sort_order, rollover")
     .eq("user_id", userId)
     .order("sort_order", { ascending: true })
   return data ?? []
+}
+
+export async function getSavingsGoals() {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const { data } = await supabase
+    .from("savings_goals")
+    .select("id, name, target_amount, current_amount, target_date, color")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true })
+  return data ?? []
+}
+
+export async function getPaydayDay(): Promise<number | null> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return null
+  const { data } = await supabase
+    .from("profiles")
+    .select("payday_day")
+    .eq("id", userId)
+    .single()
+  return data?.payday_day ?? null
 }
 
 export async function getMonthlyExpenseTransactions(month?: string) {

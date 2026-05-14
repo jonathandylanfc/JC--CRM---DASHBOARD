@@ -50,6 +50,9 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  PieChart,
+  Pie,
+  Cell,
 } from "recharts"
 import {
   createTransaction,
@@ -85,13 +88,24 @@ interface Subscription {
   active: boolean
 }
 
+interface BudgetCat {
+  id: string
+  name: string
+  type: "percentage" | "fixed"
+  value: number
+}
+
 interface FinanceContentProps {
   initialTransactions: Transaction[]
   initialSubscriptions: Subscription[]
   monthlyIncome: number
   monthlyExpenses: number
   initialStartingBalance: number
+  budgetCategories?: BudgetCat[]
+  currentMonthExpenses?: Record<string, number>
 }
+
+const PIE_COLORS = ["#8b5cf6","#3b82f6","#10b981","#f59e0b","#ef4444","#ec4899","#06b6d4","#f97316","#84cc16","#14b8a6"]
 
 function formatDate(dateStr: string) {
   return format(new Date(dateStr + "T12:00:00"), "MMM d, yyyy")
@@ -152,6 +166,8 @@ export function FinanceContent({
   monthlyIncome,
   monthlyExpenses,
   initialStartingBalance,
+  budgetCategories = [],
+  currentMonthExpenses = {},
 }: FinanceContentProps) {
   const router = useRouter()
 
@@ -786,6 +802,113 @@ export function FinanceContent({
           </BarChart>
         </ResponsiveContainer>
       </Card>
+
+      {/* Spending by category + budget alerts */}
+      {(() => {
+        // Compute spending by category for current month from all transactions
+        const now = new Date()
+        const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+        const monthEndStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(monthEnd.getDate()).padStart(2, "0")}`
+
+        const catTotals: Record<string, number> = {}
+        for (const tx of optimisticTransactions) {
+          if (tx.type !== "expense") continue
+          if (tx.date < monthStart || tx.date > monthEndStr) continue
+          const cat = tx.category
+          catTotals[cat] = (catTotals[cat] ?? 0) + Number(tx.amount)
+        }
+
+        const pieData = Object.entries(catTotals)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 10)
+          .map(([name, value]) => ({ name, value }))
+
+        const totalSpent = pieData.reduce((s, d) => s + d.value, 0)
+
+        // Budget alerts
+        const alerts: Array<{ name: string; spent: number; budget: number; pct: number }> = []
+        for (const cat of budgetCategories) {
+          const budget = cat.type === "percentage" ? (cat.value / 100) * monthlyIncome : cat.value
+          if (budget <= 0) continue
+          const spent = currentMonthExpenses[cat.name.toLowerCase()] ?? 0
+          const pct = spent / budget
+          if (pct >= 0.8) alerts.push({ name: cat.name, spent, budget, pct })
+        }
+        alerts.sort((a, b) => b.pct - a.pct)
+
+        if (pieData.length === 0 && alerts.length === 0) return null
+
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Pie chart */}
+            {pieData.length > 0 && (
+              <Card className="p-5">
+                <p className="text-sm font-semibold text-foreground mb-4">This Month — Spending by Category</p>
+                <div className="flex items-center gap-4">
+                  <ResponsiveContainer width={160} height={160}>
+                    <PieChart>
+                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2} dataKey="value">
+                        {pieData.map((_, i) => (
+                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(v: number) => [currency(v), ""]}
+                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1.5px solid #000", background: "#fff", color: "#000" }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="flex-1 space-y-1.5 min-w-0">
+                    {pieData.map((d, i) => (
+                      <div key={d.name} className="flex items-center gap-2 text-xs min-w-0">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                        <span className="flex-1 truncate capitalize text-foreground">{d.name}</span>
+                        <span className="text-muted-foreground shrink-0">{totalSpent > 0 ? ((d.value / totalSpent) * 100).toFixed(0) : 0}%</span>
+                        <span className="font-medium shrink-0">{currency(d.value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* Budget alerts */}
+            {alerts.length > 0 && (
+              <Card className="p-5">
+                <p className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                  Spending Alerts
+                </p>
+                <div className="space-y-3">
+                  {alerts.map((a) => {
+                    const over = a.pct > 1
+                    return (
+                      <div key={a.name}>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="font-medium capitalize">{a.name}</span>
+                          <span className={over ? "text-rose-600 dark:text-rose-400 font-semibold" : "text-amber-600 dark:text-amber-400"}>
+                            {currency(a.spent)} / {currency(a.budget)}
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${over ? "bg-rose-500" : "bg-amber-400"}`}
+                            style={{ width: `${Math.min(a.pct * 100, 100)}%` }}
+                          />
+                        </div>
+                        <p className={`text-[11px] mt-0.5 ${over ? "text-rose-500" : "text-amber-500"}`}>
+                          {over ? `${currency(a.spent - a.budget)} over budget` : `${(a.pct * 100).toFixed(0)}% used — ${currency(a.budget - a.spent)} remaining`}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Connected Banks */}
       <Card className="p-4 sm:p-6">

@@ -23,10 +23,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight } from "lucide-react"
-import { format, addMonths, subMonths, parseISO } from "date-fns"
+import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown } from "lucide-react"
+import { format, addMonths, subMonths, parseISO, differenceInDays } from "date-fns"
 import { toast } from "sonner"
-import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory } from "@/app/budget/actions"
+import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal } from "@/app/budget/actions"
 
 interface BudgetCategory {
   id: string
@@ -34,6 +34,16 @@ interface BudgetCategory {
   type: "percentage" | "fixed"
   value: number
   sort_order: number
+  rollover: boolean
+}
+
+interface SavingsGoal {
+  id: string
+  name: string
+  target_amount: number
+  current_amount: number
+  target_date: string | null
+  color: string
 }
 
 interface MonthlyTransaction {
@@ -49,8 +59,12 @@ interface BudgetContentProps {
   monthlyIncome: number
   expensesByCategory: Record<string, number>
   monthlyTransactions: MonthlyTransaction[]
+  lastMonthExpenses: Record<string, number>
+  initialSavingsGoals: SavingsGoal[]
   currentMonth: string // "yyyy-MM"
 }
+
+const GOAL_COLORS = ["#8b5cf6","#3b82f6","#10b981","#f59e0b","#ef4444","#ec4899","#06b6d4","#f97316"]
 
 type OptimisticAction =
   | { type: "add"; category: BudgetCategory }
@@ -103,9 +117,54 @@ const ONBOARDING_GROUPS = [
   },
 ]
 
-export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, currentMonth }: BudgetContentProps) {
+export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, currentMonth }: BudgetContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+
+  // Savings goals state
+  const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>(initialSavingsGoals)
+  const [goalDialogOpen, setGoalDialogOpen] = useState(false)
+  const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null)
+  const [goalName, setGoalName] = useState("")
+  const [goalTarget, setGoalTarget] = useState("")
+  const [goalCurrent, setGoalCurrent] = useState("")
+  const [goalDate, setGoalDate] = useState("")
+  const [goalColor, setGoalColor] = useState(GOAL_COLORS[0])
+  const [isSavingGoal, startSavingGoal] = useTransition()
+  const [deleteGoalId, setDeleteGoalId] = useState<string | null>(null)
+
+  function openAddGoal() {
+    setEditingGoal(null)
+    setGoalName(""); setGoalTarget(""); setGoalCurrent(""); setGoalDate(""); setGoalColor(GOAL_COLORS[0])
+    setGoalDialogOpen(true)
+  }
+  function openEditGoal(g: SavingsGoal) {
+    setEditingGoal(g)
+    setGoalName(g.name); setGoalTarget(String(g.target_amount)); setGoalCurrent(String(g.current_amount))
+    setGoalDate(g.target_date ?? ""); setGoalColor(g.color)
+    setGoalDialogOpen(true)
+  }
+  function handleGoalSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const fd = new FormData(e.currentTarget)
+    fd.set("color", goalColor)
+    startSavingGoal(async () => {
+      if (editingGoal) {
+        await updateSavingsGoal(editingGoal.id, fd)
+      } else {
+        await createSavingsGoal(fd)
+      }
+      setGoalDialogOpen(false)
+      router.refresh()
+    })
+  }
+  function handleDeleteGoal(id: string) {
+    setDeleteGoalId(null)
+    startSavingGoal(async () => {
+      await deleteSavingsGoal(id)
+      router.refresh()
+    })
+  }
 
   // Month navigation
   const monthDate = parseISO(currentMonth + "-02")
@@ -351,6 +410,173 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         </Card>
       </div>
 
+      {/* Overspend alert banner */}
+      {(() => {
+        const overCats = categories.filter((cat) => {
+          const budgeted = budgetedAmount(cat, monthlyIncome)
+          const actual = expensesByCategory[cat.name.toLowerCase()] ?? 0
+          return budgeted > 0 && actual > budgeted
+        })
+        const warnCats = categories.filter((cat) => {
+          const budgeted = budgetedAmount(cat, monthlyIncome)
+          const actual = expensesByCategory[cat.name.toLowerCase()] ?? 0
+          const pct = budgeted > 0 ? actual / budgeted : 0
+          return budgeted > 0 && pct >= 0.8 && actual <= budgeted
+        })
+        if (overCats.length === 0 && warnCats.length === 0) return null
+        return (
+          <div className="space-y-2">
+            {overCats.length > 0 && (
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800">
+                <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                <div className="text-sm text-rose-700 dark:text-rose-400">
+                  <span className="font-semibold">Over budget: </span>
+                  {overCats.map((c) => c.name).join(", ")}
+                </div>
+              </div>
+            )}
+            {warnCats.length > 0 && (
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-sm text-amber-700 dark:text-amber-400">
+                  <span className="font-semibold">Approaching limit: </span>
+                  {warnCats.map((c) => c.name).join(", ")}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* Savings Goals */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <Target className="w-5 h-5 text-primary" />
+            Savings Goals
+          </h2>
+          <Button size="sm" variant="outline" className="gap-2 bg-transparent" onClick={openAddGoal}>
+            <Plus className="w-4 h-4" />
+            Add Goal
+          </Button>
+        </div>
+        {initialSavingsGoals.length === 0 ? (
+          <Card className="p-5 text-center border-dashed">
+            <Target className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No savings goals yet</p>
+            <Button size="sm" variant="outline" className="mt-3 gap-2 bg-transparent" onClick={openAddGoal}>
+              <Plus className="w-4 h-4" />
+              Create your first goal
+            </Button>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {initialSavingsGoals.map((goal) => {
+              const pct = goal.target_amount > 0 ? Math.min((goal.current_amount / goal.target_amount) * 100, 100) : 0
+              const remaining = goal.target_amount - goal.current_amount
+              const daysLeft = goal.target_date ? differenceInDays(new Date(goal.target_date + "T12:00:00"), new Date()) : null
+              const done = pct >= 100
+              return (
+                <Card key={goal.id} className="p-4 group hover:shadow-md transition-all duration-200">
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ background: goal.color }} />
+                      <p className="font-semibold text-sm text-foreground truncate">{goal.name}</p>
+                    </div>
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-foreground" onClick={() => openEditGoal(goal)}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-destructive" onClick={() => setDeleteGoalId(goal.id)}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="mb-2">
+                    <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                      <span>{currency(goal.current_amount)} saved</span>
+                      <span>{currency(goal.target_amount)} goal</span>
+                    </div>
+                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: goal.color }} />
+                    </div>
+                    <div className="flex justify-between text-xs mt-1">
+                      <span className={done ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground"}>
+                        {done ? "🎉 Goal reached!" : `${pct.toFixed(0)}% — ${currency(remaining)} to go`}
+                      </span>
+                      {daysLeft !== null && !done && (
+                        <span className={`${daysLeft < 0 ? "text-rose-500" : daysLeft < 30 ? "text-amber-500" : "text-muted-foreground"}`}>
+                          {daysLeft < 0 ? `${Math.abs(daysLeft)}d overdue` : `${daysLeft}d left`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Goal add/edit dialog */}
+      <Dialog open={goalDialogOpen} onOpenChange={(o) => { if (!o) setGoalDialogOpen(false) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{editingGoal ? "Edit Goal" : "New Savings Goal"}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleGoalSubmit} className="space-y-3 mt-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="goal-name">Goal name</Label>
+              <Input id="goal-name" name="name" placeholder="e.g. Emergency Fund" value={goalName} onChange={(e) => setGoalName(e.target.value)} required />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="goal-target">Target ($)</Label>
+                <Input id="goal-target" name="target_amount" type="number" step="0.01" min="0" placeholder="5000" value={goalTarget} onChange={(e) => setGoalTarget(e.target.value)} required />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="goal-current">Saved so far ($)</Label>
+                <Input id="goal-current" name="current_amount" type="number" step="0.01" min="0" placeholder="0" value={goalCurrent} onChange={(e) => setGoalCurrent(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="goal-date">Target date <span className="text-muted-foreground">(optional)</span></Label>
+              <Input id="goal-date" name="target_date" type="date" value={goalDate} onChange={(e) => setGoalDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Color</Label>
+              <div className="flex gap-2 flex-wrap">
+                {GOAL_COLORS.map((c) => (
+                  <button key={c} type="button" onClick={() => setGoalColor(c)}
+                    className={`w-6 h-6 rounded-full transition-all ${goalColor === c ? "ring-2 ring-offset-2 ring-foreground scale-110" : ""}`}
+                    style={{ background: c }} />
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => setGoalDialogOpen(false)}>Cancel</Button>
+              <Button type="submit" className="flex-1" disabled={isSavingGoal}>
+                {isSavingGoal ? "Saving…" : editingGoal ? "Save Changes" : "Create Goal"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete goal confirmation */}
+      <AlertDialog open={!!deleteGoalId} onOpenChange={(o) => { if (!o) setDeleteGoalId(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this savings goal?</AlertDialogTitle>
+            <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteGoalId && handleDeleteGoal(deleteGoalId)}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Category list */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -435,6 +661,8 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 (tx) => tx.category.toLowerCase() === cat.name.toLowerCase()
               )
               const isExpanded = expandedIds.has(cat.id)
+              const lastMonthActual = lastMonthExpenses[cat.name.toLowerCase()] ?? 0
+              const momDelta = actual - lastMonthActual
 
               return (
                 <Card key={cat.id} className="p-5 group hover:shadow-md transition-all duration-200">
@@ -442,10 +670,15 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                     <div className="flex items-center gap-3 min-w-0">
                       <div>
                         <p className="font-semibold text-foreground text-sm">{cat.name}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <Badge variant="outline" className="text-[10px] h-4 px-1.5">
                             {cat.type === "percentage" ? `${cat.value}% of income` : `${currency(cat.value)}/mo`}
                           </Badge>
+                          {cat.rollover && (
+                            <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-primary border-primary/40 gap-1">
+                              <RotateCcw className="w-2.5 h-2.5" /> rollover
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -455,8 +688,22 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                         <p className={`text-xs ${over ? "text-rose-600 dark:text-rose-400 font-medium" : "text-muted-foreground"}`}>
                           {currency(actual)} spent
                         </p>
+                        {lastMonthActual > 0 && (
+                          <p className={`text-[11px] flex items-center justify-end gap-0.5 ${momDelta > 0 ? "text-rose-500" : momDelta < 0 ? "text-emerald-500" : "text-muted-foreground"}`}>
+                            {momDelta > 0 ? <TrendingUp className="w-3 h-3" /> : momDelta < 0 ? <TrendingDown className="w-3 h-3" /> : null}
+                            {momDelta === 0 ? "same as last mo" : `${momDelta > 0 ? "+" : ""}${currency(momDelta)} vs last mo`}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost" size="icon"
+                          className={`w-7 h-7 ${cat.rollover ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                          title={cat.rollover ? "Rollover enabled — unused budget carries to next month" : "Enable rollover"}
+                          onClick={() => startTransition(async () => { await toggleBudgetRollover(cat.id, !cat.rollover); router.refresh() })}
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </Button>
                         <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground hover:text-foreground" onClick={() => openEdit(cat)}>
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>

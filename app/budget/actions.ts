@@ -130,3 +130,84 @@ export async function deleteBudgetCategory(id: string) {
   revalidatePath("/budget")
   return { success: true }
 }
+
+export async function toggleBudgetRollover(id: string, rollover: boolean) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { error } = await supabase
+    .from("budget_categories")
+    .update({ rollover })
+    .eq("id", id)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  return { success: true }
+}
+
+export async function createSavingsGoal(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const name = (formData.get("name") as string)?.trim()
+  if (!name) return { error: "Name is required" }
+  const target_amount = parseFloat(formData.get("target_amount") as string)
+  const current_amount = parseFloat((formData.get("current_amount") as string) || "0")
+  const target_date = (formData.get("target_date") as string) || null
+  const color = (formData.get("color") as string) || "#8b5cf6"
+  const { data, error } = await supabase
+    .from("savings_goals")
+    .insert({ user_id: user.id, name, target_amount, current_amount, target_date, color })
+    .select()
+    .single()
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  return { goal: data }
+}
+
+export async function updateSavingsGoal(id: string, formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const name = (formData.get("name") as string)?.trim()
+  const target_amount = parseFloat(formData.get("target_amount") as string)
+  const current_amount = parseFloat((formData.get("current_amount") as string) || "0")
+  const target_date = (formData.get("target_date") as string) || null
+  const color = (formData.get("color") as string) || "#8b5cf6"
+  const { error } = await supabase
+    .from("savings_goals")
+    .update({ name, target_amount, current_amount, target_date, color })
+    .eq("id", id)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  return { success: true }
+}
+
+export async function deleteSavingsGoal(id: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { error } = await supabase
+    .from("savings_goals")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  return { success: true }
+}
+
+export async function setPaydayDay(day: number) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { error } = await supabase
+    .from("profiles")
+    .update({ payday_day: day })
+    .eq("id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  revalidatePath("/calendar")
+  return { success: true }
+}
