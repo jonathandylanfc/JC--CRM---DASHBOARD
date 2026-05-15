@@ -186,8 +186,8 @@ export function CalendarContent() {
       } else {
         // Save to local (app-only) storage
         for (const shift of toAdd) {
-          const startAt = shift.start_time ? `${shift.date}T${shift.start_time}:00` : `${shift.date}T00:00:00`
-          const endAt = shift.end_time ? `${shift.date}T${shift.end_time}:00` : null
+          const startAt = new Date(`${shift.date}T${shift.start_time || "12:00"}:00`).toISOString()
+          const endAt = shift.end_time ? new Date(`${shift.date}T${shift.end_time}:00`).toISOString() : null
           await fetch("/api/calendar/local-events", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -378,8 +378,9 @@ export function CalendarContent() {
     if (!evTitle.trim() || !evDate) return
     setSavingEvent(true)
     try {
-      const startAt = evAllDay ? `${evDate}T00:00:00` : `${evDate}T${evStartTime || "00:00"}:00`
-      const endAt = evAllDay ? null : evEndTime ? `${evDate}T${evEndTime}:00` : null
+      // Use local time → UTC conversion so dates don't shift across timezones
+      const startAt = new Date(`${evDate}T${evAllDay ? "12:00" : (evStartTime || "12:00")}:00`).toISOString()
+      const endAt = (!evAllDay && evEndTime) ? new Date(`${evDate}T${evEndTime}:00`).toISOString() : null
       const res = await fetch("/api/calendar/local-events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
