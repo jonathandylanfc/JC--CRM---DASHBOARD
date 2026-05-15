@@ -82,11 +82,13 @@ export async function POST(req: NextRequest) {
 
       await calendar.events.insert({ calendarId, requestBody: event })
       created.push(shift.title)
-    } catch (err) {
-      console.error("Failed to add shift:", shift.title, err)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error("Failed to add shift:", shift.title, msg)
       errors.push(shift.title)
     }
   }
 
+  console.log("add-shifts result:", { created, errors })
   return NextResponse.json({ created, errors })
 }

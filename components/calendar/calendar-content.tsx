@@ -170,8 +170,19 @@ export function CalendarContent() {
         })
         const data = await res.json()
         if (data.error) { toast.error(data.error); return }
+        const created: string[] = data.created ?? []
+        const failed: string[] = data.errors ?? []
         const calName = calendarSources.find((c) => c.id === selectedCalendarId)?.name ?? "Google Calendar"
-        toast.success(`Added ${toAdd.length} shift${toAdd.length !== 1 ? "s" : ""} to ${calName} — syncing to your phone!`)
+        if (created.length > 0) {
+          toast.success(`Added ${created.length} shift${created.length !== 1 ? "s" : ""} to ${calName} — syncing to your phone!`)
+        }
+        if (failed.length > 0) {
+          toast.error(`Failed to add ${failed.length} shift${failed.length !== 1 ? "s" : ""}: ${failed.join(", ")}. Try reconnecting Google Calendar.`)
+        }
+        if (created.length === 0 && failed.length === 0) {
+          toast.error("No shifts were added. Try reconnecting Google Calendar.")
+        }
+        if (created.length === 0) return
       } else {
         // Save to local (app-only) storage
         for (const shift of toAdd) {
@@ -228,6 +239,10 @@ export function CalendarContent() {
       const data = await res.json()
       if (data.error) { toast.error(data.error); return }
       const calName = calendarSources.find((c) => c.id === sendToGoogleCalId)?.name ?? "Google Calendar"
+      if (data.errors?.length > 0) {
+        toast.error(`Failed to send "${e.title}" to Google Calendar. Try reconnecting.`)
+        return
+      }
       toast.success(`"${e.title}" sent to ${calName} — syncing to your phone!`)
       setSendToGoogleEvent(null)
       fetchAll(true)
