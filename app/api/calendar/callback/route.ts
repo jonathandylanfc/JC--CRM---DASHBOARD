@@ -12,7 +12,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const origin = new URL(req.url).origin
+    const forwardedHost = req.headers.get("x-forwarded-host")
+    const forwardedProto = req.headers.get("x-forwarded-proto") ?? "https"
+    const origin = forwardedHost
+      ? `${forwardedProto}://${forwardedHost}`
+      : new URL(req.url).origin
     const redirectUri = `${origin}/api/calendar/callback`
 
     const oauth2Client = new google.auth.OAuth2(

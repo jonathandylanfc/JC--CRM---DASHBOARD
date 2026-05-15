@@ -1,8 +1,16 @@
 import { google } from "googleapis"
 import { NextRequest, NextResponse } from "next/server"
 
+function getOrigin(req: NextRequest): string {
+  // Railway (and most cloud proxies) set x-forwarded-host
+  const forwardedHost = req.headers.get("x-forwarded-host")
+  const forwardedProto = req.headers.get("x-forwarded-proto") ?? "https"
+  if (forwardedHost) return `${forwardedProto}://${forwardedHost}`
+  return new URL(req.url).origin
+}
+
 export async function GET(req: NextRequest) {
-  const origin = new URL(req.url).origin
+  const origin = getOrigin(req)
   const redirectUri = `${origin}/api/calendar/callback`
 
   const oauth2Client = new google.auth.OAuth2(
