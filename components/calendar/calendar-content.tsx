@@ -24,7 +24,6 @@ import {
   Plus,
   Trash2,
   DollarSign,
-  Bell,
   Settings,
   Upload,
   Check,
@@ -116,13 +115,11 @@ export function CalendarContent() {
   const [connectingIcloud, setConnectingIcloud] = useState(false)
   const [icloudError, setIcloudError] = useState<string | null>(null)
 
-  // Finance events (bills + payday)
-  const [billEvents, setBillEvents] = useState<Array<{ name: string; amount: number; category: string; nextDate: string }>>([])
+  // Finance events (payday)
   const [paydayDay, setPaydayDay] = useState<number | null>(null)
   const [paydayType, setPaydayType] = useState<"monthly" | "biweekly">("monthly")
   const [paydayStartDate, setPaydayStartDate] = useState<string | null>(null)
   const [paydayEvents, setPaydayEvents] = useState<Array<{ date: string }>>([])
-  const [showBills, setShowBills] = useState(true)
   const [showPayday, setShowPayday] = useState(true)
   const [paydayDialogOpen, setPaydayDialogOpen] = useState(false)
   const [paydayInput, setPaydayInput] = useState("")
@@ -362,7 +359,6 @@ export function CalendarContent() {
       setIcloudCalendars(caldavData.calendars ?? [])
 
       // Finance events
-      setBillEvents(finData.bills ?? [])
       setPaydayDay(finData.paydayDay ?? null)
       setPaydayType(finData.paydayType ?? "monthly")
       setPaydayStartDate(finData.paydayStartDate ?? null)
@@ -545,7 +541,6 @@ export function CalendarContent() {
     const dayStr = format(day, "yyyy-MM-dd")
     const dayEvts = visibleEvents.filter((e) => e.start && isSameDay(parseISO(e.start), day))
     const colors = [...new Set(dayEvts.map((e) => e.color ?? "#4285f4"))]
-    if (showBills && billEvents.some((b) => b.nextDate === dayStr)) colors.push("#f59e0b")
     if (showPayday && paydayEvents.some((p) => p.date === dayStr)) colors.push("#10b981")
     return colors.slice(0, 4)
   }
@@ -722,15 +717,6 @@ export function CalendarContent() {
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-muted-foreground mr-1">Finance:</span>
         <button
-          onClick={() => setShowBills((v) => !v)}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all ${
-            showBills ? "border-amber-400/60 bg-amber-400/10 text-foreground" : "border-border text-muted-foreground opacity-50"
-          }`}
-        >
-          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" style={{ opacity: showBills ? 1 : 0.4 }} />
-          <span className={showBills ? "" : "line-through"}>Bill Due Dates</span>
-        </button>
-        <button
           onClick={() => setShowPayday((v) => !v)}
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all ${
             showPayday ? "border-emerald-400/60 bg-emerald-400/10 text-foreground" : "border-border text-muted-foreground opacity-50"
@@ -859,9 +845,8 @@ export function CalendarContent() {
             </div>
             {(() => {
               const dayStr = format(selectedDay, "yyyy-MM-dd")
-              const dayBills = showBills ? billEvents.filter((b) => b.nextDate === dayStr) : []
               const isPayday = showPayday && paydayEvents.some((p) => p.date === dayStr)
-              const hasExtra = dayBills.length > 0 || isPayday
+              const hasExtra = isPayday
               if (dayEvents.length === 0 && !hasExtra) return (
                 <div className="flex flex-col items-center justify-center text-center gap-2 py-8">
                   <CalendarDays className="w-8 h-8 text-muted-foreground/40" />
@@ -876,15 +861,6 @@ export function CalendarContent() {
                       <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">💵 Payday!</p>
                     </div>
                   )}
-                  {dayBills.map((b, i) => (
-                    <div key={i} className="flex gap-3 items-center p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
-                      <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-amber-700 dark:text-amber-300 truncate">{b.name}</p>
-                        <p className="text-xs text-amber-600/70 dark:text-amber-400/70">{new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(b.amount)} due</p>
-                      </div>
-                    </div>
-                  ))}
                   {dayEvents.map((e, i) => (
                     <div key={e.id ?? i} className="flex gap-3 items-start p-3 rounded-lg border border-border hover:border-primary/30 transition-colors">
                       <div className="w-1 rounded-full self-stretch shrink-0 mt-0.5" style={{ backgroundColor: e.color ?? "#4285f4" }} />
@@ -943,17 +919,12 @@ export function CalendarContent() {
           .filter((e) => e.start && parseISO(e.start) >= now)
           .map((e) => ({ type: "event" as const, title: e.title, date: e.start!, color: e.color ?? "#4285f4", allDay: e.allDay }))
 
-        const billUpcoming = showBills ? billEvents
-          .filter((b) => b.nextDate >= format(now, "yyyy-MM-dd"))
-          .map((b) => ({ type: "bill" as const, title: b.name, date: b.nextDate + "T12:00:00", color: "#f59e0b", allDay: true, amount: b.amount }))
-          : []
-
         const paydayUpcoming = showPayday ? paydayEvents
           .filter((p) => p.date >= format(now, "yyyy-MM-dd"))
           .map((p) => ({ type: "payday" as const, title: "💵 Payday", date: p.date + "T12:00:00", color: "#10b981", allDay: true }))
           : []
 
-        const all = [...calUpcoming, ...billUpcoming, ...paydayUpcoming]
+        const all = [...calUpcoming, ...paydayUpcoming]
           .sort((a, b) => a.date.localeCompare(b.date))
           .slice(0, 8)
 
