@@ -101,10 +101,20 @@ export function CalendarContent() {
   const [refreshing, setRefreshing] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
   const [addCalOpen, setAddCalOpen] = useState(false)
+  const [addCalTab, setAddCalTab] = useState<"ics" | "icloud">("ics")
   const [icsName, setIcsName] = useState("")
   const [icsUrl, setIcsUrl] = useState("")
   const [icsColor, setIcsColor] = useState(COLOR_OPTIONS[0])
   const [addingIcs, setAddingIcs] = useState(false)
+
+  // iCloud CalDAV
+  const [icloudConnected, setIcloudConnected] = useState(false)
+  const [icloudEmail, setIcloudEmail] = useState<string | null>(null)
+  const [icloudCalendars, setIcloudCalendars] = useState<Array<{ url: string; displayName: string; color: string }>>([])
+  const [icloudAppleId, setIcloudAppleId] = useState("")
+  const [icloudAppPassword, setIcloudAppPassword] = useState("")
+  const [connectingIcloud, setConnectingIcloud] = useState(false)
+  const [icloudError, setIcloudError] = useState<string | null>(null)
 
   // Finance events (bills + payday)
   const [billEvents, setBillEvents] = useState<Array<{ name: string; amount: number; category: string; nextDate: string }>>([])
@@ -161,7 +171,21 @@ export function CalendarContent() {
     if (!toAdd.length) return
     setAddingShifts(true)
     try {
-      if (selectedCalendarId !== "local") {
+      if (selectedCalendarId.startsWith("icloud:")) {
+        // Add to iCloud calendar
+        const calendarUrl = selectedCalendarId.replace("icloud:", "")
+        const calName = icloudCalendars.find((c) => c.url === calendarUrl)?.displayName ?? "iCloud Calendar"
+        let successCount = 0
+        for (const shift of toAdd) {
+          try {
+            await handleAddToIcloud(calendarUrl, shift)
+            successCount++
+          } catch (err) {
+            toast.error(`Failed to add "${shift.title}" to iCloud: ${err instanceof Error ? err.message : "Unknown error"}`)
+          }
+        }
+        if (successCount > 0) toast.success(`Added ${successCount} shift${successCount !== 1 ? "s" : ""} to ${calName}!`)
+      } else if (selectedCalendarId !== "local") {
         // Add to the chosen Google Calendar
         const res = await fetch("/api/calendar/add-shifts", {
           method: "POST",
@@ -263,20 +287,75 @@ export function CalendarContent() {
   const [evColor, setEvColor] = useState("#10b981")
   const [savingEvent, setSavingEvent] = useState(false)
 
+  async function handleConnectIcloud() {
+    if (!icloudAppleId || !icloudAppPassword) return
+    setConnectingIcloud(true)
+    setIcloudError(null)
+    try {
+      const res = await fetch("/api/calendar/caldav", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "connect", appleId: icloudAppleId, appPassword: icloudAppPassword }),
+      })
+      const data = await res.json()
+      if (data.error) { setIcloudError(data.error); return }
+      toast.success("iCloud Calendar connected!")
+      setAddCalOpen(false)
+      setIcloudAppleId("")
+      setIcloudAppPassword("")
+      fetchAll(true)
+    } finally {
+      setConnectingIcloud(false)
+    }
+  }
+
+  async function handleDisconnectIcloud() {
+    await fetch("/api/calendar/caldav", { method: "DELETE" })
+    setIcloudConnected(false)
+    setIcloudEmail(null)
+    setIcloudCalendars([])
+    toast.success("iCloud Calendar disconnected")
+  }
+
+  async function handleAddToIcloud(calendarUrl: string, shift: { title: string; date: string; start_time?: string; end_time?: string; notes?: string }) {
+    const res = await fetch("/api/calendar/caldav", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "add-event",
+        calendarUrl,
+        title: shift.title,
+        date: shift.date,
+        startTime: shift.start_time,
+        endTime: shift.end_time,
+        notes: shift.notes,
+      }),
+    })
+    const data = await res.json()
+    if (data.error) throw new Error(data.error)
+  }
+
   const fetchAll = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     else setRefreshing(true)
     try {
-      const [gRes, icsRes, localRes, finRes] = await Promise.all([
+      const [gRes, icsRes, localRes, finRes, caldavRes] = await Promise.all([
         fetch("/api/calendar/events"),
         fetch("/api/calendar/ics"),
         fetch("/api/calendar/local-events"),
         fetch("/api/calendar/finance-events"),
+        fetch("/api/calendar/caldav"),
       ])
       const gData = await gRes.json()
       const icsData = await icsRes.json()
       const localData = await localRes.json()
       const finData = await finRes.json()
+      const caldavData = await caldavRes.json()
+
+      // iCloud CalDAV
+      setIcloudConnected(caldavData.connected ?? false)
+      setIcloudEmail(caldavData.appleId ?? null)
+      setIcloudCalendars(caldavData.calendars ?? [])
 
       // Finance events
       setBillEvents(finData.bills ?? [])
@@ -1012,6 +1091,22 @@ export function CalendarContent() {
                     <div className="space-y-1.5 pt-1 border-t">
                       <p className="text-xs font-medium text-muted-foreground">Add to calendar:</p>
                       <div className="flex flex-col gap-1.5">
+                        {icloudCalendars.map((cal) => (
+                          <button
+                            key={cal.url}
+                            onClick={() => setSelectedCalendarId(`icloud:${cal.url}`)}
+                            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm text-left transition-all ${
+                              selectedCalendarId === `icloud:${cal.url}`
+                                ? "border-primary bg-primary/5 font-medium"
+                                : "border-border hover:border-primary/40"
+                            }`}
+                          >
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cal.color }} />
+                            <span className="flex-1 truncate">{cal.displayName}</span>
+                            <span className="text-[10px] text-muted-foreground">iCloud</span>
+                            {selectedCalendarId === `icloud:${cal.url}` && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                          </button>
+                        ))}
                         {calendarSources.filter((c) => c.source === "google").map((cal) => (
                           <button
                             key={cal.id}
@@ -1059,57 +1154,94 @@ export function CalendarContent() {
       </Dialog>
 
       {/* Add Calendar dialog */}
-      <Dialog open={addCalOpen} onOpenChange={setAddCalOpen}>
+      <Dialog open={addCalOpen} onOpenChange={(o) => { setAddCalOpen(o); if (!o) { setIcloudError(null); setAddCalTab("ics") } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Add a Calendar</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground -mt-2">
-            Add any calendar that has a public <span className="font-medium">.ics</span> link — Apple Calendar, subscribed calendars, sports schedules, etc.
-          </p>
 
-          <div className="space-y-4 mt-2">
-            <div className="space-y-1.5">
-              <Label>Calendar name</Label>
-              <Input
-                placeholder="e.g. Apple Calendar, Work, NFL Schedule"
-                value={icsName}
-                onChange={(e) => setIcsName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Calendar URL (.ics link)</Label>
-              <Input
-                placeholder="webcal:// or https://..."
-                value={icsUrl}
-                onChange={(e) => setIcsUrl(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Apple: iCloud.com → Calendar → right-click calendar → Share → Public Calendar → Copy Link
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Color</Label>
-              <div className="flex gap-2 flex-wrap">
-                {COLOR_OPTIONS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setIcsColor(c)}
-                    className={`w-6 h-6 rounded-full transition-all ${icsColor === c ? "ring-2 ring-offset-2 ring-foreground scale-110" : ""}`}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-              </div>
-            </div>
-            <Button
-              className="w-full"
-              onClick={handleAddIcs}
-              disabled={addingIcs || !icsName.trim() || !icsUrl.trim()}
+          {/* Tabs */}
+          <div className="flex gap-1 p-1 bg-muted rounded-lg">
+            <button
+              onClick={() => setAddCalTab("icloud")}
+              className={`flex-1 text-sm py-1.5 rounded-md transition-all ${addCalTab === "icloud" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
             >
-              {addingIcs ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              {addingIcs ? "Verifying…" : "Add Calendar"}
-            </Button>
+              🍎 iCloud
+            </button>
+            <button
+              onClick={() => setAddCalTab("ics")}
+              className={`flex-1 text-sm py-1.5 rounded-md transition-all ${addCalTab === "ics" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              📅 ICS Link
+            </button>
           </div>
+
+          {addCalTab === "icloud" ? (
+            <div className="space-y-4 mt-1">
+              {icloudConnected ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border">
+                    <div>
+                      <p className="text-sm font-medium">Connected</p>
+                      <p className="text-xs text-muted-foreground">{icloudEmail}</p>
+                    </div>
+                    <Button variant="outline" size="sm" className="text-destructive hover:text-destructive bg-transparent" onClick={handleDisconnectIcloud}>
+                      Disconnect
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{icloudCalendars.length} calendar{icloudCalendars.length !== 1 ? "s" : ""} found. You can now add events directly to iCloud when uploading a schedule.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">Connect your iCloud account to add events directly to Apple Calendar.</p>
+                  <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                    <p className="text-xs text-amber-700 dark:text-amber-300 font-medium mb-1">⚠️ Use an App-Specific Password</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400">Do NOT use your main Apple ID password. Generate an app-specific password at <span className="font-medium">appleid.apple.com</span> → Sign-In and Security → App-Specific Passwords.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Apple ID (email)</Label>
+                    <Input placeholder="you@icloud.com" value={icloudAppleId} onChange={(e) => setIcloudAppleId(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>App-Specific Password</Label>
+                    <Input type="password" placeholder="xxxx-xxxx-xxxx-xxxx" value={icloudAppPassword} onChange={(e) => setIcloudAppPassword(e.target.value)} />
+                  </div>
+                  {icloudError && <p className="text-sm text-destructive">{icloudError}</p>}
+                  <Button className="w-full" onClick={handleConnectIcloud} disabled={connectingIcloud || !icloudAppleId || !icloudAppPassword}>
+                    {connectingIcloud ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                    {connectingIcloud ? "Connecting…" : "Connect iCloud"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4 mt-1">
+              <p className="text-sm text-muted-foreground -mt-1">
+                Add any calendar with a public <span className="font-medium">.ics</span> link — subscribed calendars, sports schedules, etc.
+              </p>
+              <div className="space-y-1.5">
+                <Label>Calendar name</Label>
+                <Input placeholder="e.g. Work, NFL Schedule" value={icsName} onChange={(e) => setIcsName(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Calendar URL (.ics link)</Label>
+                <Input placeholder="webcal:// or https://..." value={icsUrl} onChange={(e) => setIcsUrl(e.target.value)} />
+                <p className="text-xs text-muted-foreground">iCloud.com → Calendar → right-click → Share → Public Calendar → Copy Link</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Color</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {COLOR_OPTIONS.map((c) => (
+                    <button key={c} onClick={() => setIcsColor(c)} className={`w-6 h-6 rounded-full transition-all ${icsColor === c ? "ring-2 ring-offset-2 ring-foreground scale-110" : ""}`} style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+              </div>
+              <Button className="w-full" onClick={handleAddIcs} disabled={addingIcs || !icsName.trim() || !icsUrl.trim()}>
+                {addingIcs ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                {addingIcs ? "Verifying…" : "Add Calendar"}
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
