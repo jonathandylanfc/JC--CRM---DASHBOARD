@@ -103,6 +103,7 @@ interface FinanceContentProps {
   initialStartingBalance: number
   budgetCategories?: BudgetCat[]
   currentMonthExpenses?: Record<string, number>
+  connectedBankNames?: string[]
 }
 
 const PIE_COLORS = ["#8b5cf6","#3b82f6","#10b981","#f59e0b","#ef4444","#ec4899","#06b6d4","#f97316","#84cc16","#14b8a6"]
@@ -168,6 +169,7 @@ export function FinanceContent({
   initialStartingBalance,
   budgetCategories = [],
   currentMonthExpenses = {},
+  connectedBankNames = [],
 }: FinanceContentProps) {
   const router = useRouter()
 
@@ -276,11 +278,12 @@ export function FinanceContent({
 
 
   const allAccounts = useMemo(() => {
-    const accounts = new Set(
-      optimisticTransactions.map((tx) => tx.account_name).filter(Boolean) as string[]
-    )
+    const accounts = new Set([
+      ...connectedBankNames,
+      ...(optimisticTransactions.map((tx) => tx.account_name).filter(Boolean) as string[]),
+    ])
     return Array.from(accounts).sort()
-  }, [optimisticTransactions])
+  }, [optimisticTransactions, connectedBankNames])
 
   // Transactions scoped to the selected account (before date/category filters)
   const accountTransactions = useMemo(() => {

@@ -315,3 +315,15 @@ export async function getStartingBalance(): Promise<number> {
     .single()
   return Number(data?.starting_balance ?? 0)
 }
+
+export async function getConnectedBankNames(): Promise<string[]> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const { data } = await supabase
+    .from("plaid_items")
+    .select("institution_name")
+    .eq("user_id", userId)
+  return (data ?? [])
+    .map((row: { institution_name: string | null }) => row.institution_name)
+    .filter((n): n is string => !!n)
+}

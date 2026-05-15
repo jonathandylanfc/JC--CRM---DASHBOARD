@@ -9,10 +9,11 @@ import {
   getStartingBalance,
   getBudgetCategories,
   getMonthlyExpensesByCategory,
+  getConnectedBankNames,
 } from "@/lib/data"
 
 export default async function FinancePage() {
-  const [transactions, subscriptions, financeSummary, user, startingBalance, budgetCategories, currentMonthExpenses] = await Promise.all([
+  const [transactions, subscriptions, financeSummary, user, startingBalance, budgetCategories, currentMonthExpenses, connectedBankNames] = await Promise.all([
     getAllTransactions(),
     getAllSubscriptions(),
     getMonthlyFinanceSummary(),
@@ -20,6 +21,7 @@ export default async function FinancePage() {
     getStartingBalance(),
     getBudgetCategories(),
     getMonthlyExpensesByCategory(),
+    getConnectedBankNames(),
   ])
 
   return (
@@ -43,6 +45,7 @@ export default async function FinancePage() {
             initialStartingBalance={startingBalance}
             budgetCategories={budgetCategories}
             currentMonthExpenses={currentMonthExpenses}
+            connectedBankNames={connectedBankNames}
           />
         </div>
       </main>
