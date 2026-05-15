@@ -119,11 +119,15 @@ export function CalendarContent() {
   // Finance events (bills + payday)
   const [billEvents, setBillEvents] = useState<Array<{ name: string; amount: number; category: string; nextDate: string }>>([])
   const [paydayDay, setPaydayDay] = useState<number | null>(null)
+  const [paydayType, setPaydayType] = useState<"monthly" | "biweekly">("monthly")
+  const [paydayStartDate, setPaydayStartDate] = useState<string | null>(null)
   const [paydayEvents, setPaydayEvents] = useState<Array<{ date: string }>>([])
   const [showBills, setShowBills] = useState(true)
   const [showPayday, setShowPayday] = useState(true)
   const [paydayDialogOpen, setPaydayDialogOpen] = useState(false)
   const [paydayInput, setPaydayInput] = useState("")
+  const [paydayTypeInput, setPaydayTypeInput] = useState<"monthly" | "biweekly">("monthly")
+  const [paydayStartInput, setPaydayStartInput] = useState("")
   const [savingPayday, setSavingPayday] = useState(false)
 
   // Schedule upload
@@ -360,6 +364,8 @@ export function CalendarContent() {
       // Finance events
       setBillEvents(finData.bills ?? [])
       setPaydayDay(finData.paydayDay ?? null)
+      setPaydayType(finData.paydayType ?? "monthly")
+      setPaydayStartDate(finData.paydayStartDate ?? null)
       setPaydayEvents(finData.paydayEvents ?? [])
 
       // Always load local + ICS events regardless of Google connection
@@ -545,14 +551,22 @@ export function CalendarContent() {
   }
 
   async function handleSavePayday() {
-    if (!paydayInput) return
-    const day = parseInt(paydayInput)
-    if (isNaN(day) || day < 1 || day > 31) return
+    if (paydayTypeInput === "monthly") {
+      if (!paydayInput) return
+      const day = parseInt(paydayInput)
+      if (isNaN(day) || day < 1 || day > 31) return
+    } else {
+      if (!paydayStartInput) return
+    }
     setSavingPayday(true)
     await fetch("/api/calendar/finance-events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payday_day: day }),
+      body: JSON.stringify({
+        payday_type: paydayTypeInput,
+        payday_day: paydayTypeInput === "monthly" ? parseInt(paydayInput) : null,
+        payday_start_date: paydayTypeInput === "biweekly" ? paydayStartInput : null,
+      }),
     })
     setSavingPayday(false)
     setPaydayDialogOpen(false)
@@ -726,11 +740,20 @@ export function CalendarContent() {
           <span className={showPayday ? "" : "line-through"}>Payday</span>
         </button>
         <button
-          onClick={() => { setPaydayInput(paydayDay ? String(paydayDay) : ""); setPaydayDialogOpen(true) }}
+          onClick={() => {
+            setPaydayTypeInput(paydayType)
+            setPaydayInput(paydayDay ? String(paydayDay) : "")
+            setPaydayStartInput(paydayStartDate ?? "")
+            setPaydayDialogOpen(true)
+          }}
           className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all"
         >
           <Settings className="w-3 h-3" />
-          {paydayDay ? `Payday: ${paydayDay}${["st","nd","rd"][((paydayDay % 10)-1)] ?? "th"}` : "Set Payday"}
+          {paydayType === "biweekly" && paydayStartDate
+            ? "Payday: Every 2 weeks"
+            : paydayDay
+            ? `Payday: ${paydayDay}${["st","nd","rd"][((paydayDay % 10)-1)] ?? "th"}`
+            : "Set Payday"}
         </button>
       </div>
 
@@ -741,14 +764,43 @@ export function CalendarContent() {
             <DialogTitle>Set Payday</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="payday-day">Day of month (1–31)</Label>
-              <Input id="payday-day" type="number" min="1" max="31" placeholder="e.g. 15" value={paydayInput} onChange={(e) => setPaydayInput(e.target.value)} autoFocus />
-              <p className="text-xs text-muted-foreground">Your payday will appear on the calendar each month.</p>
+            {/* Frequency toggle */}
+            <div className="flex gap-1 p-1 bg-muted rounded-lg">
+              <button
+                onClick={() => setPaydayTypeInput("monthly")}
+                className={`flex-1 text-sm py-1.5 rounded-md transition-all ${paydayTypeInput === "monthly" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Monthly
+              </button>
+              <button
+                onClick={() => setPaydayTypeInput("biweekly")}
+                className={`flex-1 text-sm py-1.5 rounded-md transition-all ${paydayTypeInput === "biweekly" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Every 2 weeks
+              </button>
             </div>
+
+            {paydayTypeInput === "monthly" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="payday-day">Day of month (1–31)</Label>
+                <Input id="payday-day" type="number" min="1" max="31" placeholder="e.g. 15" value={paydayInput} onChange={(e) => setPaydayInput(e.target.value)} autoFocus />
+                <p className="text-xs text-muted-foreground">Payday appears on this day every month.</p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="payday-start">Most recent payday date</Label>
+                <Input id="payday-start" type="date" value={paydayStartInput} onChange={(e) => setPaydayStartInput(e.target.value)} />
+                <p className="text-xs text-muted-foreground">Pick your last payday — the app will calculate every 2 weeks from there.</p>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setPaydayDialogOpen(false)}>Cancel</Button>
-              <Button className="flex-1" onClick={handleSavePayday} disabled={savingPayday || !paydayInput}>
+              <Button
+                className="flex-1"
+                onClick={handleSavePayday}
+                disabled={savingPayday || (paydayTypeInput === "monthly" ? !paydayInput : !paydayStartInput)}
+              >
                 {savingPayday ? "Saving…" : "Save"}
               </Button>
             </div>
