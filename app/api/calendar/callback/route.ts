@@ -2,21 +2,25 @@ import { google } from "googleapis"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
+function getPublicOrigin(req: NextRequest): string {
+  const forwardedHost = req.headers.get("x-forwarded-host")
+  const forwardedProto = req.headers.get("x-forwarded-proto") ?? "https"
+  if (forwardedHost) return `${forwardedProto}://${forwardedHost}`
+  return new URL(req.url).origin
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const code = searchParams.get("code")
   const error = searchParams.get("error")
 
+  const origin = getPublicOrigin(req)
+
   if (error || !code) {
-    return NextResponse.redirect(new URL("/calendar?error=access_denied", req.url))
+    return NextResponse.redirect(`${origin}/calendar?error=access_denied`)
   }
 
   try {
-    const forwardedHost = req.headers.get("x-forwarded-host")
-    const forwardedProto = req.headers.get("x-forwarded-proto") ?? "https"
-    const origin = forwardedHost
-      ? `${forwardedProto}://${forwardedHost}`
-      : new URL(req.url).origin
     const redirectUri = `${origin}/api/calendar/callback`
 
     const oauth2Client = new google.auth.OAuth2(
@@ -27,7 +31,7 @@ export async function GET(req: NextRequest) {
     const { tokens } = await oauth2Client.getToken(code)
 
     if (!tokens.access_token || !tokens.refresh_token) {
-      return NextResponse.redirect(new URL("/calendar?error=missing_tokens", req.url))
+      return NextResponse.redirect(`${origin}/calendar?error=missing_tokens`)
     }
 
     // Get user's Google email
@@ -38,7 +42,7 @@ export async function GET(req: NextRequest) {
     // Store tokens in Supabase
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.redirect(new URL("/login", req.url))
+    if (!user) return NextResponse.redirect(`${origin}/login`)
 
     await supabase.from("calendar_tokens").upsert(
       {
@@ -52,8 +56,8 @@ export async function GET(req: NextRequest) {
       { onConflict: "user_id" },
     )
 
-    return NextResponse.redirect(new URL("/calendar?connected=1", req.url))
+    return NextResponse.redirect(`${origin}/calendar?connected=1`)
   } catch {
-    return NextResponse.redirect(new URL("/calendar?error=auth_failed", req.url))
+    return NextResponse.redirect(`${origin}/calendar?error=auth_failed`)
   }
 }
