@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
-  const body = await req.json() as { shifts: Shift[]; calendarId?: string }
-  const { shifts, calendarId = "primary" } = body
+  const body = await req.json() as { shifts: Shift[]; calendarId?: string; timezone?: string }
+  const { shifts, calendarId = "primary", timezone = "America/New_York" } = body
   if (!shifts?.length) return NextResponse.json({ error: "No shifts provided" }, { status: 400 })
 
   // Get Google OAuth tokens
@@ -67,10 +67,10 @@ export async function POST(req: NextRequest) {
             summary: shift.title,
             description: shift.notes || "Work shift added via JDpro",
             colorId: "6", // orange
-            start: { dateTime: `${shift.date}T${shift.start_time}:00`, timeZone: "America/Los_Angeles" },
+            start: { dateTime: `${shift.date}T${shift.start_time}:00`, timeZone: timezone },
             end: shift.end_time
-              ? { dateTime: `${shift.date}T${shift.end_time}:00`, timeZone: "America/Los_Angeles" }
-              : { dateTime: `${shift.date}T${shift.start_time}:00`, timeZone: "America/Los_Angeles" },
+              ? { dateTime: `${shift.date}T${shift.end_time}:00`, timeZone: timezone }
+              : { dateTime: `${shift.date}T${shift.start_time}:00`, timeZone: timezone },
           }
         : {
             summary: shift.title,

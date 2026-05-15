@@ -166,7 +166,7 @@ export function CalendarContent() {
         const res = await fetch("/api/calendar/add-shifts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ shifts: toAdd, calendarId: selectedCalendarId }),
+          body: JSON.stringify({ shifts: toAdd, calendarId: selectedCalendarId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
         })
         const data = await res.json()
         if (data.error) { toast.error(data.error); return }
@@ -221,6 +221,7 @@ export function CalendarContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           calendarId: sendToGoogleCalId,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           shifts: [{ title: e.title, date: dateStr, start_time: startTime, end_time: endTime, notes: e.description || undefined }],
         }),
       })
