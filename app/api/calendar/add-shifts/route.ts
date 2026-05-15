@@ -61,22 +61,30 @@ export async function POST(req: NextRequest) {
     try {
       const hasTime = !!shift.start_time
 
+      // For all-day events Google Calendar requires end date to be the next day (exclusive)
+      const nextDay = new Date(shift.date + "T12:00:00")
+      nextDay.setDate(nextDay.getDate() + 1)
+      const nextDayStr = nextDay.toISOString().slice(0, 10)
+
+      // Default end time: 1 hour after start if no end_time provided
+      const defaultEndTime = shift.start_time
+        ? `${String(parseInt(shift.start_time.split(":")[0]) + 1).padStart(2, "0")}:${shift.start_time.split(":")[1]}`
+        : undefined
+
       const event = hasTime
         ? {
             summary: shift.title,
             description: shift.notes || "Work shift added via JDpro",
             colorId: "6", // orange
             start: { dateTime: `${shift.date}T${shift.start_time}:00`, timeZone: timezone },
-            end: shift.end_time
-              ? { dateTime: `${shift.date}T${shift.end_time}:00`, timeZone: timezone }
-              : { dateTime: `${shift.date}T${shift.start_time}:00`, timeZone: timezone },
+            end: { dateTime: `${shift.date}T${shift.end_time || defaultEndTime}:00`, timeZone: timezone },
           }
         : {
             summary: shift.title,
             description: shift.notes || "Work shift added via JDpro",
             colorId: "6",
             start: { date: shift.date },
-            end: { date: shift.date },
+            end: { date: nextDayStr },
           }
 
       await calendar.events.insert({ calendarId, requestBody: event })

@@ -98,13 +98,22 @@ Rules:
       ],
     })
 
-    const responseText = (message.content[0] as { type: string; text: string }).text.trim()
+    const firstBlock = message.content[0]
+    if (!firstBlock || firstBlock.type !== "text") {
+      return NextResponse.json({ error: "Unexpected response from AI" }, { status: 422 })
+    }
+    const responseText = firstBlock.text.trim()
 
     // Extract JSON from response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return NextResponse.json({ error: "Could not parse schedule from image" }, { status: 422 })
 
-    const parsed = JSON.parse(jsonMatch[0])
+    let parsed: { events?: unknown[] }
+    try {
+      parsed = JSON.parse(jsonMatch[0])
+    } catch {
+      return NextResponse.json({ error: "Could not parse schedule from image" }, { status: 422 })
+    }
     const events = parsed.events ?? []
 
     // Resolve relative day names to absolute dates

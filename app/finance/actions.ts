@@ -99,7 +99,9 @@ export async function updateTransaction(id: string, formData: FormData) {
 
 export async function deleteTransaction(id: string) {
   const supabase = await createClient()
-  const { error } = await supabase.from("transactions").delete().eq("id", id)
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { error } = await supabase.from("transactions").delete().eq("id", id).eq("user_id", user.id)
   if (error) return { error: error.message }
   revalidatePath("/finance")
   revalidatePath("/")
