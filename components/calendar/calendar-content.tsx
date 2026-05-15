@@ -26,6 +26,9 @@ import {
   DollarSign,
   Bell,
   Settings,
+  Upload,
+  Check,
+  X,
 } from "lucide-react"
 import {
   format,
@@ -111,6 +114,74 @@ export function CalendarContent() {
   const [paydayDialogOpen, setPaydayDialogOpen] = useState(false)
   const [paydayInput, setPaydayInput] = useState("")
   const [savingPayday, setSavingPayday] = useState(false)
+
+  // Schedule upload
+  const [scheduleUploadOpen, setScheduleUploadOpen] = useState(false)
+  const [scheduleImage, setScheduleImage] = useState<File | null>(null)
+  const [schedulePreview, setSchedulePreview] = useState<string | null>(null)
+  const [parsedShifts, setParsedShifts] = useState<Array<{
+    title: string; date: string; start_time?: string; end_time?: string; notes?: string; selected: boolean
+  }>>([])
+  const [parsing, setParsing] = useState(false)
+  const [addingShifts, setAddingShifts] = useState(false)
+  const [parseError, setParseError] = useState<string | null>(null)
+
+  function handleScheduleFile(file: File) {
+    setScheduleImage(file)
+    setSchedulePreview(URL.createObjectURL(file))
+    setParsedShifts([])
+    setParseError(null)
+  }
+
+  async function handleParseSchedule() {
+    if (!scheduleImage) return
+    setParsing(true)
+    setParseError(null)
+    try {
+      const fd = new FormData()
+      fd.append("image", scheduleImage)
+      const res = await fetch("/api/calendar/parse-schedule", { method: "POST", body: fd })
+      const data = await res.json()
+      if (data.error) { setParseError(data.error); return }
+      if (!data.events?.length) { setParseError("No shifts found in this image. Try a clearer screenshot."); return }
+      setParsedShifts(data.events.map((e: { title: string; date: string; start_time?: string; end_time?: string; notes?: string }) => ({ ...e, selected: true })))
+    } finally {
+      setParsing(false)
+    }
+  }
+
+  async function handleAddShifts() {
+    const toAdd = parsedShifts.filter((s) => s.selected)
+    if (!toAdd.length) return
+    setAddingShifts(true)
+    try {
+      for (const shift of toAdd) {
+        const startAt = shift.start_time ? `${shift.date}T${shift.start_time}:00` : `${shift.date}T00:00:00`
+        const endAt = shift.end_time ? `${shift.date}T${shift.end_time}:00` : null
+        await fetch("/api/calendar/local-events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: shift.title,
+            start_at: startAt,
+            end_at: endAt,
+            all_day: !shift.start_time,
+            location: null,
+            notes: shift.notes || null,
+            color: "#f97316",
+          }),
+        })
+      }
+      toast.success(`Added ${toAdd.length} shift${toAdd.length !== 1 ? "s" : ""} to calendar!`)
+      setScheduleUploadOpen(false)
+      setScheduleImage(null)
+      setSchedulePreview(null)
+      setParsedShifts([])
+      fetchAll(true)
+    } finally {
+      setAddingShifts(false)
+    }
+  }
 
   // Add Event dialog
   const [addEventOpen, setAddEventOpen] = useState(false)
@@ -397,6 +468,9 @@ export function CalendarContent() {
           {googleEmail && <span className="text-xs text-muted-foreground hidden sm:block">{googleEmail}</span>}
           <Button size="sm" className="gap-1.5 text-xs h-8" onClick={() => { setEvDate(format(selectedDay, "yyyy-MM-dd")); setAddEventOpen(true) }}>
             <Plus className="w-3.5 h-3.5" /> Add Event
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" onClick={() => { setScheduleUploadOpen(true); setScheduleImage(null); setSchedulePreview(null); setParsedShifts([]); setParseError(null) }}>
+            <Upload className="w-3.5 h-3.5" /> Upload Schedule
           </Button>
           <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" onClick={() => setAddCalOpen(true)}>
             <Plus className="w-3.5 h-3.5" /> Add Calendar
@@ -718,6 +792,108 @@ export function CalendarContent() {
               {savingEvent ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               {savingEvent ? "Saving…" : "Save Event"}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Schedule dialog */}
+      <Dialog open={scheduleUploadOpen} onOpenChange={(o) => { if (!o) setScheduleUploadOpen(false) }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="w-4 h-4" /> Import Work Schedule
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-1">
+            {/* Drop zone */}
+            {!schedulePreview ? (
+              <label
+                className="flex flex-col items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed border-border hover:border-primary/40 hover:bg-muted/30 transition-all cursor-pointer"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleScheduleFile(f) }}
+              >
+                <Upload className="w-8 h-8 text-muted-foreground/50" />
+                <div className="text-center">
+                  <p className="text-sm font-medium">Drop your schedule screenshot here</p>
+                  <p className="text-xs text-muted-foreground mt-1">or click to browse · PNG, JPG, HEIC</p>
+                </div>
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleScheduleFile(f) }} />
+              </label>
+            ) : (
+              <div className="space-y-3">
+                <div className="relative rounded-lg overflow-hidden border border-border max-h-48">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={schedulePreview} alt="Schedule preview" className="w-full object-contain max-h-48" />
+                  <button
+                    onClick={() => { setScheduleImage(null); setSchedulePreview(null); setParsedShifts([]); setParseError(null) }}
+                    className="absolute top-2 right-2 w-6 h-6 rounded-full bg-background/80 flex items-center justify-center hover:bg-background transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {parsedShifts.length === 0 && !parsing && (
+                  <Button className="w-full gap-2" onClick={handleParseSchedule}>
+                    <Upload className="w-4 h-4" /> Parse Schedule with AI
+                  </Button>
+                )}
+
+                {parsing && (
+                  <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Reading your schedule…
+                  </div>
+                )}
+
+                {parseError && (
+                  <p className="text-sm text-destructive text-center">{parseError}</p>
+                )}
+
+                {parsedShifts.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">Found {parsedShifts.length} shift{parsedShifts.length !== 1 ? "s" : ""}</p>
+                      <button
+                        onClick={() => setParsedShifts((prev) => prev.map((s) => ({ ...s, selected: !prev.every((x) => x.selected) })))}
+                        className="text-xs text-primary underline underline-offset-2"
+                      >
+                        {parsedShifts.every((s) => s.selected) ? "Deselect all" : "Select all"}
+                      </button>
+                    </div>
+                    <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                      {parsedShifts.map((shift, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setParsedShifts((prev) => prev.map((s, j) => j === i ? { ...s, selected: !s.selected } : s))}
+                          className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
+                            shift.selected ? "border-primary/40 bg-primary/5" : "border-border opacity-50"
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${shift.selected ? "bg-primary border-primary" : "border-muted-foreground"}`}>
+                            {shift.selected && <Check className="w-2.5 h-2.5 text-primary-foreground" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium">{shift.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(shift.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                              {shift.start_time && ` · ${shift.start_time}${shift.end_time ? ` – ${shift.end_time}` : ""}`}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      className="w-full gap-2"
+                      onClick={handleAddShifts}
+                      disabled={addingShifts || parsedShifts.every((s) => !s.selected)}
+                    >
+                      {addingShifts ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                      {addingShifts ? "Adding…" : `Add ${parsedShifts.filter((s) => s.selected).length} Shift${parsedShifts.filter((s) => s.selected).length !== 1 ? "s" : ""} to Calendar`}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
