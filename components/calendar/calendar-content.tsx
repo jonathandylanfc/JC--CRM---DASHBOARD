@@ -29,6 +29,7 @@ import {
   Upload,
   Check,
   X,
+  Send,
 } from "lucide-react"
 import {
   format,
@@ -125,6 +126,7 @@ export function CalendarContent() {
   const [parsing, setParsing] = useState(false)
   const [addingShifts, setAddingShifts] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
+  const [selectedCalendarId, setSelectedCalendarId] = useState<string>("local")
 
   function handleScheduleFile(file: File) {
     setScheduleImage(file)
@@ -145,6 +147,10 @@ export function CalendarContent() {
       if (data.error) { setParseError(data.error); return }
       if (!data.events?.length) { setParseError("No shifts found in this image. Try a clearer screenshot."); return }
       setParsedShifts(data.events.map((e: { title: string; date: string; start_time?: string; end_time?: string; notes?: string }) => ({ ...e, selected: true })))
+      // Auto-select primary Google Calendar if connected
+      const primary = calendarSources.find((c) => c.source === "google" && c.name === "JC")
+        ?? calendarSources.find((c) => c.source === "google")
+      if (primary?.id) setSelectedCalendarId(primary.id)
     } finally {
       setParsing(false)
     }
@@ -155,24 +161,38 @@ export function CalendarContent() {
     if (!toAdd.length) return
     setAddingShifts(true)
     try {
-      for (const shift of toAdd) {
-        const startAt = shift.start_time ? `${shift.date}T${shift.start_time}:00` : `${shift.date}T00:00:00`
-        const endAt = shift.end_time ? `${shift.date}T${shift.end_time}:00` : null
-        await fetch("/api/calendar/local-events", {
+      if (selectedCalendarId !== "local") {
+        // Add to the chosen Google Calendar
+        const res = await fetch("/api/calendar/add-shifts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: shift.title,
-            start_at: startAt,
-            end_at: endAt,
-            all_day: !shift.start_time,
-            location: null,
-            notes: shift.notes || null,
-            color: "#f97316",
-          }),
+          body: JSON.stringify({ shifts: toAdd, calendarId: selectedCalendarId }),
         })
+        const data = await res.json()
+        if (data.error) { toast.error(data.error); return }
+        const calName = calendarSources.find((c) => c.id === selectedCalendarId)?.name ?? "Google Calendar"
+        toast.success(`Added ${toAdd.length} shift${toAdd.length !== 1 ? "s" : ""} to ${calName} — syncing to your phone!`)
+      } else {
+        // Save to local (app-only) storage
+        for (const shift of toAdd) {
+          const startAt = shift.start_time ? `${shift.date}T${shift.start_time}:00` : `${shift.date}T00:00:00`
+          const endAt = shift.end_time ? `${shift.date}T${shift.end_time}:00` : null
+          await fetch("/api/calendar/local-events", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: shift.title,
+              start_at: startAt,
+              end_at: endAt,
+              all_day: !shift.start_time,
+              location: null,
+              notes: shift.notes || null,
+              color: "#f97316",
+            }),
+          })
+        }
+        toast.success(`Added ${toAdd.length} shift${toAdd.length !== 1 ? "s" : ""} to this app's calendar!`)
       }
-      toast.success(`Added ${toAdd.length} shift${toAdd.length !== 1 ? "s" : ""} to calendar!`)
       setScheduleUploadOpen(false)
       setScheduleImage(null)
       setSchedulePreview(null)
@@ -180,6 +200,38 @@ export function CalendarContent() {
       fetchAll(true)
     } finally {
       setAddingShifts(false)
+    }
+  }
+
+  // Send local event to Google Calendar
+  const [sendToGoogleEvent, setSendToGoogleEvent] = useState<CalEvent | null>(null)
+  const [sendToGoogleCalId, setSendToGoogleCalId] = useState<string>("primary")
+  const [sendingToGoogle, setSendingToGoogle] = useState(false)
+
+  async function handleSendToGoogle() {
+    if (!sendToGoogleEvent) return
+    setSendingToGoogle(true)
+    try {
+      const e = sendToGoogleEvent
+      const dateStr = e.start ? e.start.slice(0, 10) : format(selectedDay, "yyyy-MM-dd")
+      const startTime = e.start && !e.allDay ? e.start.slice(11, 16) : undefined
+      const endTime = e.end && !e.allDay ? e.end.slice(11, 16) : undefined
+      const res = await fetch("/api/calendar/add-shifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          calendarId: sendToGoogleCalId,
+          shifts: [{ title: e.title, date: dateStr, start_time: startTime, end_time: endTime, notes: e.description || undefined }],
+        }),
+      })
+      const data = await res.json()
+      if (data.error) { toast.error(data.error); return }
+      const calName = calendarSources.find((c) => c.id === sendToGoogleCalId)?.name ?? "Google Calendar"
+      toast.success(`"${e.title}" sent to ${calName} — syncing to your phone!`)
+      setSendToGoogleEvent(null)
+      fetchAll(true)
+    } finally {
+      setSendingToGoogle(false)
     }
   }
 
@@ -661,9 +713,20 @@ export function CalendarContent() {
                               </a>
                             )}
                             {e.source === "local" && e.localId && (
-                              <button onClick={() => handleDeleteLocalEvent(e.localId!, e.title)} className="text-muted-foreground hover:text-destructive transition-colors">
-                                <Trash2 className="w-3 h-3" />
-                              </button>
+                              <>
+                                {connected && (
+                                  <button
+                                    title="Send to Google Calendar"
+                                    onClick={() => { setSendToGoogleEvent(e); setSendToGoogleCalId(calendarSources.find((c) => c.source === "google")?.id ?? "primary") }}
+                                    className="text-muted-foreground hover:text-blue-500 transition-colors"
+                                  >
+                                    <Send className="w-3 h-3" />
+                                  </button>
+                                )}
+                                <button onClick={() => handleDeleteLocalEvent(e.localId!, e.title)} className="text-muted-foreground hover:text-destructive transition-colors">
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -727,6 +790,52 @@ export function CalendarContent() {
           </Card>
         )
       })()}
+
+      {/* Send to Google Calendar dialog */}
+      <Dialog open={!!sendToGoogleEvent} onOpenChange={(o) => { if (!o) setSendToGoogleEvent(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="w-4 h-4" /> Send to Google Calendar
+            </DialogTitle>
+          </DialogHeader>
+          {sendToGoogleEvent && (
+            <div className="space-y-4 mt-1">
+              <div className="p-3 rounded-lg bg-muted/50 border border-border">
+                <p className="text-sm font-medium">{sendToGoogleEvent.title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{formatEventTime(sendToGoogleEvent)}</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Choose calendar:</Label>
+                <div className="flex flex-col gap-1.5">
+                  {calendarSources.filter((c) => c.source === "google").map((cal) => (
+                    <button
+                      key={cal.id}
+                      onClick={() => setSendToGoogleCalId(cal.id ?? "primary")}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm text-left transition-all ${
+                        sendToGoogleCalId === cal.id
+                          ? "border-primary bg-primary/5 font-medium"
+                          : "border-border hover:border-primary/40"
+                      }`}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cal.color }} />
+                      <span className="flex-1 truncate">{cal.name}</span>
+                      {sendToGoogleCalId === cal.id && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setSendToGoogleEvent(null)}>Cancel</Button>
+                <Button className="flex-1 gap-2" onClick={handleSendToGoogle} disabled={sendingToGoogle}>
+                  {sendingToGoogle ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {sendingToGoogle ? "Sending…" : "Send to Google"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Add Event dialog */}
       <Dialog open={addEventOpen} onOpenChange={(o) => { if (!o) { setAddEventOpen(false) } }}>
@@ -882,6 +991,40 @@ export function CalendarContent() {
                         </button>
                       ))}
                     </div>
+                    {/* Calendar destination picker */}
+                    <div className="space-y-1.5 pt-1 border-t">
+                      <p className="text-xs font-medium text-muted-foreground">Add to calendar:</p>
+                      <div className="flex flex-col gap-1.5">
+                        {calendarSources.filter((c) => c.source === "google").map((cal) => (
+                          <button
+                            key={cal.id}
+                            onClick={() => setSelectedCalendarId(cal.id ?? "local")}
+                            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm text-left transition-all ${
+                              selectedCalendarId === cal.id
+                                ? "border-primary bg-primary/5 font-medium"
+                                : "border-border hover:border-primary/40"
+                            }`}
+                          >
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cal.color }} />
+                            <span className="flex-1 truncate">{cal.name}</span>
+                            {selectedCalendarId === cal.id && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setSelectedCalendarId("local")}
+                          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm text-left transition-all ${
+                            selectedCalendarId === "local"
+                              ? "border-primary bg-primary/5 font-medium"
+                              : "border-border hover:border-primary/40"
+                          }`}
+                        >
+                          <span className="w-2.5 h-2.5 rounded-full bg-muted-foreground shrink-0" />
+                          <span className="flex-1">This app only (not synced to phone)</span>
+                          {selectedCalendarId === "local" && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                        </button>
+                      </div>
+                    </div>
+
                     <Button
                       className="w-full gap-2"
                       onClick={handleAddShifts}
