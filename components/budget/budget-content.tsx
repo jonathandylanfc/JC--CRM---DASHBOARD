@@ -26,7 +26,7 @@ import {
 import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown } from "lucide-react"
 import { format, addMonths, subMonths, parseISO, differenceInDays } from "date-fns"
 import { toast } from "sonner"
-import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal } from "@/app/budget/actions"
+import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution } from "@/app/budget/actions"
 
 interface BudgetCategory {
   id: string
@@ -44,6 +44,8 @@ interface SavingsGoal {
   current_amount: number
   target_date: string | null
   color: string
+  monthly_contribution_type: "fixed" | "percentage" | null
+  monthly_contribution_value: number | null
 }
 
 interface MonthlyTransaction {
@@ -131,24 +133,38 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const [goalCurrent, setGoalCurrent] = useState("")
   const [goalDate, setGoalDate] = useState("")
   const [goalColor, setGoalColor] = useState(GOAL_COLORS[0])
+  const [goalContribType, setGoalContribType] = useState<"fixed" | "percentage">("fixed")
+  const [goalContribValue, setGoalContribValue] = useState("")
+  const [goalContribEnabled, setGoalContribEnabled] = useState(false)
   const [isSavingGoal, startSavingGoal] = useTransition()
   const [deleteGoalId, setDeleteGoalId] = useState<string | null>(null)
 
   function openAddGoal() {
     setEditingGoal(null)
     setGoalName(""); setGoalTarget(""); setGoalCurrent(""); setGoalDate(""); setGoalColor(GOAL_COLORS[0])
+    setGoalContribEnabled(false); setGoalContribType("fixed"); setGoalContribValue("")
     setGoalDialogOpen(true)
   }
   function openEditGoal(g: SavingsGoal) {
     setEditingGoal(g)
     setGoalName(g.name); setGoalTarget(String(g.target_amount)); setGoalCurrent(String(g.current_amount))
     setGoalDate(g.target_date ?? ""); setGoalColor(g.color)
+    setGoalContribEnabled(!!g.monthly_contribution_type)
+    setGoalContribType(g.monthly_contribution_type ?? "fixed")
+    setGoalContribValue(g.monthly_contribution_value != null ? String(g.monthly_contribution_value) : "")
     setGoalDialogOpen(true)
   }
   function handleGoalSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
     fd.set("color", goalColor)
+    if (goalContribEnabled && goalContribValue) {
+      fd.set("monthly_contribution_type", goalContribType)
+      fd.set("monthly_contribution_value", goalContribValue)
+    } else {
+      fd.delete("monthly_contribution_type")
+      fd.delete("monthly_contribution_value")
+    }
     startSavingGoal(async () => {
       if (editingGoal) {
         await updateSavingsGoal(editingGoal.id, fd)
@@ -156,6 +172,19 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         await createSavingsGoal(fd)
       }
       setGoalDialogOpen(false)
+      router.refresh()
+    })
+  }
+
+  function handleLogContribution(goal: SavingsGoal) {
+    if (!goal.monthly_contribution_type || !goal.monthly_contribution_value) return
+    const amount = goal.monthly_contribution_type === "percentage"
+      ? (monthlyIncome * goal.monthly_contribution_value) / 100
+      : goal.monthly_contribution_value
+    startSavingGoal(async () => {
+      const result = await logGoalContribution(goal.id, amount)
+      if (result.error) { toast.error(result.error); return }
+      toast.success(`+${currency(amount)} logged to "${goal.name}"`)
       router.refresh()
     })
   }
@@ -477,6 +506,19 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               const remaining = goal.target_amount - goal.current_amount
               const daysLeft = goal.target_date ? differenceInDays(new Date(goal.target_date + "T12:00:00"), new Date()) : null
               const done = pct >= 100
+
+              // Monthly contribution amount in dollars
+              const monthlyAmount = goal.monthly_contribution_type === "percentage" && goal.monthly_contribution_value != null
+                ? (monthlyIncome * goal.monthly_contribution_value) / 100
+                : goal.monthly_contribution_type === "fixed" && goal.monthly_contribution_value != null
+                ? goal.monthly_contribution_value
+                : null
+
+              // Estimated months to complete goal
+              const monthsLeft = monthlyAmount && monthlyAmount > 0 && !done
+                ? Math.ceil(remaining / monthlyAmount)
+                : null
+
               return (
                 <Card key={goal.id} className="p-4 group hover:shadow-md transition-all duration-200">
                   <div className="flex items-start justify-between gap-2 mb-3">
@@ -512,6 +554,31 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                       )}
                     </div>
                   </div>
+
+                  {/* Monthly contribution row */}
+                  {monthlyAmount != null && !done && (
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/50 mt-2">
+                      <div className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">{currency(monthlyAmount)}/mo</span>
+                        {goal.monthly_contribution_type === "percentage" && (
+                          <span className="ml-1">({goal.monthly_contribution_value}% of income)</span>
+                        )}
+                        {monthsLeft !== null && (
+                          <span className="ml-1 text-muted-foreground">· ~{monthsLeft} mo to go</span>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-xs px-2 gap-1 bg-transparent shrink-0"
+                        disabled={isSavingGoal}
+                        onClick={() => handleLogContribution(goal)}
+                      >
+                        <Plus className="w-3 h-3" />
+                        Log
+                      </Button>
+                    </div>
+                  )}
                 </Card>
               )
             })}
@@ -544,6 +611,51 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               <Label htmlFor="goal-date">Target date <span className="text-muted-foreground">(optional)</span></Label>
               <Input id="goal-date" name="target_date" type="date" value={goalDate} onChange={(e) => setGoalDate(e.target.value)} />
             </div>
+            {/* Monthly contribution */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm">Monthly contribution <span className="text-muted-foreground">(optional)</span></Label>
+                <button
+                  type="button"
+                  onClick={() => setGoalContribEnabled((v) => !v)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${goalContribEnabled ? "bg-primary" : "bg-muted"}`}
+                >
+                  <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${goalContribEnabled ? "translate-x-4" : "translate-x-0"}`} />
+                </button>
+              </div>
+              {goalContribEnabled && (
+                <div className="flex gap-2">
+                  <div className="flex rounded-md border border-input overflow-hidden shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setGoalContribType("fixed")}
+                      className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${goalContribType === "fixed" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                    >$</button>
+                    <button
+                      type="button"
+                      onClick={() => setGoalContribType("percentage")}
+                      className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${goalContribType === "percentage" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                    >%</button>
+                  </div>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={goalContribType === "percentage" ? "100" : undefined}
+                    placeholder={goalContribType === "percentage" ? "e.g. 10" : "e.g. 200"}
+                    value={goalContribValue}
+                    onChange={(e) => setGoalContribValue(e.target.value)}
+                    className="flex-1"
+                  />
+                </div>
+              )}
+              {goalContribEnabled && goalContribValue && goalContribType === "percentage" && monthlyIncome > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  = {currency((monthlyIncome * parseFloat(goalContribValue || "0")) / 100)}/mo based on your income
+                </p>
+              )}
+            </div>
+
             <div className="space-y-1.5">
               <Label>Color</Label>
               <div className="flex gap-2 flex-wrap">

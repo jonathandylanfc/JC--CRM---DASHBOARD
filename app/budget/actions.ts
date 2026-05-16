@@ -155,9 +155,13 @@ export async function createSavingsGoal(formData: FormData) {
   const current_amount = parseFloat((formData.get("current_amount") as string) || "0")
   const target_date = (formData.get("target_date") as string) || null
   const color = (formData.get("color") as string) || "#8b5cf6"
+  const monthly_contribution_type = (formData.get("monthly_contribution_type") as string) || null
+  const monthly_contribution_value = formData.get("monthly_contribution_value")
+    ? parseFloat(formData.get("monthly_contribution_value") as string)
+    : null
   const { data, error } = await supabase
     .from("savings_goals")
-    .insert({ user_id: user.id, name, target_amount, current_amount, target_date, color })
+    .insert({ user_id: user.id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value })
     .select()
     .single()
   if (error) return { error: error.message }
@@ -174,14 +178,40 @@ export async function updateSavingsGoal(id: string, formData: FormData) {
   const current_amount = parseFloat((formData.get("current_amount") as string) || "0")
   const target_date = (formData.get("target_date") as string) || null
   const color = (formData.get("color") as string) || "#8b5cf6"
+  const monthly_contribution_type = (formData.get("monthly_contribution_type") as string) || null
+  const monthly_contribution_value = formData.get("monthly_contribution_value")
+    ? parseFloat(formData.get("monthly_contribution_value") as string)
+    : null
   const { error } = await supabase
     .from("savings_goals")
-    .update({ name, target_amount, current_amount, target_date, color })
+    .update({ name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value })
     .eq("id", id)
     .eq("user_id", user.id)
   if (error) return { error: error.message }
   revalidatePath("/budget")
   return { success: true }
+}
+
+export async function logGoalContribution(id: string, amount: number) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { data: goal } = await supabase
+    .from("savings_goals")
+    .select("current_amount, target_amount")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single()
+  if (!goal) return { error: "Goal not found" }
+  const newAmount = Math.min(Number(goal.current_amount) + amount, Number(goal.target_amount))
+  const { error } = await supabase
+    .from("savings_goals")
+    .update({ current_amount: newAmount })
+    .eq("id", id)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  return { success: true, newAmount }
 }
 
 export async function deleteSavingsGoal(id: string) {

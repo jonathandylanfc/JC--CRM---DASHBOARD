@@ -249,7 +249,7 @@ export async function getSavingsGoals() {
   if (!userId) return []
   const { data } = await supabase
     .from("savings_goals")
-    .select("id, name, target_amount, current_amount, target_date, color")
+    .select("id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value")
     .eq("user_id", userId)
     .order("created_at", { ascending: true })
   return data ?? []
