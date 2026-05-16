@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createDAVClient } from "tsdav"
+import { parseIcs } from "@/lib/ics-parser"
 
 async function getDAVClient(appleId: string, appPassword: string) {
   return createDAVClient({
@@ -11,7 +12,7 @@ async function getDAVClient(appleId: string, appPassword: string) {
   })
 }
 
-// GET — list iCloud calendars (or return connection status)
+// GET — list iCloud calendars and fetch their events
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -28,14 +29,64 @@ export async function GET() {
   try {
     const client = await getDAVClient(creds.apple_id, creds.app_password)
     const calendars = await client.fetchCalendars()
+
+    // Fetch events for the next 60 days + past 30 days
+    const timeMin = new Date()
+    timeMin.setDate(timeMin.getDate() - 30)
+    const timeMax = new Date()
+    timeMax.setDate(timeMax.getDate() + 60)
+
+    const calendarList = calendars.map((c) => ({
+      url: c.url,
+      displayName: c.displayName ?? "iCloud Calendar",
+      color: (c as { calendarColor?: string }).calendarColor ?? "#157EFB",
+    }))
+
+    // Fetch events from all calendars in parallel
+    const eventsPerCal = await Promise.all(
+      calendars.map(async (cal) => {
+        const calColor = (cal as { calendarColor?: string }).calendarColor ?? "#157EFB"
+        const calName = cal.displayName ?? "iCloud Calendar"
+        try {
+          const objects = await client.fetchCalendarObjects({
+            calendar: cal,
+            timeRange: {
+              start: timeMin.toISOString(),
+              end: timeMax.toISOString(),
+            },
+          })
+          const events = objects.flatMap((obj) => {
+            if (!obj.data) return []
+            try {
+              return parseIcs(obj.data).map((e) => ({
+                id: `caldav-${e.id}`,
+                title: e.title,
+                start: e.start,
+                end: e.end ?? null,
+                allDay: e.allDay,
+                location: e.location,
+                description: e.description,
+                color: calColor,
+                htmlLink: null,
+                calendarName: calName,
+                source: "ics" as const,
+              }))
+            } catch {
+              return []
+            }
+          })
+          return events
+        } catch {
+          return []
+        }
+      })
+    )
+
     return NextResponse.json({
       connected: true,
       appleId: creds.apple_id,
-      calendars: calendars.map((c) => ({
-        url: c.url,
-        displayName: c.displayName ?? "iCloud Calendar",
-        color: (c as { calendarColor?: string }).calendarColor ?? "#157EFB",
-      })),
+      calendars: calendarList,
+      events: eventsPerCal.flat(),
     })
   } catch {
     return NextResponse.json({ connected: false, error: "Invalid credentials" })

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useOptimistic, useTransition, useMemo } from "react"
+import { useState, useEffect, useOptimistic, useTransition, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -121,8 +121,9 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
-  // Savings goals state
+  // Savings goals state — sync when server re-renders with fresh props
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>(initialSavingsGoals)
+  useEffect(() => { setSavingsGoals(initialSavingsGoals) }, [initialSavingsGoals])
   const [goalDialogOpen, setGoalDialogOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null)
   const [goalName, setGoalName] = useState("")
@@ -460,7 +461,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
             Add Goal
           </Button>
         </div>
-        {initialSavingsGoals.length === 0 ? (
+        {savingsGoals.length === 0 ? (
           <Card className="p-5 text-center border-dashed">
             <Target className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">No savings goals yet</p>
@@ -471,7 +472,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           </Card>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {initialSavingsGoals.map((goal) => {
+            {savingsGoals.map((goal) => {
               const pct = goal.target_amount > 0 ? Math.min((goal.current_amount / goal.target_amount) * 100, 100) : 0
               const remaining = goal.target_amount - goal.current_amount
               const daysLeft = goal.target_date ? differenceInDays(new Date(goal.target_date + "T12:00:00"), new Date()) : null

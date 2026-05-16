@@ -93,7 +93,13 @@ export function CalendarContent() {
   const [events, setEvents] = useState<CalEvent[]>([])
   const [calendarSources, setCalendarSources] = useState<CalendarSource[]>([])
   const [icsSubs, setIcsSubs] = useState<IcsSub[]>([])
-  const [hiddenCalendars, setHiddenCalendars] = useState<Set<string>>(new Set())
+  const [hiddenCalendars, setHiddenCalendars] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set()
+    try {
+      const saved = localStorage.getItem("hiddenCalendars")
+      return saved ? new Set(JSON.parse(saved) as string[]) : new Set()
+    } catch { return new Set() }
+  })
   const [googleEmail, setGoogleEmail] = useState<string | null>(null)
   const [connected, setConnected] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
@@ -358,6 +364,7 @@ export function CalendarContent() {
       setIcloudConnected(caldavData.connected ?? false)
       setIcloudEmail(caldavData.appleId ?? null)
       setIcloudCalendars(caldavData.calendars ?? [])
+      const caldavEvents: CalEvent[] = caldavData.events ?? []
 
       // Finance events
       setPaydayDay(finData.paydayDay ?? null)
@@ -399,13 +406,13 @@ export function CalendarContent() {
       if (gData.error === "not_connected") {
         setConnected(false)
         setCalendarSources([...icsCalSources])
-        setEvents([...icsEvents, ...localEvents])
+        setEvents([...icsEvents, ...caldavEvents, ...localEvents])
       } else if (gData.events) {
         setConnected(true)
         setGoogleEmail(gData.googleEmail ?? null)
         const googleSources = (gData.calendarSources ?? []) as CalendarSource[]
         setCalendarSources([...googleSources, ...icsCalSources])
-        setEvents([...gData.events, ...icsEvents, ...localEvents])
+        setEvents([...gData.events, ...icsEvents, ...caldavEvents, ...localEvents])
       }
     } finally {
       setLoading(false)
@@ -513,6 +520,7 @@ export function CalendarContent() {
       const next = new Set(prev)
       if (next.has(calId)) next.delete(calId)
       else next.add(calId)
+      try { localStorage.setItem("hiddenCalendars", JSON.stringify(Array.from(next))) } catch {}
       return next
     })
   }
