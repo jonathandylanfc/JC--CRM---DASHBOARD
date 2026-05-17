@@ -92,10 +92,15 @@ export async function POST(req: NextRequest) {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error("Failed to add shift:", shift.title, msg)
-      errors.push(shift.title)
+      // Detect insufficient scope / auth errors so the client can prompt reconnect
+      const isAuthError = /insufficient/i.test(msg) || /forbidden/i.test(msg) || /401|403/.test(msg) || /invalid_grant/i.test(msg)
+      errors.push(isAuthError ? "__auth_error__" : shift.title)
     }
   }
 
-  console.log("add-shifts result:", { created, errors })
+  const hasAuthError = errors.some((e) => e === "__auth_error__")
+  if (hasAuthError) {
+    return NextResponse.json({ error: "reconnect_required", created, errors })
+  }
   return NextResponse.json({ created, errors })
 }

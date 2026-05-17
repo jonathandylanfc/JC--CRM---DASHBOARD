@@ -269,10 +269,15 @@ export function CalendarContent() {
         }),
       })
       const data = await res.json()
+      if (data.error === "reconnect_required") {
+        toast.error("Google Calendar needs write permission. Please disconnect and reconnect your Google account in the Calendar settings.", { duration: 6000 })
+        setSendToGoogleEvent(null)
+        return
+      }
       if (data.error) { toast.error(data.error); return }
       const calName = calendarSources.find((c) => c.id === sendToGoogleCalId)?.name ?? "Google Calendar"
       if (data.errors?.length > 0) {
-        toast.error(`Failed to send "${e.title}" to Google Calendar. Try reconnecting.`)
+        toast.error(`Failed to send "${e.title}" to Google Calendar. Try disconnecting and reconnecting your Google account.`)
         return
       }
       toast.success(`"${e.title}" sent to ${calName} — syncing to your phone!`)
