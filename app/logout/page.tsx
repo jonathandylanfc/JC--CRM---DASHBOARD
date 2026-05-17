@@ -25,7 +25,7 @@ export default function LogoutPage() {
         <Sidebar />
       </div>
 
-      <main className="flex-1 p-4 lg:p-6 lg:ml-64">
+      <main className="flex-1 min-w-0 overflow-x-hidden p-4 lg:p-6 lg:ml-64">
         <Header title="Logout" description="" />
 
         <div className="flex items-center justify-center min-h-[calc(100vh-100px)]">

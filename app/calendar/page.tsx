@@ -10,7 +10,7 @@ export default async function CalendarPage() {
       <div className="hidden lg:block">
         <Sidebar />
       </div>
-      <main className="flex-1 p-3 md:p-4 lg:p-5 lg:ml-64">
+      <main className="flex-1 min-w-0 overflow-x-hidden p-3 md:p-4 lg:p-5 lg:ml-64">
         <Header
           title="Calendar"
           description="Schedule and track your events and meetings."

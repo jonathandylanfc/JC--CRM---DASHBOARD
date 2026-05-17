@@ -1,6 +1,6 @@
 "use client"
 
-import { Search, Bell, AlertTriangle, CheckCircle2, Info, DollarSign, PiggyBank, Calendar, TrendingDown } from "lucide-react"
+import { Search, Bell, AlertTriangle, CheckCircle2, Info, DollarSign, PiggyBank, Calendar, TrendingDown, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -38,6 +38,10 @@ export function Header({ title, description, actions, user }: HeaderProps) {
     : "ME"
 
   const [notifications, setNotifications] = useState<AppNotification[]>([])
+  const [dismissed, setDismissed] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set()
+    try { return new Set(JSON.parse(localStorage.getItem("dismissedNotifications") ?? "[]")) } catch { return new Set() }
+  })
   const [open, setOpen] = useState(false)
   const [seen, setSeen] = useState(false)
 
@@ -48,11 +52,21 @@ export function Header({ title, description, actions, user }: HeaderProps) {
       .catch(() => {})
   }, [])
 
-  const unread = notifications.length > 0 && !seen
+  const visible = notifications.filter((n) => !dismissed.has(n.id))
+  const unread = visible.length > 0 && !seen
 
   function handleOpen(isOpen: boolean) {
     setOpen(isOpen)
     if (isOpen) setSeen(true)
+  }
+
+  function dismiss(id: string) {
+    setDismissed((prev) => {
+      const next = new Set(prev)
+      next.add(id)
+      try { localStorage.setItem("dismissedNotifications", JSON.stringify(Array.from(next))) } catch {}
+      return next
+    })
   }
 
   return (
@@ -80,9 +94,9 @@ export function Header({ title, description, actions, user }: HeaderProps) {
                 {unread && (
                   <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-destructive rounded-full animate-pulse" />
                 )}
-                {notifications.length > 0 && seen && (
+                {visible.length > 0 && seen && (
                   <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-0.5 bg-destructive text-destructive-foreground text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
-                    {notifications.length}
+                    {visible.length}
                   </span>
                 )}
               </Button>
@@ -90,24 +104,24 @@ export function Header({ title, description, actions, user }: HeaderProps) {
             <PopoverContent align="end" className="w-80 p-0 shadow-xl" sideOffset={8}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                 <p className="font-semibold text-sm">Notifications</p>
-                {notifications.length > 0 && (
-                  <span className="text-xs text-muted-foreground">{notifications.length} alert{notifications.length !== 1 ? "s" : ""}</span>
+                {visible.length > 0 && (
+                  <span className="text-xs text-muted-foreground">{visible.length} alert{visible.length !== 1 ? "s" : ""}</span>
                 )}
               </div>
 
-              {notifications.length === 0 ? (
+              {visible.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 gap-2 text-center px-4">
                   <CheckCircle2 className="w-8 h-8 text-emerald-500/40" />
                   <p className="text-sm font-medium text-foreground">All caught up</p>
                   <p className="text-xs text-muted-foreground">No alerts right now. We'll let you know when something needs attention.</p>
                 </div>
               ) : (
-                <div className="divide-y divide-border max-h-[420px] overflow-y-auto">
-                  {notifications.map((n) => {
+                <div className="max-h-[420px] overflow-y-auto p-2 space-y-1.5">
+                  {visible.map((n) => {
                     const { icon: SeverityIcon, color, bg } = SEVERITY_STYLES[n.severity]
                     const TypeIcon = TYPE_ICONS[n.type]
                     return (
-                      <div key={n.id} className={`flex gap-3 px-4 py-3 ${bg} border-l-2 m-2 rounded-lg`}>
+                      <div key={n.id} className={`flex gap-3 px-3 py-2.5 ${bg} border-l-2 rounded-lg`}>
                         <div className={`mt-0.5 shrink-0 ${color}`}>
                           <TypeIcon className="w-4 h-4" />
                         </div>
@@ -115,9 +129,13 @@ export function Header({ title, description, actions, user }: HeaderProps) {
                           <p className="text-xs font-semibold text-foreground leading-tight">{n.title}</p>
                           <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{n.message}</p>
                         </div>
-                        <div className={`shrink-0 mt-0.5 ${color}`}>
-                          <SeverityIcon className="w-3 h-3" />
-                        </div>
+                        <button
+                          onClick={() => dismiss(n.id)}
+                          className="shrink-0 mt-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                          title="Dismiss"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     )
                   })}

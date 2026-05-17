@@ -30,7 +30,7 @@ export default async function FinancePage() {
         <Sidebar />
       </div>
 
-      <main className="flex-1 p-3 md:p-4 lg:p-5 lg:ml-64">
+      <main className="flex-1 min-w-0 overflow-x-hidden p-3 md:p-4 lg:p-5 lg:ml-64">
         <Header
           title="Finance"
           description="Track your income, expenses, and subscriptions."

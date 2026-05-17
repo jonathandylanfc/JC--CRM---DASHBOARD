@@ -115,10 +115,13 @@ export async function GET() {
   }
 
   // ── 3. Recurring bills due in next 7 days ───────────────────────────────────
+  // Only flag actual bill-like categories, not food/shopping/etc.
+  const BILL_CATEGORIES = new Set(["bills", "subscriptions", "insurance", "housing", "car", "utilities", "health", "fitness"])
+
   const threeMonthsAgo = format(addMonths(today, -3), "yyyy-MM-dd")
   const { data: transactions } = await supabase
     .from("transactions")
-    .select("title, amount, date")
+    .select("title, amount, category, date")
     .eq("user_id", user.id)
     .eq("type", "expense")
     .gte("date", threeMonthsAgo)
@@ -126,6 +129,8 @@ export async function GET() {
 
   const groups = new Map<string, { title: string; dates: string[] }>()
   for (const tx of transactions ?? []) {
+    // Skip non-bill categories
+    if (!BILL_CATEGORIES.has((tx.category ?? "").toLowerCase())) continue
     const key = `${tx.title.toLowerCase().trim()}|${Number(tx.amount).toFixed(2)}`
     if (!groups.has(key)) groups.set(key, { title: tx.title, dates: [] })
     groups.get(key)!.dates.push(tx.date)
