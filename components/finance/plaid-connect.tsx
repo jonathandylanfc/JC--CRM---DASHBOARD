@@ -4,6 +4,15 @@ import { useCallback, useEffect, useState } from "react"
 import { usePlaidLink } from "react-plaid-link"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog"
 import { Loader2, RefreshCw, Trash2, Building2, Plus } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
@@ -66,6 +75,8 @@ export function PlaidConnect({ onSync }: Props) {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
+  const [disconnectTarget, setDisconnectTarget] = useState<PlaidItem | null>(null)
+  const [disconnecting, setDisconnecting] = useState(false)
 
   const fetchItems = useCallback(async () => {
     const res = await fetch("/api/plaid/sync")
@@ -118,14 +129,26 @@ export function PlaidConnect({ onSync }: Props) {
     }
   }
 
-  async function handleDisconnect(item: PlaidItem) {
-    await fetch("/api/plaid/disconnect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ item_id: item.item_id }),
-    })
-    toast.success(`${item.institution_name ?? "Bank"} disconnected`)
-    fetchItems()
+  async function confirmDisconnect(deleteTransactions: boolean) {
+    if (!disconnectTarget) return
+    setDisconnecting(true)
+    try {
+      await fetch("/api/plaid/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_id: disconnectTarget.item_id, delete_transactions: deleteTransactions }),
+      })
+      toast.success(
+        deleteTransactions
+          ? `${disconnectTarget.institution_name ?? "Bank"} disconnected and transactions deleted`
+          : `${disconnectTarget.institution_name ?? "Bank"} disconnected`
+      )
+      setDisconnectTarget(null)
+      onSync?.()
+      fetchItems()
+    } finally {
+      setDisconnecting(false)
+    }
   }
 
   if (loading) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading connected banks…</div>
@@ -171,7 +194,7 @@ export function PlaidConnect({ onSync }: Props) {
                       variant="ghost"
                       size="icon"
                       className="w-8 h-8 text-muted-foreground hover:text-destructive"
-                      onClick={() => handleDisconnect(item)}
+                      onClick={() => setDisconnectTarget(item)}
                       title="Disconnect"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -194,6 +217,37 @@ export function PlaidConnect({ onSync }: Props) {
         )}
         {connecting && <span className="text-xs text-muted-foreground">Connecting…</span>}
       </div>
+
+      <AlertDialog open={!!disconnectTarget} onOpenChange={(o) => { if (!o && !disconnecting) setDisconnectTarget(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect {disconnectTarget?.institution_name ?? "Bank"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Do you also want to delete all transactions imported from{" "}
+              <span className="font-medium text-foreground">{disconnectTarget?.institution_name ?? "this bank"}</span>?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel disabled={disconnecting}>Cancel</AlertDialogCancel>
+            <Button
+              variant="outline"
+              disabled={disconnecting}
+              onClick={() => confirmDisconnect(false)}
+            >
+              {disconnecting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Disconnect only
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={disconnecting}
+              onClick={() => confirmDisconnect(true)}
+            >
+              {disconnecting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Disconnect &amp; delete transactions
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
