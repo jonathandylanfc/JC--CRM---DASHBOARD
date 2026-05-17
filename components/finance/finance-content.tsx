@@ -652,49 +652,53 @@ export function FinanceContent({
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Account + date range selectors */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col gap-3">
       {allAccounts.length > 0 && (
-        <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-fit">
-          <button
-            onClick={() => setSelectedAccount(null)}
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
-              !selectedAccount
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            All Accounts
-          </button>
-          {allAccounts.map((acc) => (
+        <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
+          <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-max min-w-full">
             <button
-              key={acc}
-              onClick={() => setSelectedAccount(acc)}
+              onClick={() => setSelectedAccount(null)}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
-                selectedAccount === acc
+                !selectedAccount
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {acc}
+              All Accounts
             </button>
-          ))}
+            {allAccounts.map((acc) => (
+              <button
+                key={acc}
+                onClick={() => setSelectedAccount(acc)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
+                  selectedAccount === acc
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {acc}
+              </button>
+            ))}
+          </div>
         </div>
       )}
       {/* Date range selector */}
-      <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-fit">
-        {DATE_RANGES.map((r) => (
-          <button
-            key={r.value}
-            onClick={() => changeRange(r.value)}
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
-              dateRange === r.value
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
+      <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
+        <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-max">
+          {DATE_RANGES.map((r) => (
+            <button
+              key={r.value}
+              onClick={() => changeRange(r.value)}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
+                dateRange === r.value
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
       </div>
       </div>
 
