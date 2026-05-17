@@ -319,11 +319,22 @@ export async function getStartingBalance(): Promise<number> {
 export async function getConnectedBankNames(): Promise<string[]> {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return []
-  const { data } = await supabase
+  // Return per-account labels (e.g. "Bank of America – Checking (••1234)")
+  const { data: items } = await supabase
     .from("plaid_items")
-    .select("institution_name")
+    .select("id, institution_name, plaid_accounts(account_id, name, mask)")
     .eq("user_id", userId)
-  return (data ?? [])
-    .map((row: { institution_name: string | null }) => row.institution_name)
-    .filter((n): n is string => !!n)
+  const labels: string[] = []
+  for (const item of items ?? []) {
+    const accounts = (item as { plaid_accounts?: { account_id: string; name: string; mask: string | null }[] }).plaid_accounts ?? []
+    if (accounts.length === 0) {
+      if (item.institution_name) labels.push(item.institution_name)
+    } else {
+      for (const acct of accounts) {
+        const base = item.institution_name ?? "Bank"
+        labels.push(acct.mask ? `${base} – ${acct.name} (••${acct.mask})` : `${base} – ${acct.name}`)
+      }
+    }
+  }
+  return labels
 }

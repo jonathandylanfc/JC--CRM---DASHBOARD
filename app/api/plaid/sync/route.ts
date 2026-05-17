@@ -53,6 +53,21 @@ export async function POST(req: NextRequest) {
   let totalAdded = 0
 
   for (const item of items) {
+    // Build account_id → display label map for this item
+    const { data: plaidAccounts } = await supabase
+      .from("plaid_accounts")
+      .select("account_id, name, mask")
+      .eq("plaid_item_id", item.id)
+
+    const accountLabelMap = new Map<string, string>()
+    for (const acct of plaidAccounts ?? []) {
+      const base = item.institution_name ?? "Bank"
+      const label = acct.mask
+        ? `${base} – ${acct.name} (••${acct.mask})`
+        : `${base} – ${acct.name}`
+      accountLabelMap.set(acct.account_id, label)
+    }
+
     // Get cursor
     const { data: cursorRow } = await supabase
       .from("plaid_sync_cursors")
@@ -63,14 +78,12 @@ export async function POST(req: NextRequest) {
     let cursor = cursorRow?.cursor ?? undefined
     let hasMore = true
     const toInsert: Array<{
-      user_id: string
       title: string
       amount: number
       type: string
       category: string
       date: string
-      notes: string | null
-      account_name: string | null
+      account_name: string
     }> = []
 
     while (hasMore) {
@@ -81,24 +94,24 @@ export async function POST(req: NextRequest) {
       const { added, next_cursor, has_more } = res.data
 
       for (const tx of added) {
-        // Skip pending
         if (tx.pending) continue
 
-        const isIncome = tx.amount < 0 // Plaid uses negative for credits
+        const isIncome = tx.amount < 0
         const amount = Math.abs(tx.amount)
         const rawTitle = tx.merchant_name ?? tx.name
         const title = rawTitle.slice(0, 255)
         const category = mappings.get(title.toLowerCase()) ?? plaidCategory(tx.category ?? null)
-        const accountName = item.institution_name ?? "Bank"
+        // Use per-account label; fall back to institution name if account not found
+        const accountName = accountLabelMap.get(tx.account_id)
+          ?? item.institution_name
+          ?? "Bank"
 
         toInsert.push({
-          user_id: user.id,
           title,
           amount,
           type: isIncome ? "income" : "expense",
           category,
           date: tx.date,
-          notes: null,
           account_name: accountName,
         })
       }
@@ -108,19 +121,28 @@ export async function POST(req: NextRequest) {
     }
 
     if (toInsert.length > 0) {
-      // Use RPC to insert with balance tracking (same as CSV import)
-      await (supabase as any).rpc("import_transactions_with_balance", {
-        p_user_id: user.id,
-        p_rows: toInsert.map((t) => ({
-          title: t.title,
-          amount: t.amount,
-          type: t.type,
-          category: t.category,
-          date: t.date,
-          balance: null,
-        })),
-        p_account_name: item.institution_name ?? "Bank",
-      })
+      // Group by account_name and call RPC once per account
+      const byAccount = new Map<string, typeof toInsert>()
+      for (const tx of toInsert) {
+        const group = byAccount.get(tx.account_name) ?? []
+        group.push(tx)
+        byAccount.set(tx.account_name, group)
+      }
+
+      for (const [accountName, txs] of byAccount) {
+        await (supabase as any).rpc("import_transactions_with_balance", {
+          p_user_id: user.id,
+          p_rows: txs.map((t) => ({
+            title: t.title,
+            amount: t.amount,
+            type: t.type,
+            category: t.category,
+            date: t.date,
+            balance: null,
+          })),
+          p_account_name: accountName,
+        })
+      }
       totalAdded += toInsert.length
     }
 
