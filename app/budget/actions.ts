@@ -22,10 +22,12 @@ export async function createBudgetCategory(formData: FormData) {
     .select("*", { count: "exact", head: true })
     .eq("user_id", user.id)
 
+  const is_catchall = formData.get("is_catchall") === "true"
+
   const { data, error } = await supabase
     .from("budget_categories")
-    .insert({ user_id: user.id, name, type, value, sort_order: count ?? 0 })
-    .select("id, name, type, value, sort_order")
+    .insert({ user_id: user.id, name, type, value, sort_order: count ?? 0, is_catchall })
+    .select("id, name, type, value, sort_order, is_catchall")
     .single()
 
   if (error) return { error: error.message }
@@ -47,12 +49,14 @@ export async function updateBudgetCategory(id: string, formData: FormData) {
   const value = parseFloat(formData.get("value") as string)
   if (isNaN(value) || value < 0) return { error: "Valid value is required" }
 
+  const is_catchall = formData.get("is_catchall") === "true"
+
   const { data, error } = await supabase
     .from("budget_categories")
-    .update({ name, type, value })
+    .update({ name, type, value, is_catchall })
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, name, type, value, sort_order")
+    .select("id, name, type, value, sort_order, is_catchall")
     .single()
 
   if (error) return { error: error.message }

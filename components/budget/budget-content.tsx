@@ -35,6 +35,7 @@ interface BudgetCategory {
   value: number
   sort_order: number
   rollover: boolean
+  is_catchall: boolean
 }
 
 interface SavingsGoal {
@@ -279,12 +280,14 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const [formName, setFormName] = useState("")
   const [formType, setFormType] = useState<"percentage" | "fixed">("percentage")
   const [formValue, setFormValue] = useState("")
+  const [formCatchall, setFormCatchall] = useState(false)
 
   function openAdd() {
     setEditingCategory(null)
     setFormName("")
     setFormType("percentage")
     setFormValue("")
+    setFormCatchall(false)
     setFormError(null)
     setDialogOpen(true)
   }
@@ -294,6 +297,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setFormName(cat.name)
     setFormType(cat.type)
     setFormValue(String(cat.value))
+    setFormCatchall(cat.is_catchall ?? false)
     setFormError(null)
     setDialogOpen(true)
   }
@@ -311,6 +315,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     e.preventDefault()
     setFormError(null)
     const fd = new FormData(e.currentTarget)
+    fd.set("is_catchall", String(formCatchall))
 
     // Cap only applies to percentage types
     const val = parseFloat(formValue)
@@ -325,6 +330,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         name: formName,
         type: formType,
         value: parseFloat(formValue),
+        is_catchall: formCatchall,
       }
       setDialogOpen(false)
       startTransition(async () => {
@@ -340,6 +346,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         type: formType,
         value: parseFloat(formValue),
         sort_order: categories.length,
+        is_catchall: formCatchall,
       }
       setDialogOpen(false)
       startTransition(async () => {
@@ -362,12 +369,20 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   }
 
   // Summary calculations
-  const { totalBudgeted, totalPercent, unallocatedDollars } = useMemo(() => {
+  const { totalBudgeted, totalPercent, unallocatedDollars, catchallSpending } = useMemo(() => {
     const totalBudgeted = categories.reduce((sum, cat) => sum + budgetedAmount(cat, monthlyIncome), 0)
     const totalPercent = monthlyIncome > 0 ? (totalBudgeted / monthlyIncome) * 100 : 0
     const unallocatedDollars = Math.max(0, monthlyIncome - totalBudgeted)
-    return { totalBudgeted, totalPercent, unallocatedDollars }
-  }, [categories, monthlyIncome])
+
+    // Catch-all spending = total expenses minus what's claimed by named (non-catchall) categories
+    const namedSpending = categories
+      .filter((c) => !c.is_catchall)
+      .reduce((sum, c) => sum + (expensesByCategory[c.name.toLowerCase()] ?? 0), 0)
+    const totalExpenses = Object.values(expensesByCategory).reduce((s, v) => s + v, 0)
+    const catchallSpending = Math.max(0, totalExpenses - namedSpending)
+
+    return { totalBudgeted, totalPercent, unallocatedDollars, catchallSpending }
+  }, [categories, monthlyIncome, expensesByCategory])
 
   const overBudget = totalBudgeted > monthlyIncome && monthlyIncome > 0
 
@@ -444,12 +459,12 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       {(() => {
         const overCats = categories.filter((cat) => {
           const budgeted = budgetedAmount(cat, monthlyIncome)
-          const actual = expensesByCategory[cat.name.toLowerCase()] ?? 0
+          const actual = cat.is_catchall ? catchallSpending : (expensesByCategory[cat.name.toLowerCase()] ?? 0)
           return budgeted > 0 && actual > budgeted
         })
         const warnCats = categories.filter((cat) => {
           const budgeted = budgetedAmount(cat, monthlyIncome)
-          const actual = expensesByCategory[cat.name.toLowerCase()] ?? 0
+          const actual = cat.is_catchall ? catchallSpending : (expensesByCategory[cat.name.toLowerCase()] ?? 0)
           const pct = budgeted > 0 ? actual / budgeted : 0
           return budgeted > 0 && pct >= 0.8 && actual <= budgeted
         })
@@ -765,12 +780,18 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           <div className="space-y-3">
             {categories.map((cat) => {
               const budgeted = budgetedAmount(cat, monthlyIncome)
-              const actual = expensesByCategory[cat.name.toLowerCase()] ?? 0
+              const actual = cat.is_catchall
+                ? catchallSpending
+                : (expensesByCategory[cat.name.toLowerCase()] ?? 0)
               const pct = budgeted > 0 ? Math.min((actual / budgeted) * 100, 100) : 0
               const over = actual > budgeted && budgeted > 0
               const warn = pct >= 80 && !over
 
-              const catTxs = monthlyTransactions.filter(
+              // Catch-all shows all transactions not claimed by other named categories
+              const namedCatNames = new Set(categories.filter((c) => !c.is_catchall).map((c) => c.name.toLowerCase()))
+              const catTxs = cat.is_catchall
+                ? monthlyTransactions.filter((tx) => !namedCatNames.has(tx.category.toLowerCase()))
+                : monthlyTransactions.filter(
                 (tx) => tx.category.toLowerCase() === cat.name.toLowerCase()
               )
               const isExpanded = expandedIds.has(cat.id)
@@ -790,6 +811,11 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                           {cat.rollover && (
                             <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-primary border-primary/40 gap-1">
                               <RotateCcw className="w-2.5 h-2.5" /> rollover
+                            </Badge>
+                          )}
+                          {cat.is_catchall && (
+                            <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-violet-600 dark:text-violet-400 border-violet-300 dark:border-violet-700 gap-1">
+                              catch-all
                             </Badge>
                           )}
                         </div>
@@ -1097,6 +1123,21 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                   = {((parseFloat(formValue) / monthlyIncome) * 100).toFixed(1)}% of this month's income
                 </p>
               )}
+            </div>
+
+            {/* Catch-all toggle */}
+            <div className="flex items-center justify-between rounded-lg border border-border p-3 bg-muted/30">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">Catch-all category</p>
+                <p className="text-xs text-muted-foreground">All spending not assigned to another category flows here automatically</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormCatchall((v) => !v)}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${formCatchall ? "bg-primary" : "bg-muted"}`}
+              >
+                <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${formCatchall ? "translate-x-4" : "translate-x-0"}`} />
+              </button>
             </div>
 
             {formError && <p className="text-sm text-destructive">{formError}</p>}
