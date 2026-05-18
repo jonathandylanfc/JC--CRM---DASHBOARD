@@ -23,11 +23,12 @@ export async function createBudgetCategory(formData: FormData) {
     .eq("user_id", user.id)
 
   const is_catchall = formData.get("is_catchall") === "true"
+  const linked_account = (formData.get("linked_account") as string) || null
 
   const { data, error } = await supabase
     .from("budget_categories")
-    .insert({ user_id: user.id, name, type, value, sort_order: count ?? 0, is_catchall })
-    .select("id, name, type, value, sort_order, is_catchall")
+    .insert({ user_id: user.id, name, type, value, sort_order: count ?? 0, is_catchall, linked_account })
+    .select("id, name, type, value, sort_order, is_catchall, linked_account")
     .single()
 
   if (error) return { error: error.message }
@@ -50,13 +51,14 @@ export async function updateBudgetCategory(id: string, formData: FormData) {
   if (isNaN(value) || value < 0) return { error: "Valid value is required" }
 
   const is_catchall = formData.get("is_catchall") === "true"
+  const linked_account = (formData.get("linked_account") as string) || null
 
   const { data, error } = await supabase
     .from("budget_categories")
-    .update({ name, type, value, is_catchall })
+    .update({ name, type, value, is_catchall, linked_account })
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, name, type, value, sort_order, is_catchall")
+    .select("id, name, type, value, sort_order, is_catchall, linked_account")
     .single()
 
   if (error) return { error: error.message }

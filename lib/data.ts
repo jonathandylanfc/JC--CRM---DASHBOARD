@@ -238,10 +238,33 @@ export async function getBudgetCategories() {
   if (!userId) return []
   const { data } = await supabase
     .from("budget_categories")
-    .select("id, name, type, value, sort_order, rollover, is_catchall")
+    .select("id, name, type, value, sort_order, rollover, is_catchall, linked_account")
     .eq("user_id", userId)
     .order("sort_order", { ascending: true })
   return data ?? []
+}
+
+export async function getMonthlyAccountGrowth(month?: string): Promise<Record<string, number>> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return {}
+  const base = month ? new Date(month + "-02") : new Date()
+  const monthStart = format(startOfMonth(base), "yyyy-MM-dd")
+  const monthEnd = format(endOfMonth(base), "yyyy-MM-dd")
+  const { data } = await supabase
+    .from("transactions")
+    .select("amount, type, account_name")
+    .eq("user_id", userId)
+    .gte("date", monthStart)
+    .lte("date", monthEnd)
+    .not("account_name", "is", null)
+  if (!data) return {}
+  const result: Record<string, number> = {}
+  for (const tx of data) {
+    if (!tx.account_name) continue
+    const delta = tx.type === "income" ? Number(tx.amount) : -Number(tx.amount)
+    result[tx.account_name] = (result[tx.account_name] ?? 0) + delta
+  }
+  return result
 }
 
 export async function getSavingsGoals() {

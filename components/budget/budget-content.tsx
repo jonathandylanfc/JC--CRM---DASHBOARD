@@ -36,6 +36,7 @@ interface BudgetCategory {
   sort_order: number
   rollover: boolean
   is_catchall: boolean
+  linked_account: string | null
 }
 
 interface SavingsGoal {
@@ -64,6 +65,8 @@ interface BudgetContentProps {
   monthlyTransactions: MonthlyTransaction[]
   lastMonthExpenses: Record<string, number>
   initialSavingsGoals: SavingsGoal[]
+  accountGrowth: Record<string, number>
+  connectedBankNames: string[]
   currentMonth: string // "yyyy-MM"
 }
 
@@ -120,7 +123,7 @@ const ONBOARDING_GROUPS = [
   },
 ]
 
-export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, currentMonth }: BudgetContentProps) {
+export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, accountGrowth, connectedBankNames, currentMonth }: BudgetContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -281,6 +284,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const [formType, setFormType] = useState<"percentage" | "fixed">("percentage")
   const [formValue, setFormValue] = useState("")
   const [formCatchall, setFormCatchall] = useState(false)
+  const [formLinkedAccount, setFormLinkedAccount] = useState<string>("")
 
   function openAdd() {
     setEditingCategory(null)
@@ -288,6 +292,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setFormType("percentage")
     setFormValue("")
     setFormCatchall(false)
+    setFormLinkedAccount("")
     setFormError(null)
     setDialogOpen(true)
   }
@@ -298,6 +303,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setFormType(cat.type)
     setFormValue(String(cat.value))
     setFormCatchall(cat.is_catchall ?? false)
+    setFormLinkedAccount(cat.linked_account ?? "")
     setFormError(null)
     setDialogOpen(true)
   }
@@ -316,6 +322,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setFormError(null)
     const fd = new FormData(e.currentTarget)
     fd.set("is_catchall", String(formCatchall))
+    fd.set("linked_account", formLinkedAccount)
 
     // Cap only applies to percentage types
     const val = parseFloat(formValue)
@@ -331,6 +338,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         type: formType,
         value: parseFloat(formValue),
         is_catchall: formCatchall,
+        linked_account: formLinkedAccount || null,
       }
       setDialogOpen(false)
       startTransition(async () => {
@@ -346,7 +354,9 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         type: formType,
         value: parseFloat(formValue),
         sort_order: categories.length,
+        rollover: false,
         is_catchall: formCatchall,
+        linked_account: formLinkedAccount || null,
       }
       setDialogOpen(false)
       startTransition(async () => {
@@ -780,12 +790,18 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           <div className="space-y-3">
             {categories.map((cat) => {
               const budgeted = budgetedAmount(cat, monthlyIncome)
-              const actual = cat.is_catchall
+              const isGrowthMode = !!cat.linked_account
+              const growthActual = isGrowthMode ? (accountGrowth[cat.linked_account!] ?? 0) : 0
+              const actual = isGrowthMode
+                ? growthActual
+                : cat.is_catchall
                 ? catchallSpending
                 : (expensesByCategory[cat.name.toLowerCase()] ?? 0)
-              const pct = budgeted > 0 ? Math.min((actual / budgeted) * 100, 100) : 0
-              const over = actual > budgeted && budgeted > 0
-              const warn = pct >= 80 && !over
+              // For growth mode: progress toward goal (growth / budgeted), capped at 100%
+              const pct = budgeted > 0 ? Math.min((Math.max(0, actual) / budgeted) * 100, 100) : 0
+              // Growth mode: "over" means growth BELOW target; warn means < 80% of target
+              const over = isGrowthMode ? (actual < budgeted * 0.5 && budgeted > 0) : (actual > budgeted && budgeted > 0)
+              const warn = isGrowthMode ? (actual >= 0 && actual < budgeted * 0.8 && budgeted > 0 && actual >= budgeted * 0.5) : (pct >= 80 && !over)
 
               // Catch-all shows all transactions not claimed by other named categories
               const namedCatNames = new Set(categories.filter((c) => !c.is_catchall).map((c) => c.name.toLowerCase()))
@@ -818,16 +834,28 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                               catch-all
                             </Badge>
                           )}
+                          {isGrowthMode && (
+                            <>
+                              <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 gap-1">
+                                balance growth
+                              </Badge>
+                              <span className="text-[10px] text-muted-foreground truncate max-w-[140px]" title={cat.linked_account!}>
+                                {cat.linked_account}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-4 shrink-0">
                       <div className="text-right">
                         <p className="text-sm font-semibold text-foreground">{currency(budgeted)}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-                        <p className={`text-xs ${over ? "text-rose-600 dark:text-rose-400 font-medium" : "text-muted-foreground"}`}>
-                          {currency(actual)} spent
+                        <p className={`text-xs ${isGrowthMode ? (actual >= budgeted ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground") : over ? "text-rose-600 dark:text-rose-400 font-medium" : "text-muted-foreground"}`}>
+                          {isGrowthMode
+                            ? (actual >= 0 ? `+${currency(actual)} gained` : `${currency(actual)} lost`)
+                            : `${currency(actual)} spent`}
                         </p>
-                        {lastMonthActual > 0 && (
+                        {!isGrowthMode && lastMonthActual > 0 && (
                           <p className={`text-[11px] flex items-center justify-end gap-0.5 ${momDelta > 0 ? "text-rose-500" : momDelta < 0 ? "text-emerald-500" : "text-muted-foreground"}`}>
                             {momDelta > 0 ? <TrendingUp className="w-3 h-3" /> : momDelta < 0 ? <TrendingDown className="w-3 h-3" /> : null}
                             {momDelta === 0 ? "same as last mo" : `${momDelta > 0 ? "+" : ""}${currency(momDelta)} vs last mo`}
@@ -858,14 +886,22 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                     <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${
-                          over ? "bg-rose-500" : warn ? "bg-amber-400" : "bg-emerald-500"
+                          isGrowthMode
+                            ? pct >= 100 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-400" : "bg-rose-400"
+                            : over ? "bg-rose-500" : warn ? "bg-amber-400" : "bg-emerald-500"
                         }`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                      <span>{pct.toFixed(0)}% used</span>
-                      {over
+                      {isGrowthMode
+                        ? <span>{pct.toFixed(0)}% of goal</span>
+                        : <span>{pct.toFixed(0)}% used</span>}
+                      {isGrowthMode
+                        ? actual >= budgeted
+                          ? <span className="text-emerald-600 dark:text-emerald-400 font-medium">Goal reached!</span>
+                          : <span>{currency(budgeted - Math.max(0, actual))} to goal</span>
+                        : over
                         ? <span className="text-rose-600 dark:text-rose-400 font-medium">{currency(actual - budgeted)} over</span>
                         : <span>{currency(budgeted - actual)} remaining</span>
                       }
@@ -1139,6 +1175,25 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${formCatchall ? "translate-x-4" : "translate-x-0"}`} />
               </button>
             </div>
+
+            {/* Linked account for balance growth tracking */}
+            {connectedBankNames.length > 0 && (
+              <div className="space-y-1.5">
+                <Label htmlFor="linked-account">Track balance growth <span className="text-muted-foreground">(optional)</span></Label>
+                <p className="text-xs text-muted-foreground -mt-0.5">Instead of spending, this category will show how much the selected account balance grew vs your goal</p>
+                <select
+                  id="linked-account"
+                  value={formLinkedAccount}
+                  onChange={(e) => setFormLinkedAccount(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="">— No account linked (spending mode) —</option>
+                  {connectedBankNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {formError && <p className="text-sm text-destructive">{formError}</p>}
 
