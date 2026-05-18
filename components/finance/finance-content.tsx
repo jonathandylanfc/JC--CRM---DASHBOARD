@@ -38,6 +38,7 @@ import {
   ChevronDown,
   Search,
   Download,
+  ArrowLeftRight,
 } from "lucide-react"
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns"
 import { toast } from "sonner"
@@ -62,6 +63,7 @@ import {
   deleteAccountTransactions,
   deleteSelectedTransactions,
   getTransactionCount,
+  toggleTransfer,
 } from "@/app/finance/actions"
 import { CsvImporter } from "@/components/finance/csv-importer"
 import { PlaidConnect } from "@/components/finance/plaid-connect"
@@ -120,6 +122,7 @@ type OptimisticAction =
   | { type: "add"; tx: Transaction }
   | { type: "delete"; id: string }
   | { type: "deleteMany"; ids: string[] }
+  | { type: "setType"; id: string; newType: string }
 
 type DateRange = "this_month" | "last_3_months" | "last_6_months" | "last_year" | "all_time"
 
@@ -195,6 +198,7 @@ export function FinanceContent({
       if (action.type === "add") return [action.tx, ...state]
       if (action.type === "delete") return state.filter((t) => t.id !== action.id)
       if (action.type === "deleteMany") return state.filter((t) => !action.ids.includes(t.id))
+      if (action.type === "setType") return state.map((t) => t.id === action.id ? { ...t, type: action.newType } : t)
       return state
     },
   )
@@ -263,6 +267,7 @@ export function FinanceContent({
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
   const [isEditing, startEditing] = useTransition()
+  const [isTogglingTransfer, startTogglingTransfer] = useTransition()
 
   // Date-range, category, account filters, and search
   const [dateRange, setDateRange] = useState<DateRange>("this_month")
@@ -320,7 +325,7 @@ export function FinanceContent({
     const anchor = withBal[0]
     const adj = txs
       .filter((tx) => tx.date > anchor.date || (tx.date === anchor.date && tx.balance == null))
-      .reduce((sum, tx) => sum + (tx.type === "income" ? Number(tx.amount) : -Number(tx.amount)), 0)
+      .reduce((sum, tx) => sum + (tx.type === "income" ? Number(tx.amount) : tx.type === "expense" ? -Number(tx.amount) : 0), 0)
     return (anchor.balance as number) + adj
   }
 
@@ -344,7 +349,7 @@ export function FinanceContent({
     // Add net of untagged (manually-added) transactions
     const untaggedNet = optimisticTransactions
       .filter((tx) => tx.account_name == null)
-      .reduce((sum, tx) => sum + (tx.type === "income" ? Number(tx.amount) : -Number(tx.amount)), 0)
+      .reduce((sum, tx) => sum + (tx.type === "income" ? Number(tx.amount) : tx.type === "expense" ? -Number(tx.amount) : 0), 0)
     return hasAny ? total + untaggedNet : null
   }, [optimisticTransactions, accountTransactions, selectedAccount])
 
@@ -507,6 +512,16 @@ export function FinanceContent({
       updateOptimistic({ type: "delete", id })
       await deleteTransaction(id)
       if (savedTx?.id === id) setSavedTx(null)
+      router.refresh()
+    })
+  }
+
+  function handleToggleTransfer(tx: Transaction) {
+    const newType = tx.type === "transfer" ? "expense" : "transfer"
+    startTogglingTransfer(async () => {
+      updateOptimistic({ type: "setType", id: tx.id, newType })
+      const result = await toggleTransfer(tx.id, tx.type)
+      if (result.error) toast.error(result.error)
       router.refresh()
     })
   }
@@ -1265,12 +1280,14 @@ export function FinanceContent({
                       )}
                       <div
                         className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-                          tx.type === "income"
+                          tx.type === "transfer"
+                            ? "bg-muted text-muted-foreground"
+                            : tx.type === "income"
                             ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
                             : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
                         }`}
                       >
-                        {tx.type === "income" ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                        {tx.type === "transfer" ? <ArrowLeftRight className="w-4 h-4" /> : tx.type === "income" ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start gap-1 min-w-0">
@@ -1288,6 +1305,9 @@ export function FinanceContent({
                         </div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span>{tx.category}</span>
+                          {tx.type === "transfer" && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400">transfer</span>
+                          )}
                           <span>·</span>
                           <span className="flex items-center gap-1">
                             <CalendarDays className="w-3 h-3" />
@@ -1306,8 +1326,8 @@ export function FinanceContent({
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <div className="text-right">
-                          <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-                            {tx.type === "income" ? "+" : "-"}{currency(Number(tx.amount))}
+                          <span className={`font-semibold text-sm ${tx.type === "transfer" ? "text-muted-foreground" : tx.type === "income" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                            {tx.type === "transfer" ? "" : tx.type === "income" ? "+" : "-"}{currency(Number(tx.amount))}
                           </span>
                           {tx.balance != null && selectedAccount && (
                             <p className="text-[11px] text-muted-foreground tabular-nums">
@@ -1317,6 +1337,16 @@ export function FinanceContent({
                         </div>
                         {!selectMode && (
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={`w-7 h-7 transition-colors ${tx.type === "transfer" ? "text-blue-500 hover:text-blue-600" : "text-muted-foreground hover:text-blue-500"}`}
+                              title={tx.type === "transfer" ? "Unmark as transfer" : "Mark as transfer (internal move, not real spending)"}
+                              disabled={isTogglingTransfer}
+                              onClick={() => handleToggleTransfer(tx)}
+                            >
+                              <ArrowLeftRight className="w-3.5 h-3.5" />
+                            </Button>
                             <Button
                               variant="ghost"
                               size="icon"

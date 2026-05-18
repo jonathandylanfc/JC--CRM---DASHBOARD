@@ -17,7 +17,7 @@ export async function createTransaction(formData: FormData) {
   if (isNaN(amount) || amount <= 0) return { error: "Valid amount is required" }
 
   const type = formData.get("type") as string
-  if (type !== "income" && type !== "expense") return { error: "Type must be income or expense" }
+  if (type !== "income" && type !== "expense" && type !== "transfer") return { error: "Invalid type" }
 
   let category = (formData.get("category") as string)?.trim() || "other"
   const date =
@@ -71,7 +71,7 @@ export async function updateTransaction(id: string, formData: FormData) {
   if (isNaN(amount) || amount <= 0) return { error: "Valid amount is required" }
 
   const type = formData.get("type") as string
-  if (type !== "income" && type !== "expense") return { error: "Type must be income or expense" }
+  if (type !== "income" && type !== "expense" && type !== "transfer") return { error: "Invalid type" }
 
   const category = (formData.get("category") as string)?.trim() || "other"
   const date = (formData.get("date") as string) || new Date().toISOString().split("T")[0]
@@ -106,6 +106,23 @@ export async function deleteTransaction(id: string) {
   revalidatePath("/finance")
   revalidatePath("/")
   return { success: true }
+}
+
+export async function toggleTransfer(id: string, currentType: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  // Toggle: if currently transfer → revert to expense; otherwise → mark as transfer
+  const newType = currentType === "transfer" ? "expense" : "transfer"
+  const { error } = await supabase
+    .from("transactions")
+    .update({ type: newType })
+    .eq("id", id)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/finance")
+  revalidatePath("/budget")
+  return { success: true, newType }
 }
 
 export type ImportRow = {

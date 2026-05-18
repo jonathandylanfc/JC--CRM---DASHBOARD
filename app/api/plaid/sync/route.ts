@@ -106,10 +106,15 @@ export async function POST(req: NextRequest) {
           ?? item.institution_name
           ?? "Bank"
 
+        // Detect internal transfers (credit card payments, account-to-account moves)
+        const isTransferCategory = category === "transfer"
+        const isTransferTitle = /payment\s+(to|from)\s+(crd|chk|checking|savings|credit)|mobile banking payment|credit card payment|transfer\s+(to|from)|from\s+chk|to\s+crd/i.test(title)
+        const txType = (isTransferCategory || isTransferTitle) ? "transfer" : (isIncome ? "income" : "expense")
+
         toInsert.push({
           title,
           amount,
-          type: isIncome ? "income" : "expense",
+          type: txType,
           category,
           date: tx.date,
           account_name: accountName,
