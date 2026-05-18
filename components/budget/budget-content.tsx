@@ -48,6 +48,7 @@ interface SavingsGoal {
   color: string
   monthly_contribution_type: "fixed" | "percentage" | null
   monthly_contribution_value: number | null
+  linked_category: string | null
 }
 
 interface MonthlyTransaction {
@@ -67,6 +68,8 @@ interface BudgetContentProps {
   initialSavingsGoals: SavingsGoal[]
   accountGrowth: Record<string, number>
   connectedBankNames: string[]
+  monthlyGoalContributions: Record<string, number>
+  allTimeCategoryTotals: Record<string, number>
   currentMonth: string // "yyyy-MM"
 }
 
@@ -123,7 +126,7 @@ const ONBOARDING_GROUPS = [
   },
 ]
 
-export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, accountGrowth, connectedBankNames, currentMonth }: BudgetContentProps) {
+export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, currentMonth }: BudgetContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -140,6 +143,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const [goalContribType, setGoalContribType] = useState<"fixed" | "percentage">("fixed")
   const [goalContribValue, setGoalContribValue] = useState("")
   const [goalContribEnabled, setGoalContribEnabled] = useState(false)
+  const [goalLinkedCategory, setGoalLinkedCategory] = useState("")
   const [isSavingGoal, startSavingGoal] = useTransition()
   const [deleteGoalId, setDeleteGoalId] = useState<string | null>(null)
 
@@ -147,6 +151,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setEditingGoal(null)
     setGoalName(""); setGoalTarget(""); setGoalCurrent(""); setGoalDate(""); setGoalColor(GOAL_COLORS[0])
     setGoalContribEnabled(false); setGoalContribType("fixed"); setGoalContribValue("")
+    setGoalLinkedCategory("")
     setGoalDialogOpen(true)
   }
   function openEditGoal(g: SavingsGoal) {
@@ -156,6 +161,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setGoalContribEnabled(!!g.monthly_contribution_type)
     setGoalContribType(g.monthly_contribution_type ?? "fixed")
     setGoalContribValue(g.monthly_contribution_value != null ? String(g.monthly_contribution_value) : "")
+    setGoalLinkedCategory(g.linked_category ?? "")
     setGoalDialogOpen(true)
   }
   function handleGoalSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -169,6 +175,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       fd.delete("monthly_contribution_type")
       fd.delete("monthly_contribution_value")
     }
+    fd.set("linked_category", goalLinkedCategory)
     startSavingGoal(async () => {
       if (editingGoal) {
         await updateSavingsGoal(editingGoal.id, fd)
@@ -527,42 +534,79 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {savingsGoals.map((goal) => {
-              const pct = goal.target_amount > 0 ? Math.min((goal.current_amount / goal.target_amount) * 100, 100) : 0
-              const remaining = goal.target_amount - goal.current_amount
+              // If linked to a category, current amount = all-time spending in that category
+              const effectiveCurrent = goal.linked_category
+                ? (allTimeCategoryTotals[goal.linked_category.toLowerCase()] ?? 0)
+                : goal.current_amount
+              const pct = goal.target_amount > 0 ? Math.min((effectiveCurrent / goal.target_amount) * 100, 100) : 0
+              const remaining = goal.target_amount - effectiveCurrent
               const daysLeft = goal.target_date ? differenceInDays(new Date(goal.target_date + "T12:00:00"), new Date()) : null
               const done = pct >= 100
 
-              // Monthly contribution amount in dollars
-              const monthlyAmount = goal.monthly_contribution_type === "percentage" && goal.monthly_contribution_value != null
+              // Monthly contribution target in dollars
+              const monthlyTarget = goal.monthly_contribution_type === "percentage" && goal.monthly_contribution_value != null
                 ? (monthlyIncome * goal.monthly_contribution_value) / 100
                 : goal.monthly_contribution_type === "fixed" && goal.monthly_contribution_value != null
                 ? goal.monthly_contribution_value
                 : null
 
+              // This month's actual contribution
+              // If linked to category → use monthly category spending; else use logged contributions
+              const monthlyActual = goal.linked_category
+                ? (expensesByCategory[goal.linked_category.toLowerCase()] ?? 0)
+                : (monthlyGoalContributions[goal.id] ?? 0)
+
+              const monthlyPct = monthlyTarget && monthlyTarget > 0 ? Math.min((monthlyActual / monthlyTarget) * 100, 100) : null
+
+              // Status: red = none/far off, amber = partial, green = met or exceeded
+              const monthlyStatus = monthlyPct === null ? null
+                : monthlyPct >= 100 ? "green"
+                : monthlyPct >= 50 ? "amber"
+                : "red"
+
               // Estimated months to complete goal
-              const monthsLeft = monthlyAmount && monthlyAmount > 0 && !done
-                ? Math.ceil(remaining / monthlyAmount)
+              const monthsLeft = monthlyTarget && monthlyTarget > 0 && !done
+                ? Math.ceil(remaining / monthlyTarget)
                 : null
 
               return (
-                <Card key={goal.id} className="p-4 group hover:shadow-md transition-all duration-200">
+                <Card key={goal.id} className={`p-4 group hover:shadow-md transition-all duration-200 ${monthlyStatus === "red" && monthlyTarget ? "border-rose-300 dark:border-rose-800" : monthlyStatus === "amber" ? "border-amber-300 dark:border-amber-800" : ""}`}>
                   <div className="flex items-start justify-between gap-2 mb-3">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="w-3 h-3 rounded-full shrink-0" style={{ background: goal.color }} />
-                      <p className="font-semibold text-sm text-foreground truncate">{goal.name}</p>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm text-foreground truncate">{goal.name}</p>
+                        {goal.linked_category && (
+                          <p className="text-[10px] text-muted-foreground truncate">tracking {goal.linked_category}</p>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                      <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-foreground" onClick={() => openEditGoal(goal)}>
-                        <Pencil className="w-3 h-3" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-destructive" onClick={() => setDeleteGoalId(goal.id)}>
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* Monthly status indicator */}
+                      {monthlyStatus && (
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                          monthlyStatus === "green" ? "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400"
+                          : monthlyStatus === "amber" ? "bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400"
+                          : "bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400"
+                        }`}>
+                          {monthlyStatus === "green" ? "✓ this mo" : monthlyStatus === "amber" ? "partial" : "needs contribution"}
+                        </span>
+                      )}
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-foreground" onClick={() => openEditGoal(goal)}>
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-destructive" onClick={() => setDeleteGoalId(goal.id)}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Overall progress bar */}
                   <div className="mb-2">
                     <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                      <span>{currency(goal.current_amount)} saved</span>
+                      <span>{currency(effectiveCurrent)} {goal.linked_category ? "contributed" : "saved"}</span>
                       <span>{currency(goal.target_amount)} goal</span>
                     </div>
                     <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
@@ -581,27 +625,43 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                   </div>
 
                   {/* Monthly contribution row */}
-                  {monthlyAmount != null && !done && (
-                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/50 mt-2">
-                      <div className="text-xs text-muted-foreground">
-                        <span className="font-medium text-foreground">{currency(monthlyAmount)}/mo</span>
-                        {goal.monthly_contribution_type === "percentage" && (
-                          <span className="ml-1">({goal.monthly_contribution_value}% of income)</span>
-                        )}
-                        {monthsLeft !== null && (
-                          <span className="ml-1 text-muted-foreground">· ~{monthsLeft} mo to go</span>
+                  {monthlyTarget != null && !done && (
+                    <div className="pt-2 border-t border-border/50 mt-2 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">{currency(monthlyActual)}</span>
+                          <span className="text-muted-foreground"> / {currency(monthlyTarget)} this month</span>
+                          {goal.monthly_contribution_type === "percentage" && (
+                            <span className="ml-1">({goal.monthly_contribution_value}%)</span>
+                          )}
+                          {monthsLeft !== null && (
+                            <span className="ml-1">· ~{monthsLeft} mo to go</span>
+                          )}
+                        </div>
+                        {!goal.linked_category && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-xs px-2 gap-1 bg-transparent shrink-0"
+                            disabled={isSavingGoal}
+                            onClick={() => handleLogContribution(goal)}
+                          >
+                            <Plus className="w-3 h-3" />
+                            Log
+                          </Button>
                         )}
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-6 text-xs px-2 gap-1 bg-transparent shrink-0"
-                        disabled={isSavingGoal}
-                        onClick={() => handleLogContribution(goal)}
-                      >
-                        <Plus className="w-3 h-3" />
-                        Log
-                      </Button>
+                      {/* Monthly mini progress bar */}
+                      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            monthlyStatus === "green" ? "bg-emerald-500"
+                            : monthlyStatus === "amber" ? "bg-amber-400"
+                            : "bg-rose-500"
+                          }`}
+                          style={{ width: `${monthlyPct ?? 0}%` }}
+                        />
+                      </div>
                     </div>
                   )}
                 </Card>
@@ -680,6 +740,25 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 </p>
               )}
             </div>
+
+            {/* Linked budget category */}
+            {categories.length > 0 && (
+              <div className="space-y-1.5">
+                <Label htmlFor="goal-linked-category">Link to budget category <span className="text-muted-foreground">(optional)</span></Label>
+                <p className="text-xs text-muted-foreground -mt-0.5">Every dollar spent in that category automatically counts toward this goal's running total</p>
+                <select
+                  id="goal-linked-category"
+                  value={goalLinkedCategory}
+                  onChange={(e) => setGoalLinkedCategory(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="">— Not linked —</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Color</Label>

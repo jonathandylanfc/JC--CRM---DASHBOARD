@@ -272,10 +272,47 @@ export async function getSavingsGoals() {
   if (!userId) return []
   const { data } = await supabase
     .from("savings_goals")
-    .select("id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value")
+    .select("id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category")
     .eq("user_id", userId)
     .order("created_at", { ascending: true })
   return data ?? []
+}
+
+export async function getMonthlyGoalContributions(month?: string): Promise<Record<string, number>> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return {}
+  const base = month ? new Date(month + "-02") : new Date()
+  const monthStart = format(startOfMonth(base), "yyyy-MM-dd")
+  const monthEnd = format(endOfMonth(base), "yyyy-MM-dd")
+  const { data } = await supabase
+    .from("goal_contributions")
+    .select("goal_id, amount")
+    .eq("user_id", userId)
+    .gte("contributed_at", monthStart)
+    .lte("contributed_at", monthEnd + "T23:59:59")
+  if (!data) return {}
+  const result: Record<string, number> = {}
+  for (const row of data) {
+    result[row.goal_id] = (result[row.goal_id] ?? 0) + Number(row.amount)
+  }
+  return result
+}
+
+export async function getAllTimeCategoryTotals(): Promise<Record<string, number>> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return {}
+  const { data } = await supabase
+    .from("transactions")
+    .select("category, amount")
+    .eq("user_id", userId)
+    .eq("type", "expense")
+  if (!data) return {}
+  const result: Record<string, number> = {}
+  for (const tx of data) {
+    const cat = tx.category.toLowerCase()
+    result[cat] = (result[cat] ?? 0) + Number(tx.amount)
+  }
+  return result
 }
 
 export async function getPaydayDay(): Promise<number | null> {

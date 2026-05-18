@@ -165,9 +165,10 @@ export async function createSavingsGoal(formData: FormData) {
   const monthly_contribution_value = formData.get("monthly_contribution_value")
     ? parseFloat(formData.get("monthly_contribution_value") as string)
     : null
+  const linked_category = (formData.get("linked_category") as string) || null
   const { data, error } = await supabase
     .from("savings_goals")
-    .insert({ user_id: user.id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value })
+    .insert({ user_id: user.id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category })
     .select()
     .single()
   if (error) return { error: error.message }
@@ -188,9 +189,10 @@ export async function updateSavingsGoal(id: string, formData: FormData) {
   const monthly_contribution_value = formData.get("monthly_contribution_value")
     ? parseFloat(formData.get("monthly_contribution_value") as string)
     : null
+  const linked_category = (formData.get("linked_category") as string) || null
   const { error } = await supabase
     .from("savings_goals")
-    .update({ name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value })
+    .update({ name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category })
     .eq("id", id)
     .eq("user_id", user.id)
   if (error) return { error: error.message }
@@ -210,12 +212,12 @@ export async function logGoalContribution(id: string, amount: number) {
     .single()
   if (!goal) return { error: "Goal not found" }
   const newAmount = Math.min(Number(goal.current_amount) + amount, Number(goal.target_amount))
-  const { error } = await supabase
-    .from("savings_goals")
-    .update({ current_amount: newAmount })
-    .eq("id", id)
-    .eq("user_id", user.id)
-  if (error) return { error: error.message }
+  const [updateResult, logResult] = await Promise.all([
+    supabase.from("savings_goals").update({ current_amount: newAmount }).eq("id", id).eq("user_id", user.id),
+    supabase.from("goal_contributions").insert({ user_id: user.id, goal_id: id, amount }),
+  ])
+  if (updateResult.error) return { error: updateResult.error.message }
+  if (logResult.error) return { error: logResult.error.message }
   revalidatePath("/budget")
   return { success: true, newAmount }
 }
