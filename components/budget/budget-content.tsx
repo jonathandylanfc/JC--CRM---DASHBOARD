@@ -49,6 +49,7 @@ interface SavingsGoal {
   monthly_contribution_type: "fixed" | "percentage" | null
   monthly_contribution_value: number | null
   linked_category: string | null
+  linked_account: string | null
 }
 
 interface MonthlyTransaction {
@@ -70,6 +71,7 @@ interface BudgetContentProps {
   connectedBankNames: string[]
   monthlyGoalContributions: Record<string, number>
   allTimeCategoryTotals: Record<string, number>
+  allTimeAccountGrowth: Record<string, number>
   currentMonth: string // "yyyy-MM"
 }
 
@@ -126,7 +128,7 @@ const ONBOARDING_GROUPS = [
   },
 ]
 
-export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, currentMonth }: BudgetContentProps) {
+export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, currentMonth }: BudgetContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -144,6 +146,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const [goalContribValue, setGoalContribValue] = useState("")
   const [goalContribEnabled, setGoalContribEnabled] = useState(false)
   const [goalLinkedCategory, setGoalLinkedCategory] = useState("")
+  const [goalLinkedAccount, setGoalLinkedAccount] = useState("")
   const [isSavingGoal, startSavingGoal] = useTransition()
   const [deleteGoalId, setDeleteGoalId] = useState<string | null>(null)
 
@@ -152,6 +155,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setGoalName(""); setGoalTarget(""); setGoalCurrent(""); setGoalDate(""); setGoalColor(GOAL_COLORS[0])
     setGoalContribEnabled(false); setGoalContribType("fixed"); setGoalContribValue("")
     setGoalLinkedCategory("")
+    setGoalLinkedAccount("")
     setGoalDialogOpen(true)
   }
   function openEditGoal(g: SavingsGoal) {
@@ -162,6 +166,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setGoalContribType(g.monthly_contribution_type ?? "fixed")
     setGoalContribValue(g.monthly_contribution_value != null ? String(g.monthly_contribution_value) : "")
     setGoalLinkedCategory(g.linked_category ?? "")
+    setGoalLinkedAccount(g.linked_account ?? "")
     setGoalDialogOpen(true)
   }
   function handleGoalSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -176,6 +181,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       fd.delete("monthly_contribution_value")
     }
     fd.set("linked_category", goalLinkedCategory)
+    fd.set("linked_account", goalLinkedAccount)
     startSavingGoal(async () => {
       if (editingGoal) {
         await updateSavingsGoal(editingGoal.id, fd)
@@ -534,8 +540,10 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {savingsGoals.map((goal) => {
-              // If linked to a category, current amount = all-time spending in that category
-              const effectiveCurrent = goal.linked_category
+              // Priority: linked_account > linked_category > manual current_amount
+              const effectiveCurrent = goal.linked_account
+                ? Math.max(0, allTimeAccountGrowth[goal.linked_account] ?? 0)
+                : goal.linked_category
                 ? (allTimeCategoryTotals[goal.linked_category.toLowerCase()] ?? 0)
                 : goal.current_amount
               const pct = goal.target_amount > 0 ? Math.min((effectiveCurrent / goal.target_amount) * 100, 100) : 0
@@ -551,8 +559,10 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 : null
 
               // This month's actual contribution
-              // If linked to category → use monthly category spending; else use logged contributions
-              const monthlyActual = goal.linked_category
+              // linked_account → monthly net inflow; linked_category → monthly spending; else logged
+              const monthlyActual = goal.linked_account
+                ? Math.max(0, accountGrowth[goal.linked_account] ?? 0)
+                : goal.linked_category
                 ? (expensesByCategory[goal.linked_category.toLowerCase()] ?? 0)
                 : (monthlyGoalContributions[goal.id] ?? 0)
 
@@ -576,7 +586,10 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                       <div className="w-3 h-3 rounded-full shrink-0" style={{ background: goal.color }} />
                       <div className="min-w-0">
                         <p className="font-semibold text-sm text-foreground truncate">{goal.name}</p>
-                        {goal.linked_category && (
+                        {goal.linked_account && (
+                          <p className="text-[10px] text-muted-foreground truncate" title={goal.linked_account}>↕ {goal.linked_account}</p>
+                        )}
+                        {!goal.linked_account && goal.linked_category && (
                           <p className="text-[10px] text-muted-foreground truncate">tracking {goal.linked_category}</p>
                         )}
                       </div>
@@ -606,7 +619,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                   {/* Overall progress bar */}
                   <div className="mb-2">
                     <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                      <span>{currency(effectiveCurrent)} {goal.linked_category ? "contributed" : "saved"}</span>
+                      <span>{currency(effectiveCurrent)} {goal.linked_account ? "in account" : goal.linked_category ? "contributed" : "saved"}</span>
                       <span>{currency(goal.target_amount)} goal</span>
                     </div>
                     <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
@@ -638,7 +651,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                             <span className="ml-1">· ~{monthsLeft} mo to go</span>
                           )}
                         </div>
-                        {!goal.linked_category && (
+                        {!goal.linked_category && !goal.linked_account && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -741,10 +754,29 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               )}
             </div>
 
-            {/* Linked budget category */}
-            {categories.length > 0 && (
+            {/* Track a bank account balance */}
+            {connectedBankNames.length > 0 && (
               <div className="space-y-1.5">
-                <Label htmlFor="goal-linked-category">Link to budget category <span className="text-muted-foreground">(optional)</span></Label>
+                <Label htmlFor="goal-linked-account">Track a bank account <span className="text-muted-foreground">(optional)</span></Label>
+                <p className="text-xs text-muted-foreground -mt-0.5">The goal shows the net money growth in that account — great for savings accounts</p>
+                <select
+                  id="goal-linked-account"
+                  value={goalLinkedAccount}
+                  onChange={(e) => { setGoalLinkedAccount(e.target.value); if (e.target.value) setGoalLinkedCategory("") }}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="">— Not linked —</option>
+                  {connectedBankNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Linked budget category */}
+            {categories.length > 0 && !goalLinkedAccount && (
+              <div className="space-y-1.5">
+                <Label htmlFor="goal-linked-category">Or link to a budget category <span className="text-muted-foreground">(optional)</span></Label>
                 <p className="text-xs text-muted-foreground -mt-0.5">Every dollar spent in that category automatically counts toward this goal's running total</p>
                 <select
                   id="goal-linked-category"

@@ -166,9 +166,10 @@ export async function createSavingsGoal(formData: FormData) {
     ? parseFloat(formData.get("monthly_contribution_value") as string)
     : null
   const linked_category = (formData.get("linked_category") as string) || null
+  const linked_account = (formData.get("linked_account") as string) || null
   const { data, error } = await supabase
     .from("savings_goals")
-    .insert({ user_id: user.id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category })
+    .insert({ user_id: user.id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account })
     .select()
     .single()
   if (error) return { error: error.message }
@@ -190,9 +191,10 @@ export async function updateSavingsGoal(id: string, formData: FormData) {
     ? parseFloat(formData.get("monthly_contribution_value") as string)
     : null
   const linked_category = (formData.get("linked_category") as string) || null
+  const linked_account = (formData.get("linked_account") as string) || null
   const { error } = await supabase
     .from("savings_goals")
-    .update({ name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category })
+    .update({ name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account })
     .eq("id", id)
     .eq("user_id", user.id)
   if (error) return { error: error.message }
