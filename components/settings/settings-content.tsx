@@ -1,15 +1,25 @@
 "use client"
 
+import { useTransition } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { LogOut } from "lucide-react"
 import { useTheme } from "@/components/theme-provider"
+import { signOut } from "@/app/login/actions"
 
 export function SettingsContent() {
   const { theme, setTheme } = useTheme()
+  const [isLoggingOut, startLogout] = useTransition()
+
+  function handleLogout() {
+    startLogout(async () => {
+      await signOut()
+    })
+  }
 
   return (
     <div className="space-y-6 animate-fade-in max-w-4xl">
@@ -75,6 +85,25 @@ export function SettingsContent() {
             </div>
             <Switch checked={theme === "dark"} onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")} />
           </div>
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <h3 className="font-semibold text-lg mb-4">Account</h3>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium">Sign out</p>
+            <p className="text-sm text-muted-foreground">Sign out of your account on this device</p>
+          </div>
+          <Button
+            variant="outline"
+            className="gap-2 text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive bg-transparent"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+          >
+            <LogOut className="w-4 h-4" />
+            {isLoggingOut ? "Signing out…" : "Sign out"}
+          </Button>
         </div>
       </Card>
     </div>
