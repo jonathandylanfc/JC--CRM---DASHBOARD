@@ -1,13 +1,12 @@
 "use client"
 
-import { ArrowUpRight, TrendingUp, TrendingDown, CheckSquare, BookOpen } from "lucide-react"
+import { ArrowUpRight, TrendingUp, TrendingDown, CheckSquare, DollarSign } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { useState } from "react"
 
 interface StatsCardsProps {
   totalTasks: number
   tasksDone: number
-  assignmentsDue: number
   monthlyIncome: number
   monthlyExpenses: number
 }
@@ -16,10 +15,11 @@ function currency(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n)
 }
 
-export function StatsCards({ totalTasks, tasksDone, assignmentsDue, monthlyIncome, monthlyExpenses }: StatsCardsProps) {
+export function StatsCards({ totalTasks, tasksDone, monthlyIncome, monthlyExpenses }: StatsCardsProps) {
   const [hoveredCard, setHoveredCard] = useState<number | null>(null)
 
   const completionPct = totalTasks > 0 ? Math.round((tasksDone / totalTasks) * 100) : 0
+  const netBalance = monthlyIncome - monthlyExpenses
 
   const stats = [
     {
@@ -32,22 +32,13 @@ export function StatsCards({ totalTasks, tasksDone, assignmentsDue, monthlyIncom
       delay: "0ms",
     },
     {
-      title: "Assignments Due",
-      value: String(assignmentsDue),
-      subtitle: "pending or in progress",
-      Icon: BookOpen,
-      bgColor: "bg-card",
-      textColor: "text-foreground",
-      delay: "100ms",
-    },
-    {
       title: "Income",
       value: currency(monthlyIncome),
       subtitle: "this month",
       Icon: TrendingUp,
       bgColor: "bg-card",
       textColor: "text-foreground",
-      delay: "200ms",
+      delay: "100ms",
     },
     {
       title: "Expenses",
@@ -56,6 +47,15 @@ export function StatsCards({ totalTasks, tasksDone, assignmentsDue, monthlyIncom
       Icon: TrendingDown,
       bgColor: "bg-card",
       textColor: "text-foreground",
+      delay: "200ms",
+    },
+    {
+      title: "Net Balance",
+      value: currency(Math.abs(netBalance)),
+      subtitle: netBalance >= 0 ? "surplus this month" : "deficit this month",
+      Icon: DollarSign,
+      bgColor: "bg-card",
+      textColor: netBalance >= 0 ? "text-emerald-500" : "text-rose-500",
       delay: "300ms",
     },
   ]

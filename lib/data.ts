@@ -394,6 +394,18 @@ export async function getStartingBalance(): Promise<number> {
   return Number(data?.starting_balance ?? 0)
 }
 
+export async function getRecentTransactions(limit: number = 5) {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const { data } = await supabase
+    .from("transactions")
+    .select("id, title, amount, type, category, date, account_name")
+    .eq("user_id", userId)
+    .order("date", { ascending: false })
+    .limit(limit)
+  return data ?? []
+}
+
 export async function getConnectedBankNames(): Promise<string[]> {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return []

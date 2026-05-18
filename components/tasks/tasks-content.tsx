@@ -17,8 +17,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Search, Plus, Trash2, CalendarDays, ClipboardList } from "lucide-react"
+import { Search, Plus, Trash2, CalendarDays, ClipboardList, Calendar } from "lucide-react"
 import { format } from "date-fns"
+import { toast } from "sonner"
 import { createTask, toggleTaskStatus, deleteTask } from "@/app/tasks/actions"
 
 interface Task {
@@ -56,6 +57,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
   const [search, setSearch] = useState("")
   const [open, setOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [calendarPending, setCalendarPending] = useState<string | null>(null)
 
   const [optimisticTasks, updateOptimisticTasks] = useOptimistic(
     initialTasks,
@@ -104,6 +106,37 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
       await deleteTask(id)
       router.refresh()
     })
+  }
+
+  async function handleSendToCalendar(task: Task) {
+    if (!task.due_date) return
+    setCalendarPending(task.id)
+    try {
+      const res = await fetch("/api/calendar/task-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: task.title,
+          due_date: task.due_date,
+          description: task.description ?? undefined,
+          priority: task.priority,
+        }),
+      })
+      const data = await res.json()
+      if (data.error === "not_connected") {
+        toast.error("Connect Google Calendar in Settings first")
+      } else if (data.error === "reconnect_required") {
+        toast.error("Google Calendar needs to be reconnected in Settings")
+      } else if (data.error) {
+        toast.error(data.error)
+      } else {
+        toast.success("Added to Google Calendar")
+      }
+    } catch {
+      toast.error("Failed to add to Google Calendar")
+    } finally {
+      setCalendarPending(null)
+    }
   }
 
   async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
@@ -259,6 +292,18 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                       >
                         {task.priority}
                       </span>
+                      {task.due_date && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
+                          onClick={() => handleSendToCalendar(task)}
+                          disabled={calendarPending === task.id}
+                          title="Send to Google Calendar"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"

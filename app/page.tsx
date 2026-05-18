@@ -1,47 +1,37 @@
 import { Sidebar } from "@/components/dashboard/sidebar"
 import { Header } from "@/components/dashboard/header"
 import { StatsCards } from "@/components/dashboard/stats-cards"
-import { ProjectAnalytics } from "@/components/dashboard/project-analytics"
-import { Reminders } from "@/components/dashboard/reminders"
-import { ProjectList } from "@/components/dashboard/project-list"
-import { TeamCollaboration } from "@/components/dashboard/team-collaboration"
-import { ProjectProgress } from "@/components/dashboard/project-progress"
-import { MobileAppCard } from "@/components/dashboard/mobile-app-card"
-import { TimeTracker } from "@/components/dashboard/time-tracker"
+import { TaskBoardCard } from "@/components/dashboard/task-board-card"
+import { BudgetHealthCard } from "@/components/dashboard/budget-health-card"
+import { RecentTransactionsCard } from "@/components/dashboard/recent-transactions-card"
 import { Button } from "@/components/ui/button"
 import {
   getTaskStats,
-  getWeeklyFocusActivity,
-  getUpcomingAssignments,
   getRecentTasks,
-  getGoalStats,
-  getTodayFocusMinutes,
   getUserProfile,
-  getAssignmentCount,
   getMonthlyFinanceSummary,
+  getMonthlyExpensesByCategory,
+  getBudgetCategories,
+  getRecentTransactions,
 } from "@/lib/data"
 
 export default async function DashboardPage() {
   const [
     taskStats,
-    weeklyActivity,
-    upcomingAssignments,
     recentTasks,
-    goalStats,
-    todayMinutes,
     user,
-    assignmentsDue,
     financeSummary,
+    expensesByCategory,
+    categories,
+    recentTransactions,
   ] = await Promise.all([
     getTaskStats(),
-    getWeeklyFocusActivity(),
-    getUpcomingAssignments(),
     getRecentTasks(),
-    getGoalStats(),
-    getTodayFocusMinutes(),
     getUserProfile(),
-    getAssignmentCount(),
     getMonthlyFinanceSummary(),
+    getMonthlyExpensesByCategory(),
+    getBudgetCategories(),
+    getRecentTransactions(5),
   ])
 
   return (
@@ -74,28 +64,24 @@ export default async function DashboardPage() {
           <StatsCards
             totalTasks={taskStats.total}
             tasksDone={taskStats.done}
-            assignmentsDue={assignmentsDue}
             monthlyIncome={financeSummary.income}
             monthlyExpenses={financeSummary.expenses}
           />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
-            <div className="lg:col-span-2 space-y-3 md:space-y-4">
-              <ProjectAnalytics weeklyData={weeklyActivity} />
-              <TeamCollaboration tasks={recentTasks} />
+            {/* Left 2/3: Task board */}
+            <div className="lg:col-span-2">
+              <TaskBoardCard tasks={recentTasks} />
             </div>
-
-            <div className="space-y-3 md:space-y-4">
-              <Reminders tasks={upcomingAssignments} />
-              <ProjectProgress {...goalStats} />
-            </div>
+            {/* Right 1/3: Budget health */}
+            <BudgetHealthCard
+              categories={categories}
+              expensesByCategory={expensesByCategory}
+              monthlyIncome={financeSummary.income}
+            />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-            <ProjectList tasks={recentTasks} />
-            <MobileAppCard />
-            <TimeTracker initialMinutes={todayMinutes} />
-          </div>
+          <RecentTransactionsCard transactions={recentTransactions} />
         </div>
       </main>
     </div>
