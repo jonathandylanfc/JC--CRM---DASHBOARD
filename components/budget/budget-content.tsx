@@ -37,6 +37,7 @@ interface BudgetCategory {
   rollover: boolean
   is_catchall: boolean
   linked_account: string | null
+  is_goal_mode: boolean
 }
 
 interface SavingsGoal {
@@ -297,6 +298,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const [formType, setFormType] = useState<"percentage" | "fixed">("percentage")
   const [formValue, setFormValue] = useState("")
   const [formCatchall, setFormCatchall] = useState(false)
+  const [formGoalMode, setFormGoalMode] = useState(false)
 
   function openAdd() {
     setEditingCategory(null)
@@ -304,6 +306,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setFormType("percentage")
     setFormValue("")
     setFormCatchall(false)
+    setFormGoalMode(false)
     setFormError(null)
     setDialogOpen(true)
   }
@@ -314,6 +317,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setFormType(cat.type)
     setFormValue(String(cat.value))
     setFormCatchall(cat.is_catchall ?? false)
+    setFormGoalMode(cat.is_goal_mode ?? false)
     setFormError(null)
     setDialogOpen(true)
   }
@@ -332,6 +336,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setFormError(null)
     const fd = new FormData(e.currentTarget)
     fd.set("is_catchall", String(formCatchall))
+    fd.set("is_goal_mode", String(formGoalMode))
 
     // Cap only applies to percentage types
     const val = parseFloat(formValue)
@@ -347,6 +352,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         type: formType,
         value: parseFloat(formValue),
         is_catchall: formCatchall,
+        is_goal_mode: formGoalMode,
       }
       setDialogOpen(false)
       startTransition(async () => {
@@ -365,6 +371,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         rollover: false,
         is_catchall: formCatchall,
         linked_account: null,
+        is_goal_mode: formGoalMode,
       }
       setDialogOpen(false)
       startTransition(async () => {
@@ -950,8 +957,12 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 ? catchallSpending
                 : (expensesByCategory[cat.name.toLowerCase()] ?? 0)
               const pct = budgeted > 0 ? Math.min((actual / budgeted) * 100, 100) : 0
-              const over = actual > budgeted && budgeted > 0
-              const warn = pct >= 80 && !over
+              // Goal mode: red = haven't hit target, green = at or over target
+              const over = cat.is_goal_mode ? false : (actual > budgeted && budgeted > 0)
+              const warn = cat.is_goal_mode ? false : (pct >= 80 && !over)
+              const goalMet = cat.is_goal_mode && actual >= budgeted && budgeted > 0
+              const goalPartial = cat.is_goal_mode && pct >= 50 && !goalMet
+              const goalShort = cat.is_goal_mode && pct < 50
 
               // Catch-all shows all transactions not claimed by other named categories
               const namedCatNames = new Set(categories.filter((c) => !c.is_catchall).map((c) => c.name.toLowerCase()))
@@ -983,6 +994,11 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                               +{currency(rolloverAmount)} carried over
                             </Badge>
                           )}
+                          {cat.is_goal_mode && (
+                            <Badge variant="outline" className={`text-[10px] h-4 px-1.5 gap-1 ${goalMet ? "text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700" : "text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-700"}`}>
+                              {goalMet ? "✓ goal met" : "goal mode"}
+                            </Badge>
+                          )}
                           {cat.is_catchall && (
                             <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-violet-600 dark:text-violet-400 border-violet-300 dark:border-violet-700 gap-1">
                               catch-all
@@ -999,8 +1015,8 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                         {rolloverAmount > 0 && (
                           <p className="text-[11px] text-muted-foreground">{currency(baseBudget)} base + {currency(rolloverAmount)} rollover</p>
                         )}
-                        <p className={`text-xs ${over ? "text-rose-600 dark:text-rose-400 font-medium" : "text-muted-foreground"}`}>
-                          {currency(actual)} spent
+                        <p className={`text-xs ${cat.is_goal_mode ? (goalMet ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-rose-600 dark:text-rose-400 font-medium") : over ? "text-rose-600 dark:text-rose-400 font-medium" : "text-muted-foreground"}`}>
+                          {currency(actual)} {cat.is_goal_mode ? "paid" : "spent"}
                         </p>
                         {lastMonthActual > 0 && (
                           <p className={`text-[11px] flex items-center justify-end gap-0.5 ${momDelta > 0 ? "text-rose-500" : momDelta < 0 ? "text-emerald-500" : "text-muted-foreground"}`}>
@@ -1032,13 +1048,21 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                   <div className="space-y-1">
                     <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all duration-500 ${over ? "bg-rose-500" : warn ? "bg-amber-400" : "bg-emerald-500"}`}
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          cat.is_goal_mode
+                            ? goalMet ? "bg-emerald-500" : goalPartial ? "bg-amber-400" : "bg-rose-500"
+                            : over ? "bg-rose-500" : warn ? "bg-amber-400" : "bg-emerald-500"
+                        }`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                      <span>{pct.toFixed(0)}% used</span>
-                      {over
+                      <span>{pct.toFixed(0)}% {cat.is_goal_mode ? "of goal" : "used"}</span>
+                      {cat.is_goal_mode
+                        ? goalMet
+                          ? <span className="text-emerald-600 dark:text-emerald-400 font-medium">Goal reached!</span>
+                          : <span className="text-rose-600 dark:text-rose-400 font-medium">{currency(budgeted - actual)} to go</span>
+                        : over
                         ? <span className="text-rose-600 dark:text-rose-400 font-medium">{currency(actual - budgeted)} over</span>
                         : <span>{currency(budgeted - actual)} remaining</span>
                       }
@@ -1296,6 +1320,21 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                   = {((parseFloat(formValue) / monthlyIncome) * 100).toFixed(1)}% of this month's income
                 </p>
               )}
+            </div>
+
+            {/* Goal mode toggle */}
+            <div className="flex items-center justify-between rounded-lg border border-border p-3 bg-muted/30">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">Goal mode</p>
+                <p className="text-xs text-muted-foreground">Starts red — turns green once you've paid/saved enough this month</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormGoalMode((v) => !v)}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${formGoalMode ? "bg-primary" : "bg-muted"}`}
+              >
+                <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${formGoalMode ? "translate-x-4" : "translate-x-0"}`} />
+              </button>
             </div>
 
             {/* Catch-all toggle */}
