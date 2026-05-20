@@ -17,7 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Search, Plus, Trash2, CalendarDays, ClipboardList, Calendar } from "lucide-react"
+import { Search, Plus, Trash2, CalendarDays, ClipboardList, Calendar, RefreshCw, Tag } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { createTask, toggleTaskStatus, deleteTask } from "@/app/tasks/actions"
@@ -30,6 +30,8 @@ interface Task {
   priority: string
   status: string
   created_at: string
+  recurrence: string
+  task_category: string | null
 }
 
 interface TasksContentProps {
@@ -43,6 +45,12 @@ const priorityBadge: Record<string, string> = {
   low: "bg-muted text-muted-foreground border-border",
 }
 
+const recurrenceLabel: Record<string, string> = {
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly",
+}
+
 const statusTabs = [
   { key: "all", label: "All" },
   { key: "todo", label: "To Do" },
@@ -54,10 +62,12 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [filter, setFilter] = useState("all")
+  const [categoryFilter, setCategoryFilter] = useState("all")
   const [search, setSearch] = useState("")
   const [open, setOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [calendarPending, setCalendarPending] = useState<string | null>(null)
+  const [newCategory, setNewCategory] = useState("")
 
   const [optimisticTasks, updateOptimisticTasks] = useOptimistic(
     initialTasks,
@@ -77,12 +87,16 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     }
   )
 
+  // Derive unique categories from tasks
+  const allCategories = Array.from(
+    new Set(optimisticTasks.map((t) => t.task_category).filter(Boolean) as string[])
+  ).sort()
+
   const visible = optimisticTasks.filter((t) => {
-    const matchesFilter =
-      filter === "all" ||
-      t.status === filter
+    const matchesStatus = filter === "all" || t.status === filter
+    const matchesCategory = categoryFilter === "all" || t.task_category === categoryFilter
     const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase())
-    return matchesFilter && matchesSearch
+    return matchesStatus && matchesCategory && matchesSearch
   })
 
   const counts = {
@@ -153,6 +167,8 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
       priority: (fd.get("priority") as string) || "medium",
       status: "todo",
       created_at: new Date().toISOString(),
+      recurrence: (fd.get("recurrence") as string) || "none",
+      task_category: (fd.get("task_category") as string) || null,
     }
 
     setOpen(false)
@@ -198,6 +214,26 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                 <Label htmlFor="description">Description <span className="text-muted-foreground">(optional)</span></Label>
                 <Textarea id="description" name="description" placeholder="Add details…" rows={3} />
               </div>
+
+              {/* Category */}
+              <div className="space-y-1.5">
+                <Label htmlFor="task_category">Category <span className="text-muted-foreground">(optional)</span></Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="task_category"
+                    name="task_category"
+                    placeholder="e.g. Work, Personal, Health…"
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    list="category-suggestions"
+                    className="flex-1"
+                  />
+                  <datalist id="category-suggestions">
+                    {allCategories.map((c) => <option key={c} value={c} />)}
+                  </datalist>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="due_date">Due Date</Label>
@@ -218,6 +254,24 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                   </Select>
                 </div>
               </div>
+
+              {/* Recurrence */}
+              <div className="space-y-1.5">
+                <Label htmlFor="recurrence">Repeat</Label>
+                <Select name="recurrence" defaultValue="none">
+                  <SelectTrigger id="recurrence">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Does not repeat</SelectItem>
+                    <SelectItem value="daily">Daily</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">When completed, the next occurrence is automatically created</p>
+              </div>
+
               {formError && <p className="text-sm text-destructive">{formError}</p>}
               <div className="flex gap-3 pt-1">
                 <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => setOpen(false)}>
@@ -232,7 +286,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
         </Dialog>
       </div>
 
-      {/* Filter tabs */}
+      {/* Status filter tabs */}
       <div className="flex gap-2 flex-wrap">
         {statusTabs.map((tab) => (
           <Button
@@ -246,6 +300,36 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
           </Button>
         ))}
       </div>
+
+      {/* Category filter chips */}
+      {allCategories.length > 0 && (
+        <div className="flex gap-2 flex-wrap items-center">
+          <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+          <button
+            onClick={() => setCategoryFilter("all")}
+            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+              categoryFilter === "all"
+                ? "bg-primary text-primary-foreground border-primary"
+                : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+            }`}
+          >
+            All categories
+          </button>
+          {allCategories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setCategoryFilter(cat === categoryFilter ? "all" : cat)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                categoryFilter === cat
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Task list */}
       {visible.length === 0 ? (
@@ -277,13 +361,21 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                 />
                 <div className="flex-1 min-w-0 space-y-1.5">
                   <div className="flex items-start justify-between gap-3">
-                    <h3
-                      className={`font-semibold text-foreground leading-snug ${
-                        task.status === "done" ? "line-through opacity-50" : ""
-                      }`}
-                    >
-                      {task.title}
-                    </h3>
+                    <div className="min-w-0">
+                      <h3
+                        className={`font-semibold text-foreground leading-snug ${
+                          task.status === "done" ? "line-through opacity-50" : ""
+                        }`}
+                      >
+                        {task.title}
+                      </h3>
+                      {task.task_category && (
+                        <span className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                          <Tag className="w-3 h-3" />
+                          {task.task_category}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span
                         className={`text-xs px-2.5 py-0.5 rounded-full font-medium border ${
@@ -292,6 +384,12 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                       >
                         {task.priority}
                       </span>
+                      {task.recurrence !== "none" && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium border border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-400 flex items-center gap-1">
+                          <RefreshCw className="w-2.5 h-2.5" />
+                          {recurrenceLabel[task.recurrence]}
+                        </span>
+                      )}
                       {task.due_date && (
                         <Button
                           variant="ghost"

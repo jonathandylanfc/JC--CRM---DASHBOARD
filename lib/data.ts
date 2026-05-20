@@ -173,7 +173,7 @@ export async function getAllTasks() {
   if (!userId) return []
   const { data } = await supabase
     .from("tasks")
-    .select("id, title, description, due_date, priority, status, created_at")
+    .select("id, title, description, due_date, priority, status, created_at, recurrence, task_category")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
   return data ?? []
