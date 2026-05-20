@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useOptimistic } from "react"
+import { useState, useTransition, useOptimistic, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -68,6 +68,19 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
   const [formError, setFormError] = useState<string | null>(null)
   const [calendarPending, setCalendarPending] = useState<string | null>(null)
   const [newCategory, setNewCategory] = useState("")
+  const [formDueDate, setFormDueDate] = useState("")
+  const [addToCalendar, setAddToCalendar] = useState(true)
+
+  // Persist calendar preference
+  useEffect(() => {
+    const stored = localStorage.getItem("task_add_to_calendar")
+    if (stored !== null) setAddToCalendar(stored === "true")
+  }, [])
+
+  function toggleCalendarPref(val: boolean) {
+    setAddToCalendar(val)
+    localStorage.setItem("task_add_to_calendar", String(val))
+  }
 
   const [optimisticTasks, updateOptimisticTasks] = useOptimistic(
     initialTasks,
@@ -158,13 +171,16 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     setFormError(null)
     const fd = new FormData(e.currentTarget)
     const title = fd.get("title") as string
+    const due_date = (fd.get("due_date") as string) || null
+    const description = (fd.get("description") as string) || null
+    const priority = (fd.get("priority") as string) || "medium"
 
     const tempTask: Task = {
       id: crypto.randomUUID(),
       title,
-      description: (fd.get("description") as string) || null,
-      due_date: (fd.get("due_date") as string) || null,
-      priority: (fd.get("priority") as string) || "medium",
+      description,
+      due_date,
+      priority,
       status: "todo",
       created_at: new Date().toISOString(),
       recurrence: (fd.get("recurrence") as string) || "none",
@@ -172,10 +188,29 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     }
 
     setOpen(false)
+    setFormDueDate("")
     startTransition(async () => {
       updateOptimisticTasks({ type: "add", task: tempTask })
       const result = await createTask(fd)
-      if (result?.error) setFormError(result.error)
+      if (result?.error) { setFormError(result.error); return }
+
+      // Auto-add to Google Calendar if enabled and due date exists
+      if (addToCalendar && due_date) {
+        try {
+          const res = await fetch("/api/calendar/task-event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, due_date, description: description ?? undefined, priority }),
+          })
+          const data = await res.json()
+          if (data.error === "not_connected") toast.info("Connect Google Calendar in Settings to auto-add tasks")
+          else if (data.error === "reconnect_required") toast.warning("Reconnect Google Calendar in Settings")
+          else if (!data.error) toast.success("Task created & added to Google Calendar")
+        } catch { /* silent */ }
+      } else {
+        toast.success("Task created")
+      }
+
       router.refresh()
     })
   }
@@ -194,7 +229,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
           />
         </div>
 
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setFormDueDate(""); setNewCategory("") } }}>
           <DialogTrigger asChild>
             <Button className="gap-2 shrink-0">
               <Plus className="w-4 h-4" />
@@ -237,7 +272,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="due_date">Due Date</Label>
-                  <Input id="due_date" name="due_date" type="date" />
+                  <Input id="due_date" name="due_date" type="date" value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="priority">Priority</Label>
@@ -270,6 +305,26 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">When completed, the next occurrence is automatically created</p>
+              </div>
+
+              {/* Google Calendar toggle */}
+              <div
+                className={`flex items-center justify-between rounded-lg border p-3 cursor-pointer transition-colors ${addToCalendar ? "border-primary/40 bg-primary/5" : "border-border bg-muted/30"}`}
+                onClick={() => toggleCalendarPref(!addToCalendar)}
+              >
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-primary shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium">Add to Google Calendar</p>
+                    <p className="text-xs text-muted-foreground">{formDueDate ? "Will be added when task is created" : "Set a due date to enable"}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${addToCalendar ? "bg-primary" : "bg-muted"}`}
+                >
+                  <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${addToCalendar ? "translate-x-4" : "translate-x-0"}`} />
+                </button>
               </div>
 
               {formError && <p className="text-sm text-destructive">{formError}</p>}
