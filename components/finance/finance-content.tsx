@@ -942,73 +942,20 @@ export function FinanceContent({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Transactions */}
         <div className="lg:col-span-2 space-y-4">
+          {/* Transactions header — row 1: title + Add button */}
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-lg font-semibold text-foreground shrink-0">Transactions</h2>
 
-            <div className="flex items-center gap-2 flex-wrap justify-end">
-              {!selectMode ? (
-                /* ── Normal mode buttons ─────────────────────────── */
-                <>
-                  {/* Search */}
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-                    <Input
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search…"
-                      className="h-8 pl-8 pr-3 text-xs w-36 bg-transparent"
-                    />
-                  </div>
-
-                  {/* Category filter */}
-                  <Select
-                    value={selectedCategory ?? "all"}
-                    onValueChange={(v) => setSelectedCategory(v === "all" ? null : v)}
-                  >
-                    <SelectTrigger size="sm" className={`w-auto gap-1.5 bg-transparent text-xs ${selectedCategory ? "border-primary text-primary" : ""}`}>
-                      <Filter className="w-3.5 h-3.5 shrink-0" />
-                      <SelectValue placeholder="Category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Categories</SelectItem>
-                      {allCategories.map((cat) => (
-                        <SelectItem key={cat} value={cat} className="capitalize">{cat}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  {/* Export */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 bg-transparent"
-                    onClick={handleExportCSV}
-                    disabled={displayTransactions.length === 0}
-                  >
-                    <Download className="w-4 h-4" />
-                    Export
+            {!selectMode ? (
+              /* Add Transaction dialog trigger */
+              <Dialog open={open} onOpenChange={setOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="gap-2 shrink-0">
+                    <Plus className="w-4 h-4" />
+                    <span className="hidden xs:inline">Add Transaction</span>
+                    <span className="xs:hidden">Add</span>
                   </Button>
-
-                  <CsvImporter existingAccounts={allAccounts} />
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 bg-transparent"
-                    onClick={() => setSelectMode(true)}
-                  >
-                    <CheckSquare className="w-4 h-4" />
-                    Select
-                  </Button>
-
-                  {/* Add Transaction dialog */}
-                  <Dialog open={open} onOpenChange={setOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" className="gap-2">
-                        <Plus className="w-4 h-4" />
-                        Add Transaction
-                      </Button>
-                    </DialogTrigger>
+                </DialogTrigger>
                     <DialogContent className="sm:max-w-md">
                       <DialogHeader>
                         <DialogTitle>New Transaction</DialogTitle>
@@ -1072,69 +1019,133 @@ export function FinanceContent({
                       </form>
                     </DialogContent>
                   </Dialog>
-                </>
-              ) : (
-                /* ── Select mode buttons ─────────────────────────── */
-                <>
-                  {/* Clear All */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 bg-transparent text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
-                    onClick={openClearAllDialog}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Clear All
-                  </Button>
+            ) : (
+              /* ── Select mode buttons ─────────────────────────── */
+              <div className="flex items-center gap-2">
+                {/* Clear All */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 bg-transparent text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+                  onClick={openClearAllDialog}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Clear All</span>
+                </Button>
 
-                  <Dialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
-                    <DialogContent className="sm:max-w-md">
-                      <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-destructive">
-                          <AlertTriangle className="w-5 h-5" />
-                          {selectedAccount ? `Delete all ${selectedAccount} transactions?` : "Delete all transactions?"}
-                        </DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4 mt-2">
-                        <p className="text-sm text-muted-foreground">
-                          This will permanently delete{" "}
-                          <span className="font-semibold text-foreground">
-                            all {realCount ?? "…"} transaction
-                            {(realCount ?? 2) !== 1 ? "s" : ""}
-                          </span>{" "}
-                          {selectedAccount ? `from ${selectedAccount}` : "for your account"}. This cannot be undone.
-                        </p>
-                        <div className="flex gap-3">
-                          <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setConfirmClearOpen(false)} disabled={isClearing}>Cancel</Button>
-                          <Button variant="destructive" className="flex-1" onClick={handleClearAll} disabled={isClearing}>
-                            {isClearing ? "Deleting…" : "Yes, delete all"}
-                          </Button>
-                        </div>
+                <Dialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2 text-destructive">
+                        <AlertTriangle className="w-5 h-5" />
+                        {selectedAccount ? `Delete all ${selectedAccount} transactions?` : "Delete all transactions?"}
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 mt-2">
+                      <p className="text-sm text-muted-foreground">
+                        This will permanently delete{" "}
+                        <span className="font-semibold text-foreground">
+                          all {realCount ?? "…"} transaction
+                          {(realCount ?? 2) !== 1 ? "s" : ""}
+                        </span>{" "}
+                        {selectedAccount ? `from ${selectedAccount}` : "for your account"}. This cannot be undone.
+                      </p>
+                      <div className="flex gap-3">
+                        <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setConfirmClearOpen(false)} disabled={isClearing}>Cancel</Button>
+                        <Button variant="destructive" className="flex-1" onClick={handleClearAll} disabled={isClearing}>
+                          {isClearing ? "Deleting…" : "Yes, delete all"}
+                        </Button>
                       </div>
-                    </DialogContent>
-                  </Dialog>
+                    </div>
+                  </DialogContent>
+                </Dialog>
 
-                  {/* Delete Selected */}
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="gap-2"
-                    disabled={selectedIds.size === 0}
-                    onClick={() => setConfirmDeleteSelectedOpen(true)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete {selectedIds.size > 0 ? selectedIds.size : ""} Selected
-                  </Button>
+                {/* Delete Selected */}
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="gap-2"
+                  disabled={selectedIds.size === 0}
+                  onClick={() => setConfirmDeleteSelectedOpen(true)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {selectedIds.size > 0 ? `Delete ${selectedIds.size}` : "Delete"}
+                </Button>
 
-                  {/* Cancel select mode */}
-                  <Button variant="outline" size="sm" className="gap-2 bg-transparent" onClick={exitSelectMode}>
-                    <X className="w-4 h-4" />
-                    Cancel
-                  </Button>
-                </>
-              )}
-            </div>
+                {/* Cancel select mode */}
+                <Button variant="outline" size="sm" className="gap-1 bg-transparent" onClick={exitSelectMode}>
+                  <X className="w-4 h-4" />
+                  <span className="hidden sm:inline">Cancel</span>
+                </Button>
+              </div>
+            )}
           </div>
+
+          {/* Row 2 (normal mode only): Search + Filter + secondary actions */}
+          {!selectMode && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Search */}
+              <div className="relative flex-1 min-w-0 max-w-[200px]">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search…"
+                  className="h-8 pl-8 pr-3 text-xs bg-transparent w-full"
+                />
+              </div>
+
+              {/* Category filter */}
+              <Select
+                value={selectedCategory ?? "all"}
+                onValueChange={(v) => setSelectedCategory(v === "all" ? null : v)}
+              >
+                <SelectTrigger size="sm" className={`w-auto gap-1.5 bg-transparent text-xs ${selectedCategory ? "border-primary text-primary" : ""}`}>
+                  <Filter className="w-3.5 h-3.5 shrink-0" />
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {allCategories.map((cat) => (
+                    <SelectItem key={cat} value={cat} className="capitalize">{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Secondary actions — hidden on small mobile */}
+              <div className="hidden sm:flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 bg-transparent"
+                  onClick={handleExportCSV}
+                  disabled={displayTransactions.length === 0}
+                >
+                  <Download className="w-4 h-4" />
+                  Export
+                </Button>
+                <CsvImporter existingAccounts={allAccounts} />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 bg-transparent"
+                  onClick={() => setSelectMode(true)}
+                >
+                  <CheckSquare className="w-4 h-4" />
+                  Select
+                </Button>
+              </div>
+              {/* Mobile-only compact secondary actions */}
+              <div className="flex sm:hidden items-center gap-1">
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent" onClick={handleExportCSV} disabled={displayTransactions.length === 0} title="Export CSV">
+                  <Download className="w-4 h-4" />
+                </Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent" onClick={() => setSelectMode(true)} title="Select transactions">
+                  <CheckSquare className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Delete Selected confirmation dialog */}
           <Dialog open={confirmDeleteSelectedOpen} onOpenChange={setConfirmDeleteSelectedOpen}>
@@ -1303,21 +1314,20 @@ export function FinanceContent({
                             </button>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{tx.category}</span>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
+                          <span className="capitalize">{tx.category}</span>
                           {tx.type === "transfer" && (
                             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400">transfer</span>
                           )}
                           <span>·</span>
-                          <span className="flex items-center gap-1">
-                            <CalendarDays className="w-3 h-3" />
+                          <span className="flex items-center gap-1 whitespace-nowrap">
+                            <CalendarDays className="w-3 h-3 shrink-0" />
                             {formatDate(tx.date)}
                           </span>
                           {tx.account_name && (
-                            <>
-                              <span>·</span>
-                              <span className="text-primary/70">{tx.account_name}</span>
-                            </>
+                            <span className="text-primary/70 truncate max-w-[100px]" title={tx.account_name}>
+                              · {tx.account_name}
+                            </span>
                           )}
                         </div>
                         {tx.notes && (
@@ -1336,12 +1346,12 @@ export function FinanceContent({
                           )}
                         </div>
                         {!selectMode && (
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                             <Button
                               variant="ghost"
                               size="icon"
                               className={`w-7 h-7 transition-colors ${tx.type === "transfer" ? "text-blue-500 hover:text-blue-600" : "text-muted-foreground hover:text-blue-500"}`}
-                              title={tx.type === "transfer" ? "Unmark as transfer" : "Mark as transfer (internal move, not real spending)"}
+                              title={tx.type === "transfer" ? "Unmark as transfer" : "Mark as transfer"}
                               disabled={isTogglingTransfer}
                               onClick={() => handleToggleTransfer(tx)}
                             >

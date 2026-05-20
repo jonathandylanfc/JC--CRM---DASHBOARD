@@ -19,6 +19,7 @@ import {
   getRecentTransactions,
   getUpcomingSubscriptions,
   getSavingsGoals,
+  getWeeklySpendingSummary,
 } from "@/lib/data"
 
 export default async function DashboardPage() {
@@ -32,6 +33,7 @@ export default async function DashboardPage() {
     recentTransactions,
     upcomingBills,
     savingsGoals,
+    weeklyRecap,
   ] = await Promise.all([
     getTaskStats(),
     getRecentTasks(),
@@ -42,6 +44,7 @@ export default async function DashboardPage() {
     getRecentTransactions(5),
     getUpcomingSubscriptions(7),
     getSavingsGoals(),
+    getWeeklySpendingSummary(),
   ])
 
   return (
@@ -50,7 +53,7 @@ export default async function DashboardPage() {
         <Sidebar />
       </div>
 
-      <main className="flex-1 p-3 md:p-4 lg:p-5 lg:ml-64">
+      <main className="flex-1 p-3 md:p-4 lg:p-5 lg:ml-64 pb-20 lg:pb-5">
         <Header
           title="Dashboard"
           description="Plan, prioritize, and accomplish your tasks with ease."
@@ -67,6 +70,7 @@ export default async function DashboardPage() {
           recentTransactions={recentTransactions}
           upcomingBills={upcomingBills}
           savingsGoals={savingsGoals}
+          weeklyRecap={weeklyRecap}
         />
       </main>
     </div>

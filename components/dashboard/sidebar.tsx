@@ -7,7 +7,7 @@ import {
   DollarSign,
   PiggyBank,
   Settings,
-  TrendingUp,
+  BarChart2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
@@ -21,7 +21,7 @@ const menuItems = [
   { icon: DollarSign, label: "Finance", href: "/finance" },
   { icon: PiggyBank, label: "Budget", href: "/budget" },
   { icon: Calendar, label: "Calendar", href: "/calendar" },
-  { icon: TrendingUp, label: "Net Worth", href: "/net-worth" },
+  { icon: BarChart2, label: "Investments", href: "/investments" },
   { icon: Settings, label: "Settings", href: "/settings" },
 ]
 

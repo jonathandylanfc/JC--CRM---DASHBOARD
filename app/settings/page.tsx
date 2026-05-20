@@ -8,9 +8,11 @@ export default async function SettingsPage() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <Sidebar />
+      <div className="hidden lg:block">
+        <Sidebar />
+      </div>
 
-      <main className="flex-1 min-w-0 overflow-x-hidden p-4 lg:p-6 lg:ml-64">
+      <main className="flex-1 min-w-0 overflow-x-hidden p-4 lg:p-6 lg:ml-64 pb-20 lg:pb-6">
         <Header title="Settings" description="Manage your account preferences and application settings." />
 
         <div className="mt-6">

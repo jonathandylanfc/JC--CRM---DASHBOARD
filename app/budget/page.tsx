@@ -48,7 +48,7 @@ export default async function BudgetPage({
       <div className="hidden lg:block">
         <Sidebar />
       </div>
-      <main className="flex-1 min-w-0 overflow-x-hidden p-3 md:p-4 lg:p-5 lg:ml-64">
+      <main className="flex-1 min-w-0 overflow-x-hidden p-3 md:p-4 lg:p-5 lg:ml-64 pb-20 lg:pb-5">
         <Header
           title="Budget"
           description="Plan where your money goes each month."

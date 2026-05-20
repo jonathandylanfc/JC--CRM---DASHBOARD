@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { Search, Bell, AlertTriangle, CheckCircle2, Info, DollarSign, PiggyBank, Calendar, TrendingDown, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -144,7 +145,7 @@ export function Header({ title, description, actions, user }: HeaderProps) {
             </PopoverContent>
           </Popover>
 
-          <div className="flex items-center gap-2 pl-2 md:pl-3 border-l border-border">
+          <Link href="/settings" className="flex items-center gap-2 pl-2 md:pl-3 border-l border-border hover:opacity-80 transition-opacity">
             <Avatar className="w-7 h-7 md:w-8 md:h-8 ring-2 ring-primary/20 transition-all duration-300 hover:ring-primary/40">
               <AvatarImage src={user?.avatar_url ?? "/profile.jpg"} alt={user?.name ?? "User"} />
               <AvatarFallback className="text-xs">{initials}</AvatarFallback>
@@ -153,7 +154,7 @@ export function Header({ title, description, actions, user }: HeaderProps) {
               <p className="font-semibold text-foreground">{user?.name ?? "User"}</p>
               <p className="text-muted-foreground text-[10px]">{user?.email ?? ""}</p>
             </div>
-          </div>
+          </Link>
         </div>
       </div>
 

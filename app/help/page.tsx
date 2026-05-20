@@ -5,9 +5,11 @@ import { HelpContent } from "@/components/help/help-content"
 export default function HelpPage() {
   return (
     <div className="flex min-h-screen bg-background">
-      <Sidebar />
+      <div className="hidden lg:block">
+        <Sidebar />
+      </div>
 
-      <main className="flex-1 min-w-0 overflow-x-hidden p-4 lg:p-6 lg:ml-64">
+      <main className="flex-1 min-w-0 overflow-x-hidden p-4 lg:p-6 lg:ml-64 pb-20 lg:pb-6">
         <Header title="Help & Support" description="Get help with using Dylan Pro and find answers to common questions." />
 
         <div className="mt-6">

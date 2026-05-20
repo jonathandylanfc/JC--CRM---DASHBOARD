@@ -446,6 +446,46 @@ export async function getUpcomingSubscriptions(days = 7) {
   return data ?? []
 }
 
+export async function getWeeklySpendingSummary() {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return { thisWeek: {}, lastWeek: {}, thisTotal: 0, lastTotal: 0 }
+
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, "0")
+  const toISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+  const thisStart = toISO(new Date(now.getTime() - 6 * 86400000))
+  const thisEnd = toISO(now)
+  const lastStart = toISO(new Date(now.getTime() - 13 * 86400000))
+  const lastEnd = toISO(new Date(now.getTime() - 7 * 86400000))
+
+  const { data } = await supabase
+    .from("transactions")
+    .select("amount, category, date, type")
+    .eq("user_id", userId)
+    .eq("type", "expense")
+    .gte("date", lastStart)
+    .lte("date", thisEnd)
+
+  const thisWeek: Record<string, number> = {}
+  const lastWeek: Record<string, number> = {}
+
+  for (const tx of data ?? []) {
+    const cat = tx.category ?? "other"
+    const amt = Number(tx.amount)
+    if (tx.date >= thisStart && tx.date <= thisEnd) {
+      thisWeek[cat] = (thisWeek[cat] ?? 0) + amt
+    } else if (tx.date >= lastStart && tx.date <= lastEnd) {
+      lastWeek[cat] = (lastWeek[cat] ?? 0) + amt
+    }
+  }
+
+  const thisTotal = Object.values(thisWeek).reduce((s, v) => s + v, 0)
+  const lastTotal = Object.values(lastWeek).reduce((s, v) => s + v, 0)
+
+  return { thisWeek, lastWeek, thisTotal, lastTotal }
+}
+
 export async function getConnectedBankNames(): Promise<string[]> {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return []

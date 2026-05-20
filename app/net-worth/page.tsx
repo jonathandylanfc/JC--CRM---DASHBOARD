@@ -11,8 +11,10 @@ export default async function NetWorthPage() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 min-w-0 overflow-x-hidden p-4 lg:p-6 lg:ml-64">
+      <div className="hidden lg:block">
+        <Sidebar />
+      </div>
+      <main className="flex-1 min-w-0 overflow-x-hidden p-4 lg:p-6 lg:ml-64 pb-20 lg:pb-6">
         <Header title="Net Worth" description="Track your assets and liabilities over time." />
         <div className="mt-6">
           <NetWorthContent initialEntries={entries} initialHistory={history} />

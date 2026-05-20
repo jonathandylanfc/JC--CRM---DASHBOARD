@@ -208,3 +208,14 @@
 .animate-fade-in {
   animation: fade-in 0.2s ease-out forwards;
 }
+
+/* Safe area inset support for iPhone notch / Dynamic Island */
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-area-pb {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+}
