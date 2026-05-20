@@ -4,7 +4,11 @@ import { StatsCards } from "@/components/dashboard/stats-cards"
 import { TaskBoardCard } from "@/components/dashboard/task-board-card"
 import { BudgetHealthCard } from "@/components/dashboard/budget-health-card"
 import { RecentTransactionsCard } from "@/components/dashboard/recent-transactions-card"
-import { Button } from "@/components/ui/button"
+import { BillRemindersCard } from "@/components/dashboard/bill-reminders-card"
+import { SpendingInsightsCard } from "@/components/dashboard/spending-insights-card"
+import { WeeklyGoalsCard } from "@/components/dashboard/weekly-goals-card"
+import { DashboardCustomizer } from "@/components/dashboard/dashboard-customizer"
+import { DashboardSections } from "@/components/dashboard/dashboard-sections"
 import {
   getTaskStats,
   getRecentTasks,
@@ -13,6 +17,8 @@ import {
   getMonthlyExpensesByCategory,
   getBudgetCategories,
   getRecentTransactions,
+  getUpcomingSubscriptions,
+  getSavingsGoals,
 } from "@/lib/data"
 
 export default async function DashboardPage() {
@@ -24,6 +30,8 @@ export default async function DashboardPage() {
     expensesByCategory,
     categories,
     recentTransactions,
+    upcomingBills,
+    savingsGoals,
   ] = await Promise.all([
     getTaskStats(),
     getRecentTasks(),
@@ -32,6 +40,8 @@ export default async function DashboardPage() {
     getMonthlyExpensesByCategory(),
     getBudgetCategories(),
     getRecentTransactions(5),
+    getUpcomingSubscriptions(7),
+    getSavingsGoals(),
   ])
 
   return (
@@ -45,44 +55,19 @@ export default async function DashboardPage() {
           title="Dashboard"
           description="Plan, prioritize, and accomplish your tasks with ease."
           user={user ?? undefined}
-          actions={
-            <>
-              <Button className="w-full sm:w-auto h-9 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-300 hover:shadow-lg hover:shadow-primary/30 hover:scale-105">
-                + Add Task
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full sm:w-auto h-9 text-sm transition-all duration-300 hover:shadow-md hover:scale-105 bg-transparent"
-              >
-                Import Data
-              </Button>
-            </>
-          }
+          actions={<DashboardCustomizer />}
         />
 
-        <div className="mt-4 md:mt-5 space-y-3 md:space-y-4">
-          <StatsCards
-            totalTasks={taskStats.total}
-            tasksDone={taskStats.done}
-            monthlyIncome={financeSummary.income}
-            monthlyExpenses={financeSummary.expenses}
-          />
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
-            {/* Left 2/3: Task board */}
-            <div className="lg:col-span-2">
-              <TaskBoardCard tasks={recentTasks} />
-            </div>
-            {/* Right 1/3: Budget health */}
-            <BudgetHealthCard
-              categories={categories}
-              expensesByCategory={expensesByCategory}
-              monthlyIncome={financeSummary.income}
-            />
-          </div>
-
-          <RecentTransactionsCard transactions={recentTransactions} />
-        </div>
+        <DashboardSections
+          taskStats={taskStats}
+          recentTasks={recentTasks}
+          financeSummary={financeSummary}
+          expensesByCategory={expensesByCategory}
+          categories={categories}
+          recentTransactions={recentTransactions}
+          upcomingBills={upcomingBills}
+          savingsGoals={savingsGoals}
+        />
       </main>
     </div>
   )

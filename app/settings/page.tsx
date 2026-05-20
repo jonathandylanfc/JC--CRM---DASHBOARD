@@ -1,8 +1,11 @@
 import { Sidebar } from "@/components/dashboard/sidebar"
 import { Header } from "@/components/dashboard/header"
 import { SettingsContent } from "@/components/settings/settings-content"
+import { getUserProfile } from "@/lib/data"
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const user = await getUserProfile()
+
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
@@ -11,7 +14,11 @@ export default function SettingsPage() {
         <Header title="Settings" description="Manage your account preferences and application settings." />
 
         <div className="mt-6">
-          <SettingsContent />
+          <SettingsContent
+            initialName={user?.name ?? ""}
+            initialEmail={user?.email ?? ""}
+            initialAvatarUrl={user?.avatar_url ?? null}
+          />
         </div>
       </main>
     </div>

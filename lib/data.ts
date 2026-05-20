@@ -406,6 +406,46 @@ export async function getRecentTransactions(limit: number = 5) {
   return data ?? []
 }
 
+export async function getNetWorthEntries() {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const { data } = await supabase
+    .from("net_worth_entries")
+    .select("id, name, type, amount, category, updated_at")
+    .eq("user_id", userId)
+    .order("type", { ascending: true })
+    .order("amount", { ascending: false })
+  return data ?? []
+}
+
+export async function getNetWorthHistory() {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const { data } = await supabase
+    .from("net_worth_history")
+    .select("net_worth, recorded_at")
+    .eq("user_id", userId)
+    .order("recorded_at", { ascending: true })
+    .limit(12)
+  return data ?? []
+}
+
+export async function getUpcomingSubscriptions(days = 7) {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const today = format(new Date(), "yyyy-MM-dd")
+  const future = format(new Date(Date.now() + days * 86400000), "yyyy-MM-dd")
+  const { data } = await supabase
+    .from("subscriptions")
+    .select("id, name, amount, billing_cycle, next_billing_date, category")
+    .eq("user_id", userId)
+    .eq("active", true)
+    .gte("next_billing_date", today)
+    .lte("next_billing_date", future)
+    .order("next_billing_date", { ascending: true })
+  return data ?? []
+}
+
 export async function getConnectedBankNames(): Promise<string[]> {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return []

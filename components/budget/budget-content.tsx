@@ -760,7 +760,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 <select
                   id="goal-linked-account"
                   value={goalLinkedAccount}
-                  onChange={(e) => { setGoalLinkedAccount(e.target.value); if (e.target.value) setGoalLinkedCategory("") }}
+                  onChange={(e) => { setGoalLinkedAccount(e.target.value); if (e.target.value) setGoalLinkedCategories(new Set()) }}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                 >
                   <option value="">— Not linked —</option>
@@ -848,6 +848,32 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           </Button>
         </div>
 
+        {/* Rollover summary banner */}
+        {isCurrentMonth && (() => {
+          const rolloverCats = categories.filter((cat) => {
+            if (!cat.rollover) return false
+            const base = budgetedAmount(cat, monthlyIncome)
+            const lastActual = lastMonthExpenses[cat.name.toLowerCase()] ?? 0
+            return base > lastActual
+          })
+          const totalRollover = rolloverCats.reduce((sum, cat) => {
+            const base = budgetedAmount(cat, monthlyIncome)
+            const lastActual = lastMonthExpenses[cat.name.toLowerCase()] ?? 0
+            return sum + Math.max(0, base - lastActual)
+          }, 0)
+          if (rolloverCats.length === 0 || totalRollover === 0) return null
+          return (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
+              <RotateCcw className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <div className="text-sm text-emerald-700 dark:text-emerald-400">
+                <span className="font-semibold">{currency(totalRollover)} rolled over</span>
+                {" from last month across "}
+                {rolloverCats.map((c) => c.name).join(", ")}
+              </div>
+            </div>
+          )
+        })()}
+
         {categories.length === 0 ? (
           <Card className="p-6 sm:p-8">
             <div className="text-center mb-6">
@@ -912,7 +938,14 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         ) : (
           <div className="space-y-3">
             {categories.map((cat) => {
-              const budgeted = budgetedAmount(cat, monthlyIncome)
+              const baseBudget = budgetedAmount(cat, monthlyIncome)
+              // Rollover: surplus from last month adds to this month's budget (current month only)
+              const lastMonthActual = lastMonthExpenses[cat.name.toLowerCase()] ?? 0
+              const rolloverAmount = (cat.rollover && isCurrentMonth)
+                ? Math.max(0, baseBudget - lastMonthActual)
+                : 0
+              const budgeted = baseBudget + rolloverAmount
+
               const actual = cat.is_catchall
                 ? catchallSpending
                 : (expensesByCategory[cat.name.toLowerCase()] ?? 0)
@@ -928,7 +961,6 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 (tx) => tx.category.toLowerCase() === cat.name.toLowerCase()
               )
               const isExpanded = expandedIds.has(cat.id)
-              const lastMonthActual = lastMonthExpenses[cat.name.toLowerCase()] ?? 0
               const momDelta = actual - lastMonthActual
 
               return (
@@ -946,6 +978,11 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                               <RotateCcw className="w-2.5 h-2.5" /> rollover
                             </Badge>
                           )}
+                          {rolloverAmount > 0 && (
+                            <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 gap-1">
+                              +{currency(rolloverAmount)} carried over
+                            </Badge>
+                          )}
                           {cat.is_catchall && (
                             <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-violet-600 dark:text-violet-400 border-violet-300 dark:border-violet-700 gap-1">
                               catch-all
@@ -956,7 +993,12 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                     </div>
                     <div className="flex items-center gap-4 shrink-0">
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-foreground">{currency(budgeted)}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
+                        <p className="text-sm font-semibold text-foreground">
+                          {currency(budgeted)}<span className="text-xs font-normal text-muted-foreground">/mo</span>
+                        </p>
+                        {rolloverAmount > 0 && (
+                          <p className="text-[11px] text-muted-foreground">{currency(baseBudget)} base + {currency(rolloverAmount)} rollover</p>
+                        )}
                         <p className={`text-xs ${over ? "text-rose-600 dark:text-rose-400 font-medium" : "text-muted-foreground"}`}>
                           {currency(actual)} spent
                         </p>
