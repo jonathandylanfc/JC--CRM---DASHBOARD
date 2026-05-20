@@ -145,7 +145,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const [goalContribType, setGoalContribType] = useState<"fixed" | "percentage">("fixed")
   const [goalContribValue, setGoalContribValue] = useState("")
   const [goalContribEnabled, setGoalContribEnabled] = useState(false)
-  const [goalLinkedCategory, setGoalLinkedCategory] = useState("")
+  const [goalLinkedCategories, setGoalLinkedCategories] = useState<Set<string>>(new Set())
   const [goalLinkedAccount, setGoalLinkedAccount] = useState("")
   const [isSavingGoal, startSavingGoal] = useTransition()
   const [deleteGoalId, setDeleteGoalId] = useState<string | null>(null)
@@ -154,7 +154,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setEditingGoal(null)
     setGoalName(""); setGoalTarget(""); setGoalCurrent(""); setGoalDate(""); setGoalColor(GOAL_COLORS[0])
     setGoalContribEnabled(false); setGoalContribType("fixed"); setGoalContribValue("")
-    setGoalLinkedCategory("")
+    setGoalLinkedCategories(new Set())
     setGoalLinkedAccount("")
     setGoalDialogOpen(true)
   }
@@ -165,7 +165,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setGoalContribEnabled(!!g.monthly_contribution_type)
     setGoalContribType(g.monthly_contribution_type ?? "fixed")
     setGoalContribValue(g.monthly_contribution_value != null ? String(g.monthly_contribution_value) : "")
-    setGoalLinkedCategory(g.linked_category ?? "")
+    setGoalLinkedCategories(new Set(g.linked_category?.split(",").filter(Boolean) ?? []))
     setGoalLinkedAccount(g.linked_account ?? "")
     setGoalDialogOpen(true)
   }
@@ -180,7 +180,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       fd.delete("monthly_contribution_type")
       fd.delete("monthly_contribution_value")
     }
-    fd.set("linked_category", goalLinkedCategory)
+    fd.set("linked_category", [...goalLinkedCategories].join(","))
     fd.set("linked_account", goalLinkedAccount)
     startSavingGoal(async () => {
       if (editingGoal) {
@@ -297,7 +297,6 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const [formType, setFormType] = useState<"percentage" | "fixed">("percentage")
   const [formValue, setFormValue] = useState("")
   const [formCatchall, setFormCatchall] = useState(false)
-  const [formLinkedAccount, setFormLinkedAccount] = useState<string>("")
 
   function openAdd() {
     setEditingCategory(null)
@@ -305,7 +304,6 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setFormType("percentage")
     setFormValue("")
     setFormCatchall(false)
-    setFormLinkedAccount("")
     setFormError(null)
     setDialogOpen(true)
   }
@@ -316,7 +314,6 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setFormType(cat.type)
     setFormValue(String(cat.value))
     setFormCatchall(cat.is_catchall ?? false)
-    setFormLinkedAccount(cat.linked_account ?? "")
     setFormError(null)
     setDialogOpen(true)
   }
@@ -335,7 +332,6 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setFormError(null)
     const fd = new FormData(e.currentTarget)
     fd.set("is_catchall", String(formCatchall))
-    fd.set("linked_account", formLinkedAccount)
 
     // Cap only applies to percentage types
     const val = parseFloat(formValue)
@@ -351,7 +347,6 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         type: formType,
         value: parseFloat(formValue),
         is_catchall: formCatchall,
-        linked_account: formLinkedAccount || null,
       }
       setDialogOpen(false)
       startTransition(async () => {
@@ -369,7 +364,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         sort_order: categories.length,
         rollover: false,
         is_catchall: formCatchall,
-        linked_account: formLinkedAccount || null,
+        linked_account: null,
       }
       setDialogOpen(false)
       startTransition(async () => {
@@ -540,11 +535,12 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {savingsGoals.map((goal) => {
-              // Priority: linked_account > linked_category > manual current_amount
+              // Priority: linked_account > linked_categories > manual current_amount
+              const linkedCats = goal.linked_category?.split(",").filter(Boolean) ?? []
               const effectiveCurrent = goal.linked_account
                 ? Math.max(0, allTimeAccountGrowth[goal.linked_account] ?? 0)
-                : goal.linked_category
-                ? (allTimeCategoryTotals[goal.linked_category.toLowerCase()] ?? 0)
+                : linkedCats.length > 0
+                ? linkedCats.reduce((sum, cat) => sum + (allTimeCategoryTotals[cat.toLowerCase()] ?? 0), 0)
                 : goal.current_amount
               const pct = goal.target_amount > 0 ? Math.min((effectiveCurrent / goal.target_amount) * 100, 100) : 0
               const remaining = goal.target_amount - effectiveCurrent
@@ -559,11 +555,11 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 : null
 
               // This month's actual contribution
-              // linked_account → monthly net inflow; linked_category → monthly spending; else logged
+              // linked_account → monthly net inflow; linked_categories → sum of monthly spending; else logged
               const monthlyActual = goal.linked_account
                 ? Math.max(0, accountGrowth[goal.linked_account] ?? 0)
-                : goal.linked_category
-                ? (expensesByCategory[goal.linked_category.toLowerCase()] ?? 0)
+                : linkedCats.length > 0
+                ? linkedCats.reduce((sum, cat) => sum + (expensesByCategory[cat.toLowerCase()] ?? 0), 0)
                 : (monthlyGoalContributions[goal.id] ?? 0)
 
               const monthlyPct = monthlyTarget && monthlyTarget > 0 ? Math.min((monthlyActual / monthlyTarget) * 100, 100) : null
@@ -589,8 +585,10 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                         {goal.linked_account && (
                           <p className="text-[10px] text-muted-foreground truncate" title={goal.linked_account}>↕ {goal.linked_account}</p>
                         )}
-                        {!goal.linked_account && goal.linked_category && (
-                          <p className="text-[10px] text-muted-foreground truncate">tracking {goal.linked_category}</p>
+                        {!goal.linked_account && linkedCats.length > 0 && (
+                          <p className="text-[10px] text-muted-foreground truncate" title={linkedCats.join(", ")}>
+                            tracking {linkedCats.length === 1 ? linkedCats[0] : `${linkedCats.length} categories`}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -619,7 +617,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                   {/* Overall progress bar */}
                   <div className="mb-2">
                     <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                      <span>{currency(effectiveCurrent)} {goal.linked_account ? "in account" : goal.linked_category ? "contributed" : "saved"}</span>
+                      <span>{currency(effectiveCurrent)} {goal.linked_account ? "in account" : linkedCats.length > 0 ? "contributed" : "saved"}</span>
                       <span>{currency(goal.target_amount)} goal</span>
                     </div>
                     <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
@@ -651,7 +649,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                             <span className="ml-1">· ~{monthsLeft} mo to go</span>
                           )}
                         </div>
-                        {!goal.linked_category && !goal.linked_account && (
+                        {linkedCats.length === 0 && !goal.linked_account && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -773,22 +771,36 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               </div>
             )}
 
-            {/* Linked budget category */}
+            {/* Linked budget categories (multi-select) */}
             {categories.length > 0 && !goalLinkedAccount && (
               <div className="space-y-1.5">
-                <Label htmlFor="goal-linked-category">Or link to a budget category <span className="text-muted-foreground">(optional)</span></Label>
-                <p className="text-xs text-muted-foreground -mt-0.5">Every dollar spent in that category automatically counts toward this goal's running total</p>
-                <select
-                  id="goal-linked-category"
-                  value={goalLinkedCategory}
-                  onChange={(e) => setGoalLinkedCategory(e.target.value)}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                >
-                  <option value="">— Not linked —</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
-                  ))}
-                </select>
+                <Label>Or link to budget categories <span className="text-muted-foreground">(optional)</span></Label>
+                <p className="text-xs text-muted-foreground -mt-0.5">Every dollar spent in those categories automatically counts toward this goal's running total</p>
+                <div className="rounded-md border border-input bg-background max-h-36 overflow-y-auto divide-y divide-border">
+                  {categories.map((c) => {
+                    const checked = goalLinkedCategories.has(c.name)
+                    return (
+                      <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-muted/40 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setGoalLinkedCategories((prev) => {
+                              const next = new Set(prev)
+                              next.has(c.name) ? next.delete(c.name) : next.add(c.name)
+                              return next
+                            })
+                          }}
+                          className="h-3.5 w-3.5 rounded border-border accent-primary"
+                        />
+                        <span className="text-sm">{c.name}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                {goalLinkedCategories.size > 0 && (
+                  <p className="text-xs text-primary font-medium">{goalLinkedCategories.size} categor{goalLinkedCategories.size === 1 ? "y" : "ies"} selected</p>
+                )}
               </div>
             )}
 
@@ -901,18 +913,12 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           <div className="space-y-3">
             {categories.map((cat) => {
               const budgeted = budgetedAmount(cat, monthlyIncome)
-              const isGrowthMode = !!cat.linked_account
-              const growthActual = isGrowthMode ? (accountGrowth[cat.linked_account!] ?? 0) : 0
-              const actual = isGrowthMode
-                ? growthActual
-                : cat.is_catchall
+              const actual = cat.is_catchall
                 ? catchallSpending
                 : (expensesByCategory[cat.name.toLowerCase()] ?? 0)
-              // For growth mode: progress toward goal (growth / budgeted), capped at 100%
-              const pct = budgeted > 0 ? Math.min((Math.max(0, actual) / budgeted) * 100, 100) : 0
-              // Growth mode: "over" means growth BELOW target; warn means < 80% of target
-              const over = isGrowthMode ? (actual < budgeted * 0.5 && budgeted > 0) : (actual > budgeted && budgeted > 0)
-              const warn = isGrowthMode ? (actual >= 0 && actual < budgeted * 0.8 && budgeted > 0 && actual >= budgeted * 0.5) : (pct >= 80 && !over)
+              const pct = budgeted > 0 ? Math.min((actual / budgeted) * 100, 100) : 0
+              const over = actual > budgeted && budgeted > 0
+              const warn = pct >= 80 && !over
 
               // Catch-all shows all transactions not claimed by other named categories
               const namedCatNames = new Set(categories.filter((c) => !c.is_catchall).map((c) => c.name.toLowerCase()))
@@ -945,28 +951,16 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                               catch-all
                             </Badge>
                           )}
-                          {isGrowthMode && (
-                            <>
-                              <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 gap-1">
-                                balance growth
-                              </Badge>
-                              <span className="text-[10px] text-muted-foreground truncate max-w-[140px]" title={cat.linked_account!}>
-                                {cat.linked_account}
-                              </span>
-                            </>
-                          )}
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-4 shrink-0">
                       <div className="text-right">
                         <p className="text-sm font-semibold text-foreground">{currency(budgeted)}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-                        <p className={`text-xs ${isGrowthMode ? (actual >= budgeted ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-muted-foreground") : over ? "text-rose-600 dark:text-rose-400 font-medium" : "text-muted-foreground"}`}>
-                          {isGrowthMode
-                            ? (actual >= 0 ? `+${currency(actual)} gained` : `${currency(actual)} lost`)
-                            : `${currency(actual)} spent`}
+                        <p className={`text-xs ${over ? "text-rose-600 dark:text-rose-400 font-medium" : "text-muted-foreground"}`}>
+                          {currency(actual)} spent
                         </p>
-                        {!isGrowthMode && lastMonthActual > 0 && (
+                        {lastMonthActual > 0 && (
                           <p className={`text-[11px] flex items-center justify-end gap-0.5 ${momDelta > 0 ? "text-rose-500" : momDelta < 0 ? "text-emerald-500" : "text-muted-foreground"}`}>
                             {momDelta > 0 ? <TrendingUp className="w-3 h-3" /> : momDelta < 0 ? <TrendingDown className="w-3 h-3" /> : null}
                             {momDelta === 0 ? "same as last mo" : `${momDelta > 0 ? "+" : ""}${currency(momDelta)} vs last mo`}
@@ -996,23 +990,13 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                   <div className="space-y-1">
                     <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          isGrowthMode
-                            ? pct >= 100 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-400" : "bg-rose-400"
-                            : over ? "bg-rose-500" : warn ? "bg-amber-400" : "bg-emerald-500"
-                        }`}
+                        className={`h-full rounded-full transition-all duration-500 ${over ? "bg-rose-500" : warn ? "bg-amber-400" : "bg-emerald-500"}`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                      {isGrowthMode
-                        ? <span>{pct.toFixed(0)}% of goal</span>
-                        : <span>{pct.toFixed(0)}% used</span>}
-                      {isGrowthMode
-                        ? actual >= budgeted
-                          ? <span className="text-emerald-600 dark:text-emerald-400 font-medium">Goal reached!</span>
-                          : <span>{currency(budgeted - Math.max(0, actual))} to goal</span>
-                        : over
+                      <span>{pct.toFixed(0)}% used</span>
+                      {over
                         ? <span className="text-rose-600 dark:text-rose-400 font-medium">{currency(actual - budgeted)} over</span>
                         : <span>{currency(budgeted - actual)} remaining</span>
                       }
@@ -1286,25 +1270,6 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${formCatchall ? "translate-x-4" : "translate-x-0"}`} />
               </button>
             </div>
-
-            {/* Linked account for balance growth tracking */}
-            {connectedBankNames.length > 0 && (
-              <div className="space-y-1.5">
-                <Label htmlFor="linked-account">Track balance growth <span className="text-muted-foreground">(optional)</span></Label>
-                <p className="text-xs text-muted-foreground -mt-0.5">Instead of spending, this category will show how much the selected account balance grew vs your goal</p>
-                <select
-                  id="linked-account"
-                  value={formLinkedAccount}
-                  onChange={(e) => setFormLinkedAccount(e.target.value)}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                >
-                  <option value="">— No account linked (spending mode) —</option>
-                  {connectedBankNames.map((name) => (
-                    <option key={name} value={name}>{name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             {formError && <p className="text-sm text-destructive">{formError}</p>}
 
