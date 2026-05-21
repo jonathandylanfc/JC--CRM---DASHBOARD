@@ -53,7 +53,7 @@ export default async function DashboardPage() {
         <Sidebar />
       </div>
 
-      <main className="flex-1 p-3 md:p-4 lg:p-5 lg:ml-64 pb-20 lg:pb-5">
+      <main className="flex-1 min-w-0 overflow-x-hidden p-3 md:p-4 lg:p-5 lg:ml-64 pb-20 lg:pb-5">
         <Header
           title="Dashboard"
           description="Plan, prioritize, and accomplish your tasks with ease."
