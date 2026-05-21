@@ -73,26 +73,26 @@ export function StatsCards({ totalTasks, tasksDone, monthlyIncome, monthlyExpens
             onMouseEnter={() => setHoveredCard(index)}
             onMouseLeave={() => setHoveredCard(null)}
             style={{ animationDelay: stat.delay }}
-            className={`${stat.bgColor} ${stat.textColor} p-4 transition-all duration-500 ease-out animate-slide-in-up cursor-pointer ${
+            className={`${stat.bgColor} ${stat.textColor} p-3 sm:p-4 transition-all duration-500 ease-out animate-slide-in-up cursor-pointer ${
               hoveredCard === index ? "scale-105 shadow-2xl" : "shadow-lg"
             }`}
           >
-            <div className="flex items-start justify-between mb-3">
-              <h3 className="text-xs font-medium opacity-90">{stat.title}</h3>
+            <div className="flex items-start justify-between mb-2">
+              <h3 className="text-[11px] sm:text-xs font-medium opacity-90 leading-tight">{stat.title}</h3>
               <div
-                className={`w-6 h-6 rounded-full ${
+                className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full shrink-0 ${
                   stat.bgColor === "bg-primary" ? "bg-primary-foreground/20" : "bg-primary"
                 } flex items-center justify-center transition-transform duration-300 ${
                   hoveredCard === index ? "rotate-45" : ""
                 }`}
               >
-                <ArrowUpRight className="w-3 h-3 text-primary-foreground" />
+                <ArrowUpRight className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-primary-foreground" />
               </div>
             </div>
-            <p className="text-xl sm:text-3xl font-bold mb-2">{stat.value}</p>
-            <div className="flex items-center gap-1.5 text-xs opacity-80">
-              <stat.Icon className="w-3 h-3" />
-              <span>{stat.subtitle}</span>
+            <p className="text-lg sm:text-3xl font-bold mb-1.5 truncate">{stat.value}</p>
+            <div className="flex items-center gap-1 text-[10px] sm:text-xs opacity-80">
+              <stat.Icon className="w-3 h-3 shrink-0" />
+              <span className="truncate">{stat.subtitle}</span>
             </div>
           </Card>
         </Link>
