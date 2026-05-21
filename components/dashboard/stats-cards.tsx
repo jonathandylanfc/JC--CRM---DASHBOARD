@@ -66,7 +66,7 @@ export function StatsCards({ totalTasks, tasksDone, monthlyIncome, monthlyExpens
   ]
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {stats.map((stat, index) => (
         <Link key={stat.title} href={stat.href}>
           <Card
@@ -89,7 +89,7 @@ export function StatsCards({ totalTasks, tasksDone, monthlyIncome, monthlyExpens
                 <ArrowUpRight className="w-3 h-3 text-primary-foreground" />
               </div>
             </div>
-            <p className="text-3xl font-bold mb-2">{stat.value}</p>
+            <p className="text-xl sm:text-3xl font-bold mb-2">{stat.value}</p>
             <div className="flex items-center gap-1.5 text-xs opacity-80">
               <stat.Icon className="w-3 h-3" />
               <span>{stat.subtitle}</span>
