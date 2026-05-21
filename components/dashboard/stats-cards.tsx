@@ -66,33 +66,48 @@ export function StatsCards({ totalTasks, tasksDone, monthlyIncome, monthlyExpens
   ]
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
       {stats.map((stat, index) => (
         <Link key={stat.title} href={stat.href} className="block h-full">
           <Card
             onMouseEnter={() => setHoveredCard(index)}
             onMouseLeave={() => setHoveredCard(null)}
             style={{ animationDelay: stat.delay }}
-            className={`${stat.bgColor} ${stat.textColor} h-full p-3 sm:p-4 flex flex-col justify-between transition-all duration-300 animate-slide-in-up cursor-pointer ${
+            className={`${stat.bgColor} ${stat.textColor} h-full p-3 sm:p-4 flex flex-row lg:flex-col items-center lg:items-start justify-between transition-all duration-300 animate-slide-in-up cursor-pointer ${
               hoveredCard === index ? "scale-[1.02] shadow-2xl" : "shadow-md"
             }`}
           >
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[11px] sm:text-xs font-medium opacity-80">{stat.title}</h3>
-              <div
-                className={`w-5 h-5 rounded-full shrink-0 ${
-                  stat.bgColor === "bg-primary" ? "bg-primary-foreground/20" : "bg-primary"
-                } flex items-center justify-center`}
-              >
+            <div className="flex items-center gap-3 lg:w-full lg:justify-between lg:mb-3">
+              <div className={`w-8 h-8 lg:hidden rounded-full shrink-0 ${
+                stat.bgColor === "bg-primary" ? "bg-primary-foreground/20" : "bg-primary"
+              } flex items-center justify-center`}>
+                <stat.Icon className="w-4 h-4 text-primary-foreground" />
+              </div>
+              <div className="lg:hidden">
+                <p className="text-[11px] font-medium opacity-70">{stat.title}</p>
+                <p className="text-lg font-bold leading-tight">{stat.value}</p>
+              </div>
+              {/* Desktop layout */}
+              <h3 className="hidden lg:block text-xs font-medium opacity-80">{stat.title}</h3>
+              <div className={`hidden lg:flex w-5 h-5 rounded-full shrink-0 ${
+                stat.bgColor === "bg-primary" ? "bg-primary-foreground/20" : "bg-primary"
+              } items-center justify-center`}>
                 <ArrowUpRight className="w-3 h-3 text-primary-foreground" />
               </div>
             </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold leading-none mb-2">{stat.value}</p>
-              <div className="flex items-center gap-1 text-[10px] sm:text-xs opacity-70">
+            <div className="hidden lg:block">
+              <p className="text-2xl font-bold leading-none mb-2">{stat.value}</p>
+              <div className="flex items-center gap-1 text-xs opacity-70">
                 <stat.Icon className="w-3 h-3 shrink-0" />
                 <span>{stat.subtitle}</span>
               </div>
+            </div>
+            <div className="lg:hidden text-right">
+              <div className="flex items-center gap-1 text-[10px] opacity-70 justify-end">
+                <stat.Icon className="w-3 h-3 shrink-0" />
+                <span>{stat.subtitle}</span>
+              </div>
+              <ArrowUpRight className="w-4 h-4 opacity-40 ml-auto mt-1" />
             </div>
           </Card>
         </Link>
