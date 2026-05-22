@@ -108,6 +108,66 @@ export async function deleteTransaction(id: string) {
   return { success: true }
 }
 
+// Keywords that indicate a transaction is an internal bank transfer, not real spending
+const TRANSFER_KEYWORDS = [
+  "payment from chk",
+  "payment from checking",
+  "payment from savings",
+  "payment from sav",
+  "mobile banking payment to crd",
+  "mobile banking payment to credit",
+  "online banking transfer",
+  "online transfer",
+  "transfer to checking",
+  "transfer to savings",
+  "transfer from checking",
+  "transfer from savings",
+  "ach transfer",
+  "internal transfer",
+  "account transfer",
+  "funds transfer",
+  "autopay payment",
+  "automatic payment",
+  "credit card payment",
+]
+
+export async function autoMarkTransfers(): Promise<{ marked: number; error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { marked: 0, error: "Not authenticated" }
+
+  // Fetch all non-transfer expense/income transactions
+  const { data: transactions, error: fetchError } = await supabase
+    .from("transactions")
+    .select("id, title")
+    .eq("user_id", user.id)
+    .neq("type", "transfer")
+
+  if (fetchError) return { marked: 0, error: fetchError.message }
+  if (!transactions?.length) return { marked: 0 }
+
+  const toMark = transactions
+    .filter((tx) => {
+      const lower = tx.title.toLowerCase()
+      return TRANSFER_KEYWORDS.some((kw) => lower.includes(kw))
+    })
+    .map((tx) => tx.id)
+
+  if (!toMark.length) return { marked: 0 }
+
+  const { error: updateError } = await supabase
+    .from("transactions")
+    .update({ type: "transfer" })
+    .in("id", toMark)
+    .eq("user_id", user.id)
+
+  if (updateError) return { marked: 0, error: updateError.message }
+  revalidatePath("/finance")
+  revalidatePath("/budget")
+  revalidatePath("/")
+  return { marked: toMark.length }
+}
+
 export async function toggleTransfer(id: string, currentType: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

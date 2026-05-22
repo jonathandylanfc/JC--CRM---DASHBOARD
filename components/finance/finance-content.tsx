@@ -64,6 +64,7 @@ import {
   deleteSelectedTransactions,
   getTransactionCount,
   toggleTransfer,
+  autoMarkTransfers,
 } from "@/app/finance/actions"
 import { CsvImporter } from "@/components/finance/csv-importer"
 import { PlaidConnect } from "@/components/finance/plaid-connect"
@@ -268,6 +269,7 @@ export function FinanceContent({
   const [editError, setEditError] = useState<string | null>(null)
   const [isEditing, startEditing] = useTransition()
   const [isTogglingTransfer, startTogglingTransfer] = useTransition()
+  const [isAutoMarking, startAutoMarking] = useTransition()
 
   // Date-range, category, account filters, and search
   const [dateRange, setDateRange] = useState<DateRange>("this_month")
@@ -513,6 +515,19 @@ export function FinanceContent({
       await deleteTransaction(id)
       if (savedTx?.id === id) setSavedTx(null)
       router.refresh()
+    })
+  }
+
+  function handleAutoMarkTransfers() {
+    startAutoMarking(async () => {
+      const result = await autoMarkTransfers()
+      if (result.error) { toast.error(result.error); return }
+      if (result.marked === 0) {
+        toast.info("No new transfers detected")
+      } else {
+        toast.success(`Marked ${result.marked} transaction${result.marked !== 1 ? "s" : ""} as transfers`)
+        router.refresh()
+      }
     })
   }
 
@@ -1114,6 +1129,17 @@ export function FinanceContent({
 
               {/* Secondary actions — hidden on small mobile */}
               <div className="hidden sm:flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 bg-transparent"
+                  onClick={handleAutoMarkTransfers}
+                  disabled={isAutoMarking}
+                  title="Auto-detect bank transfers (credit card payments, account-to-account moves) and exclude them from spending"
+                >
+                  <ArrowLeftRight className="w-4 h-4" />
+                  {isAutoMarking ? "Detecting…" : "Auto-detect Transfers"}
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
