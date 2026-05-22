@@ -1,6 +1,7 @@
 import { Sidebar } from "@/components/dashboard/sidebar"
 import { Header } from "@/components/dashboard/header"
 import { FinanceContent } from "@/components/finance/finance-content"
+import { TransactionReview } from "@/components/finance/transaction-review"
 import {
   getAllTransactions,
   getAllSubscriptions,
@@ -11,9 +12,24 @@ import {
   getMonthlyExpensesByCategory,
   getConnectedBankNames,
 } from "@/lib/data"
+import { createClient } from "@/lib/supabase/server"
+
+async function getUnreviewedTransactions() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+  const { data } = await supabase
+    .from("transactions")
+    .select("id, title, amount, type, category, date, account_name, reviewed, snoozed_until")
+    .eq("user_id", user.id)
+    .eq("reviewed", false)
+    .order("date", { ascending: false })
+    .limit(50)
+  return data ?? []
+}
 
 export default async function FinancePage() {
-  const [transactions, subscriptions, financeSummary, user, startingBalance, budgetCategories, currentMonthExpenses, connectedBankNames] = await Promise.all([
+  const [transactions, subscriptions, financeSummary, user, startingBalance, budgetCategories, currentMonthExpenses, connectedBankNames, unreviewedTransactions] = await Promise.all([
     getAllTransactions(),
     getAllSubscriptions(),
     getMonthlyFinanceSummary(),
@@ -22,6 +38,7 @@ export default async function FinancePage() {
     getBudgetCategories(),
     getMonthlyExpensesByCategory(),
     getConnectedBankNames(),
+    getUnreviewedTransactions(),
   ])
 
   return (
@@ -36,7 +53,10 @@ export default async function FinancePage() {
           description="Track your income, expenses, and subscriptions."
           user={user ?? undefined}
         />
-        <div className="mt-6">
+        <div className="mt-6 space-y-6">
+          {unreviewedTransactions.length > 0 && (
+            <TransactionReview transactions={unreviewedTransactions} />
+          )}
           <FinanceContent
             initialTransactions={transactions}
             initialSubscriptions={subscriptions}

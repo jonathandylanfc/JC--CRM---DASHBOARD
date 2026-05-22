@@ -108,6 +108,50 @@ export async function deleteTransaction(id: string) {
   return { success: true }
 }
 
+export async function approveTransaction(id: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { error } = await supabase
+    .from("transactions")
+    .update({ reviewed: true, snoozed_until: null })
+    .eq("id", id)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/finance")
+  return { success: true }
+}
+
+export async function snoozeTransaction(id: string, hours = 24) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const snoozed_until = new Date(Date.now() + hours * 3600000).toISOString()
+  const { error } = await supabase
+    .from("transactions")
+    .update({ snoozed_until })
+    .eq("id", id)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/finance")
+  return { success: true }
+}
+
+export async function approveAllVisible(ids: string[]) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  if (!ids.length) return { success: true }
+  const { error } = await supabase
+    .from("transactions")
+    .update({ reviewed: true, snoozed_until: null })
+    .in("id", ids)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/finance")
+  return { success: true }
+}
+
 // Keywords that indicate a transaction is an internal bank transfer, not real spending
 const TRANSFER_KEYWORDS = [
   "payment from chk",
