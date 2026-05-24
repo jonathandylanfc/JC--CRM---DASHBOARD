@@ -314,6 +314,8 @@ export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: stri
   const [progress, setProgress] = useState<Progress | null>(null)
   const [accountName, setAccountName] = useState("")
   const [selectedExisting, setSelectedExisting] = useState<string>("")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
   const fileRef = useRef<HTMLInputElement>(null)
 
   // The resolved account name used for import
@@ -334,7 +336,16 @@ export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: stri
     setProgress(null)
     setAccountName("")
     setSelectedExisting("")
+    setDateFrom("")
+    setDateTo("")
   }
+
+  // Apply date range filter to rows for both the preview table and the import payload
+  const filteredRows = rows.filter((r) => {
+    if (dateFrom && r.date < dateFrom) return false
+    if (dateTo && r.date > dateTo) return false
+    return true
+  })
 
   function processFile(file: File) {
     if (!resolvedAccount) {
@@ -414,9 +425,9 @@ export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: stri
   // Import in chunks of CHUNK_SIZE, updating progress between each batch.
   async function handleImport() {
     setIsImporting(true)
-    setProgress({ done: 0, total: rows.length })
+    setProgress({ done: 0, total: filteredRows.length })
 
-    const payload = rows.map(({ date, description, amount, type, category, balance }) => ({
+    const payload = filteredRows.map(({ date, description, amount, type, category, balance }) => ({
       date,
       title: description,
       amount,
@@ -439,12 +450,12 @@ export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: stri
       }
 
       totalImported += result.count ?? 0
-      setProgress({ done: totalImported, total: rows.length })
+      setProgress({ done: totalImported, total: filteredRows.length })
     }
 
     // Auto-detect starting balance: highest balance on the oldest date in the CSV.
-    // rows is sorted newest-first, so the oldest row with a balance is near the end.
-    const oldestWithBalance = [...rows].reverse().find((r) => r.balance != null)
+    // filteredRows is sorted newest-first, so the oldest row with a balance is near the end.
+    const oldestWithBalance = [...filteredRows].reverse().find((r) => r.balance != null)
     if (oldestWithBalance?.balance != null) {
       await updateStartingBalance(oldestWithBalance.balance)
     }
@@ -459,8 +470,8 @@ export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: stri
     router.refresh()
   }
 
-  const incomeCount = rows.filter((r) => r.type === "income").length
-  const expenseCount = rows.filter((r) => r.type === "expense").length
+  const incomeCount = filteredRows.filter((r) => r.type === "income").length
+  const expenseCount = filteredRows.filter((r) => r.type === "expense").length
   const colOptions = headers.map((h, i) => ({ label: h || `Column ${i + 1}`, value: String(i) }))
   const progressPct = progress ? Math.round((progress.done / progress.total) * 100) : 0
 
@@ -496,7 +507,7 @@ export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: stri
       <DialogContent
         className={
           step === "preview"
-            ? "sm:max-w-4xl flex flex-col max-h-[92vh]"
+            ? "sm:max-w-4xl flex flex-col max-h-[92vh] overflow-hidden"
             : "sm:max-w-md"
         }
       >
@@ -618,6 +629,36 @@ export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: stri
               <ColSelect label="Balance column" field="balance" />
             </div>
 
+            {/* Date range filter */}
+            <div className="flex items-center gap-3 shrink-0">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Date range</span>
+              <div className="flex items-center gap-2 flex-1">
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="h-8 text-xs w-36"
+                  placeholder="From"
+                />
+                <span className="text-xs text-muted-foreground">–</span>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="h-8 text-xs w-36"
+                  placeholder="To"
+                />
+                {(dateFrom || dateTo) && (
+                  <button
+                    onClick={() => { setDateFrom(""); setDateTo("") }}
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Stats + header toggle */}
             <div className="flex items-center justify-between gap-3 shrink-0">
               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -657,9 +698,16 @@ export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: stri
                   No valid rows detected. Try adjusting the column mapping above.
                 </p>
               </div>
+            ) : filteredRows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center gap-2 border rounded-lg flex-1">
+                <FileSpreadsheet className="w-10 h-10 text-muted-foreground/30" />
+                <p className="text-sm text-muted-foreground">
+                  No transactions in that date range. Try adjusting the filter.
+                </p>
+              </div>
             ) : (
               <div className="border rounded-lg overflow-hidden flex-1 min-h-0">
-                <div className="overflow-y-auto h-full">
+                <div className="overflow-y-auto h-full max-h-[calc(92vh-300px)]">
                   <Table>
                     <TableHeader className="sticky top-0 z-10 bg-background shadow-[0_1px_0_0_hsl(var(--border))]">
                       <TableRow>
@@ -672,7 +720,7 @@ export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: stri
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {rows.map((row) => (
+                      {filteredRows.map((row) => (
                         <TableRow key={row._id}>
                           <TableCell className="text-xs text-muted-foreground font-mono">
                             {row.date}
@@ -751,16 +799,19 @@ export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: stri
 
               <div className="flex items-center justify-between">
                 <p className="text-xs text-muted-foreground">
-                  {rows.length} transaction{rows.length !== 1 ? "s" : ""} ready
-                  {rows.length > CHUNK_SIZE && (
+                  {filteredRows.length} transaction{filteredRows.length !== 1 ? "s" : ""} ready
+                  {(dateFrom || dateTo) && rows.length !== filteredRows.length && (
+                    <span className="text-muted-foreground/70"> ({rows.length} total in file)</span>
+                  )}
+                  {filteredRows.length > CHUNK_SIZE && (
                     <span className="text-muted-foreground/70">
-                      {" "}· {Math.ceil(rows.length / CHUNK_SIZE)} batches of {CHUNK_SIZE}
+                      {" "}· {Math.ceil(filteredRows.length / CHUNK_SIZE)} batches of {CHUNK_SIZE}
                     </span>
                   )}
                 </p>
                 <Button
                   onClick={handleImport}
-                  disabled={isImporting || rows.length === 0}
+                  disabled={isImporting || filteredRows.length === 0}
                   className="gap-2"
                 >
                   {isImporting ? (
@@ -771,7 +822,7 @@ export function CsvImporter({ existingAccounts = [] }: { existingAccounts?: stri
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      Import {rows.length} transaction{rows.length !== 1 ? "s" : ""}
+                      Import {filteredRows.length} transaction{filteredRows.length !== 1 ? "s" : ""}
                     </>
                   )}
                 </Button>
