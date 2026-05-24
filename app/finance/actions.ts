@@ -355,6 +355,7 @@ export async function importTransactions(
     category: mappings.get(r.title.toLowerCase().trim()) ?? r.category,
     date: r.date,
     balance: r.balance ?? null,
+    reviewed: true, // CSV imports are pre-approved — skip the review queue
   }))
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
