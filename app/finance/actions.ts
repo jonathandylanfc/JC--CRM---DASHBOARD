@@ -175,20 +175,15 @@ const TRANSFER_KEYWORDS = [
   "credit card payment",
 ]
 
-export async function autoMarkTransfers(): Promise<{ marked: number; error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { marked: 0, error: "Not authenticated" }
-
-  // Fetch all non-transfer expense/income transactions
-  const { data: transactions, error: fetchError } = await supabase
+// Internal helper — can be called from other actions without auth overhead
+async function runAutoMarkTransfers(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  const { data: transactions } = await supabase
     .from("transactions")
     .select("id, title")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .neq("type", "transfer")
 
-  if (fetchError) return { marked: 0, error: fetchError.message }
-  if (!transactions?.length) return { marked: 0 }
+  if (!transactions?.length) return 0
 
   const toMark = transactions
     .filter((tx) => {
@@ -197,19 +192,27 @@ export async function autoMarkTransfers(): Promise<{ marked: number; error?: str
     })
     .map((tx) => tx.id)
 
-  if (!toMark.length) return { marked: 0 }
+  if (!toMark.length) return 0
 
-  const { error: updateError } = await supabase
+  await supabase
     .from("transactions")
     .update({ type: "transfer" })
     .in("id", toMark)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
 
-  if (updateError) return { marked: 0, error: updateError.message }
+  return toMark.length
+}
+
+export async function autoMarkTransfers(): Promise<{ marked: number; error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { marked: 0, error: "Not authenticated" }
+
+  const marked = await runAutoMarkTransfers(supabase, user.id)
   revalidatePath("/finance")
   revalidatePath("/budget")
   revalidatePath("/")
-  return { marked: toMark.length }
+  return { marked: marked }
 }
 
 export async function toggleTransfer(id: string, currentType: string) {
@@ -362,6 +365,10 @@ export async function importTransactions(
   })
 
   if (error) return { error: (error as { message: string }).message }
+
+  // Auto-mark transfers after every import so they never pollute expense totals
+  await runAutoMarkTransfers(supabase, user.id)
+
   revalidatePath("/finance")
   revalidatePath("/")
   return { count: (data as number) ?? rows.length }

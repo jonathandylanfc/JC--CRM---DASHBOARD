@@ -160,6 +160,29 @@ export async function POST(req: NextRequest) {
     }, { onConflict: "plaid_item_id" })
   }
 
+  // Auto-mark transfers after every Plaid sync
+  if (totalAdded > 0) {
+    const TRANSFER_KEYWORDS = [
+      "payment from chk", "payment from checking", "payment from savings",
+      "payment from sav", "mobile banking payment to crd", "mobile banking payment to credit",
+      "online banking transfer", "online transfer", "transfer to checking",
+      "transfer to savings", "transfer from checking", "transfer from savings",
+      "ach transfer", "internal transfer", "account transfer", "funds transfer",
+      "autopay payment", "automatic payment", "credit card payment",
+    ]
+    const { data: txns } = await supabase
+      .from("transactions")
+      .select("id, title")
+      .eq("user_id", user.id)
+      .neq("type", "transfer")
+    const toMark = (txns ?? [])
+      .filter((tx) => TRANSFER_KEYWORDS.some((kw) => tx.title.toLowerCase().includes(kw)))
+      .map((tx) => tx.id)
+    if (toMark.length) {
+      await supabase.from("transactions").update({ type: "transfer" }).in("id", toMark).eq("user_id", user.id)
+    }
+  }
+
   return NextResponse.json({ count: totalAdded })
 }
 
