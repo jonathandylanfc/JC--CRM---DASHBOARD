@@ -114,13 +114,17 @@ function parseCSV(text: string): string[][] {
   return rows
 }
 
-// ─── Strip summary/preamble rows before the real header (e.g. BofA) ──────────
-// Some banks prepend a summary block before the transaction rows.
-// Find the first row whose first cell is a recognisable date-column header.
+// ─── Strip summary/preamble rows before the real header (e.g. BofA, Chase) ───
+// Some banks prepend filename/summary rows before the transaction table.
+// Chase format: row[0] = "Details", row[1] = "Posting Date", … so we must
+// check ALL cells in a row, not just the first.
 
 function stripPreamble(rows: string[][]): string[][] {
-  const dateHeaders = /^(date|transaction\s*date|posting\s*date|trans\.?\s*date)$/i
-  const idx = rows.findIndex((row) => dateHeaders.test(row[0]?.trim() ?? ""))
+  const headerSignals = /^(date|transaction\s*date|posting\s*date|trans\.?\s*date|details|description|desc|amount|debit|credit|balance|type)$/i
+  const idx = rows.findIndex((row) => {
+    const nonEmpty = row.filter((c) => c.trim())
+    return nonEmpty.length >= 3 && row.some((cell) => headerSignals.test(cell?.trim() ?? ""))
+  })
   return idx > 0 ? rows.slice(idx) : rows
 }
 
@@ -144,7 +148,7 @@ function detectColumns(headers: string[]): ColMap {
     amount: find(/^amount$/, /^amt$/, /amount|amt/),
     debit: find(/^debit(\s*amount)?$/),
     credit: find(/^credit(\s*amount)?$/),
-    type: find(/^type$/),
+    type: find(/^type$/, /^details$/),
     balance: find(/^balance$/, /^running\s*balance$/, /^ledger\s*balance$/, /^running\s*bal\.?$/, /balance/, /running\s*bal/i),
   }
 }
