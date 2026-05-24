@@ -3,6 +3,7 @@ import { Header } from "@/components/dashboard/header"
 import { InvestmentsContent } from "@/components/investments/investments-content"
 import { createClient } from "@/lib/supabase/server"
 import { getUserProfile } from "@/lib/data"
+import { refreshPrices } from "./actions"
 
 async function getInvestments() {
   const supabase = await createClient()
@@ -19,6 +20,28 @@ async function getInvestments() {
 export default async function InvestmentsPage() {
   const [investments, user] = await Promise.all([getInvestments(), getUserProfile()])
 
+  // Auto-refresh prices if any holding has no price or was last updated over 1 hour ago
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+  const needsRefresh = investments.some(
+    (inv) => !inv.current_price || (inv.updated_at && inv.updated_at < oneHourAgo)
+  )
+  if (needsRefresh && investments.length > 0) {
+    await refreshPrices()
+    // Re-fetch with fresh prices
+    const fresh = await getInvestments()
+    return <InvestmentsPageUI investments={fresh} user={user} />
+  }
+
+  return <InvestmentsPageUI investments={investments} user={user} />
+}
+
+function InvestmentsPageUI({
+  investments,
+  user,
+}: {
+  investments: Awaited<ReturnType<typeof getInvestments>>
+  user: Awaited<ReturnType<typeof getUserProfile>>
+}) {
   return (
     <div className="flex min-h-screen bg-background">
       <div className="hidden lg:block">

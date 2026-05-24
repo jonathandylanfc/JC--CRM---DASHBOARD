@@ -93,26 +93,74 @@ export async function refreshPrices() {
 
   if (!investments?.length) return { updated: 0 }
 
-  let updated = 0
-  for (const inv of investments) {
-    try {
-      const res = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${inv.symbol}?interval=1d&range=1d`,
-        { next: { revalidate: 0 } }
-      )
-      const json = await res.json()
-      const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice
-      if (price) {
-        await supabase
-          .from("investments")
-          .update({ current_price: price, updated_at: new Date().toISOString() })
-          .eq("id", inv.id)
-          .eq("user_id", user.id)
-        updated++
+  // Batch all symbols into a single Yahoo Finance request
+  const symbols = investments.map((i) => i.symbol).join(",")
+  const priceMap = new Map<string, number>()
+
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice,symbol`,
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        cache: "no-store",
       }
-    } catch {}
+    )
+
+    if (res.ok) {
+      const json = await res.json()
+      const quotes = json?.quoteResponse?.result ?? []
+      for (const q of quotes) {
+        if (q.symbol && q.regularMarketPrice) {
+          priceMap.set(q.symbol.toUpperCase(), q.regularMarketPrice)
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Yahoo Finance batch fetch failed:", e)
   }
 
+  // If batch failed, fall back to individual fetches for missing symbols
+  const missing = investments.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
+  await Promise.allSettled(
+    missing.map(async (inv) => {
+      try {
+        const res = await fetch(
+          `https://query2.finance.yahoo.com/v8/finance/chart/${inv.symbol}?interval=1d&range=1d`,
+          {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+              "Accept": "application/json",
+            },
+            cache: "no-store",
+          }
+        )
+        const json = await res.json()
+        const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice
+        if (price) priceMap.set(inv.symbol.toUpperCase(), price)
+      } catch {}
+    })
+  )
+
+  // Write all updated prices in parallel
+  let updated = 0
+  await Promise.allSettled(
+    investments.map(async (inv) => {
+      const price = priceMap.get(inv.symbol.toUpperCase())
+      if (!price) return
+      const { error } = await supabase
+        .from("investments")
+        .update({ current_price: price, updated_at: new Date().toISOString() })
+        .eq("id", inv.id)
+        .eq("user_id", user.id)
+      if (!error) updated++
+    })
+  )
+
   revalidatePath("/investments")
+  revalidatePath("/")
   return { updated }
 }
