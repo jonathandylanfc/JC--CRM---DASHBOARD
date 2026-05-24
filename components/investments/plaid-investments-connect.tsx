@@ -13,16 +13,17 @@ interface Props {
 export function PlaidInvestmentsConnect({ onSuccess }: Props) {
   const [linkToken, setLinkToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [tokenError, setTokenError] = useState(false)
   const [connecting, setConnecting] = useState(false)
 
   useEffect(() => {
     fetch("/api/plaid/create-link-token-investments", { method: "POST" })
       .then((r) => r.json())
       .then((d) => {
-        if (d.link_token) setLinkToken(d.link_token)
-        else toast.error("Could not initialize Plaid. Make sure Investments is enabled in your Plaid dashboard.")
+        if (d.link_token) { setLinkToken(d.link_token); setTokenError(false) }
+        else setTokenError(true)
       })
-      .catch(() => toast.error("Failed to connect to Plaid"))
+      .catch(() => setTokenError(true))
       .finally(() => setLoading(false))
   }, [])
 
@@ -70,6 +71,21 @@ export function PlaidInvestmentsConnect({ onSuccess }: Props) {
       if (err) toast.error("Plaid connection closed with an error")
     },
   })
+
+  if (tokenError) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-2 bg-transparent text-muted-foreground"
+        disabled
+        title="Enable the Investments product in your Plaid dashboard to use this feature"
+      >
+        <Link2 className="w-4 h-4" />
+        Plaid Investments not enabled
+      </Button>
+    )
+  }
 
   return (
     <Button
