@@ -15,19 +15,20 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 
-const menuItems = [
+const BASE_MENU_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/" },
   { icon: CheckSquare, label: "Tasks", href: "/tasks" },
   { icon: DollarSign, label: "Finance", href: "/finance" },
   { icon: PiggyBank, label: "Budget", href: "/budget" },
   { icon: Calendar, label: "Calendar", href: "/calendar" },
-  { icon: BarChart2, label: "Investments", href: "/investments" },
+  { icon: BarChart2, label: "Investments", href: "/investments", investmentsOnly: true },
   { icon: Settings, label: "Settings", href: "/settings" },
 ]
 
-export function Sidebar() {
+export function Sidebar({ showInvestments = true }: { showInvestments?: boolean }) {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
   const pathname = usePathname()
+  const menuItems = BASE_MENU_ITEMS.filter((i) => !i.investmentsOnly || showInvestments)
 
   return (
     <aside className="fixed top-0 left-0 z-40 w-64 bg-card border-r border-border p-4 h-screen overflow-y-auto lg:block">

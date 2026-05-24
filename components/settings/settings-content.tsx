@@ -17,16 +17,33 @@ interface SettingsContentProps {
   initialName: string
   initialEmail: string
   initialAvatarUrl: string | null
+  initialShowInvestments?: boolean
 }
 
-export function SettingsContent({ initialName, initialEmail, initialAvatarUrl }: SettingsContentProps) {
+export function SettingsContent({ initialName, initialEmail, initialAvatarUrl, initialShowInvestments = true }: SettingsContentProps) {
   const { theme, setTheme } = useTheme()
   const [isLoggingOut, startLogout] = useTransition()
   const [isSaving, startSaving] = useTransition()
   const [name, setName] = useState(initialName)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(initialAvatarUrl)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [showInvestments, setShowInvestments] = useState(initialShowInvestments)
+  const [isSavingNav, startSavingNav] = useTransition()
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function handleShowInvestmentsToggle(checked: boolean) {
+    setShowInvestments(checked)
+    startSavingNav(async () => {
+      const { updateShowInvestments } = await import("@/app/settings/actions")
+      const result = await updateShowInvestments(checked)
+      if (result?.error) {
+        toast.error(result.error)
+        setShowInvestments(!checked) // revert
+      } else {
+        toast.success(checked ? "Investments tab enabled" : "Investments tab hidden")
+      }
+    })
+  }
 
   function handleLogout() {
     startLogout(async () => {
@@ -170,6 +187,17 @@ export function SettingsContent({ initialName, initialEmail, initialAvatarUrl }:
               <p className="text-sm text-muted-foreground">Enable dark mode theme</p>
             </div>
             <Switch checked={theme === "dark"} onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")} />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Show Investments Tab</p>
+              <p className="text-sm text-muted-foreground">Display Investments in the sidebar and bottom navigation</p>
+            </div>
+            <Switch
+              checked={showInvestments}
+              onCheckedChange={handleShowInvestmentsToggle}
+              disabled={isSavingNav}
+            />
           </div>
         </div>
       </Card>

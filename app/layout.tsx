@@ -4,7 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
-import { BottomNav } from "@/components/dashboard/bottom-nav"
+import { BottomNavServer as BottomNav } from "@/components/dashboard/bottom-nav-server"
 import "./globals.css"
 
 const _geist = Geist({ subsets: ["latin"] })

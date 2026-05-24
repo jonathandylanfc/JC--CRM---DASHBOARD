@@ -1,4 +1,4 @@
-import { Sidebar } from "@/components/dashboard/sidebar"
+import { SidebarServer as Sidebar } from "@/components/dashboard/sidebar-server"
 import { Header } from "@/components/dashboard/header"
 import { CalendarContent } from "@/components/calendar/calendar-content"
 import { getUserProfile } from "@/lib/data"

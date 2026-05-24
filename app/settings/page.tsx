@@ -1,10 +1,19 @@
-import { Sidebar } from "@/components/dashboard/sidebar"
+import { SidebarServer as Sidebar } from "@/components/dashboard/sidebar-server"
 import { Header } from "@/components/dashboard/header"
 import { SettingsContent } from "@/components/settings/settings-content"
 import { getUserProfile } from "@/lib/data"
+import { createClient } from "@/lib/supabase/server"
+
+async function getShowInvestments() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return true
+  const { data } = await supabase.from("profiles").select("show_investments").eq("id", user.id).single()
+  return data?.show_investments ?? true
+}
 
 export default async function SettingsPage() {
-  const user = await getUserProfile()
+  const [user, showInvestments] = await Promise.all([getUserProfile(), getShowInvestments()])
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -20,6 +29,7 @@ export default async function SettingsPage() {
             initialName={user?.name ?? ""}
             initialEmail={user?.email ?? ""}
             initialAvatarUrl={user?.avatar_url ?? null}
+            initialShowInvestments={showInvestments}
           />
         </div>
       </main>

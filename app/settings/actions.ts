@@ -45,3 +45,17 @@ export async function updateProfile(formData: FormData) {
   revalidatePath("/")
   return { success: true }
 }
+
+export async function updateShowInvestments(show: boolean) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const { error } = await supabase
+    .from("profiles")
+    .upsert({ id: user.id, show_investments: show }, { onConflict: "id" })
+  if (error) return { error: error.message }
+
+  revalidatePath("/", "layout")
+  return { success: true }
+}

@@ -1,4 +1,4 @@
-import { Sidebar } from "@/components/dashboard/sidebar"
+import { SidebarServer as Sidebar } from "@/components/dashboard/sidebar-server"
 import { Header } from "@/components/dashboard/header"
 import { InvestmentsContent } from "@/components/investments/investments-content"
 import { createClient } from "@/lib/supabase/server"

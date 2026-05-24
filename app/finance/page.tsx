@@ -1,4 +1,4 @@
-import { Sidebar } from "@/components/dashboard/sidebar"
+import { SidebarServer as Sidebar } from "@/components/dashboard/sidebar-server"
 import { Header } from "@/components/dashboard/header"
 import { FinanceContent } from "@/components/finance/finance-content"
 import { TransactionReview } from "@/components/finance/transaction-review"

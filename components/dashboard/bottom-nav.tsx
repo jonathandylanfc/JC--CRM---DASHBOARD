@@ -5,16 +5,20 @@ import { usePathname } from "next/navigation"
 import { LayoutDashboard, CheckSquare, DollarSign, PiggyBank, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const tabs = [
-  { icon: LayoutDashboard, label: "Home", href: "/" },
-  { icon: CheckSquare, label: "Tasks", href: "/tasks" },
-  { icon: DollarSign, label: "Finance", href: "/finance" },
-  { icon: PiggyBank, label: "Budget", href: "/budget" },
-  { icon: Settings, label: "Settings", href: "/settings" },
+import { BarChart2 } from "lucide-react"
+
+const ALL_TABS = [
+  { icon: LayoutDashboard, label: "Home", href: "/", investmentsOnly: false },
+  { icon: CheckSquare, label: "Tasks", href: "/tasks", investmentsOnly: false },
+  { icon: DollarSign, label: "Finance", href: "/finance", investmentsOnly: false },
+  { icon: PiggyBank, label: "Budget", href: "/budget", investmentsOnly: false },
+  { icon: BarChart2, label: "Invest", href: "/investments", investmentsOnly: true },
+  { icon: Settings, label: "Settings", href: "/settings", investmentsOnly: false },
 ]
 
-export function BottomNav() {
+export function BottomNav({ showInvestments = true }: { showInvestments?: boolean }) {
   const pathname = usePathname()
+  const tabs = ALL_TABS.filter((t) => !t.investmentsOnly || showInvestments)
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-card border-t border-border safe-area-pb">

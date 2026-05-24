@@ -1,4 +1,4 @@
-import { Sidebar } from "@/components/dashboard/sidebar"
+import { SidebarServer as Sidebar } from "@/components/dashboard/sidebar-server"
 import { Header } from "@/components/dashboard/header"
 import { NetWorthContent } from "@/components/net-worth/net-worth-content"
 import { getNetWorthEntries, getNetWorthHistory } from "@/lib/data"
