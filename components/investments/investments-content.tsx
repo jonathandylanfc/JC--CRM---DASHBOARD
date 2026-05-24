@@ -46,6 +46,7 @@ import {
   Legend,
 } from "recharts"
 import { upsertInvestment, deleteInvestment, bulkUpsertInvestments, refreshPrices } from "@/app/investments/actions"
+import { PlaidInvestmentsConnect } from "./plaid-investments-connect"
 
 const CHART_COLORS = [
   "#6366f1","#8b5cf6","#ec4899","#f43f5e","#f97316",
@@ -411,6 +412,9 @@ export function InvestmentsContent({ initialInvestments }: Props) {
             <span className="hidden sm:inline">Refresh Prices</span>
           </Button>
 
+          {/* Plaid connect */}
+          <PlaidInvestmentsConnect onSuccess={() => router.refresh()} />
+
           {/* CSV Import */}
           <Dialog open={csvOpen} onOpenChange={(o) => { setCsvOpen(o); if (!o) { setCsvPreview(null); setCsvError(null) } }}>
             <DialogTrigger asChild>
@@ -508,7 +512,8 @@ export function InvestmentsContent({ initialInvestments }: Props) {
           <BarChart2 className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
           <p className="text-sm font-medium text-foreground mb-1">No holdings yet</p>
           <p className="text-xs text-muted-foreground mb-4">Import your Webull positions via CSV or add holdings manually.</p>
-          <div className="flex gap-3 justify-center">
+          <div className="flex gap-3 justify-center flex-wrap">
+            <PlaidInvestmentsConnect onSuccess={() => router.refresh()} />
             <Button variant="outline" size="sm" className="gap-2 bg-transparent" onClick={() => setCsvOpen(true)}>
               <Upload className="w-4 h-4" /> Import CSV
             </Button>
