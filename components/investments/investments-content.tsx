@@ -33,7 +33,25 @@ import {
   BarChart2,
 } from "lucide-react"
 import { toast } from "sonner"
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts"
 import { upsertInvestment, deleteInvestment, bulkUpsertInvestments, refreshPrices } from "@/app/investments/actions"
+
+const CHART_COLORS = [
+  "#6366f1","#8b5cf6","#ec4899","#f43f5e","#f97316",
+  "#eab308","#22c55e","#14b8a6","#06b6d4","#3b82f6",
+  "#a855f7","#10b981","#f59e0b","#ef4444","#84cc16",
+]
 
 interface Investment {
   id: string
@@ -306,6 +324,82 @@ export function InvestmentsContent({ initialInvestments }: Props) {
           </p>
         </Card>
       </div>
+
+      {/* Charts */}
+      {investments.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Allocation donut */}
+          <Card className="p-4">
+            <p className="text-sm font-semibold mb-4">Portfolio Allocation</p>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie
+                  data={investments
+                    .map((inv) => ({
+                      name: inv.symbol,
+                      value: inv.shares * (inv.current_price ?? inv.avg_cost),
+                    }))
+                    .sort((a, b) => b.value - a.value)}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={65}
+                  outerRadius={100}
+                  paddingAngle={2}
+                  dataKey="value"
+                >
+                  {investments.map((_, i) => (
+                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number) => [currency(value), "Value"]}
+                  contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                />
+                <Legend
+                  iconType="circle"
+                  iconSize={8}
+                  formatter={(value) => <span style={{ fontSize: 11 }}>{value}</span>}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </Card>
+
+          {/* Gain/Loss bar chart */}
+          <Card className="p-4">
+            <p className="text-sm font-semibold mb-4">Gain / Loss by Position</p>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart
+                data={investments
+                  .map((inv) => {
+                    const price = inv.current_price ?? inv.avg_cost
+                    const gain = inv.shares * price - inv.shares * inv.avg_cost
+                    return { name: inv.symbol, gain: parseFloat(gain.toFixed(2)) }
+                  })
+                  .sort((a, b) => a.gain - b.gain)}
+                margin={{ top: 4, right: 8, left: 8, bottom: 4 }}
+              >
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-40} textAnchor="end" height={52} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v}`} width={52} />
+                <Tooltip
+                  formatter={(value: number) => [currency(value), "Gain/Loss"]}
+                  contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                />
+                <Bar dataKey="gain" radius={[3, 3, 0, 0]}>
+                  {investments
+                    .map((inv) => {
+                      const gain = inv.shares * (inv.current_price ?? inv.avg_cost) - inv.shares * inv.avg_cost
+                      return gain
+                    })
+                    .sort((a, b) => a - b)
+                    .map((gain, i) => (
+                      <Cell key={i} fill={gain >= 0 ? "#22c55e" : "#f43f5e"} />
+                    ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
