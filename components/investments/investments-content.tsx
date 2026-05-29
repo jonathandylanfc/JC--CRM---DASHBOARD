@@ -174,16 +174,17 @@ export function InvestmentsContent({ initialInvestments }: Props) {
   // Portfolio history for line chart
   const [history, setHistory] = useState<Array<{ date: string; label: string; value: number }>>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyRange, setHistoryRange] = useState<"30d" | "6m" | "1y" | "all">("30d")
 
   useEffect(() => {
     if (investments.length === 0) return
     setHistoryLoading(true)
-    fetch("/api/investments/history")
+    fetch(`/api/investments/history?range=${historyRange}`)
       .then((r) => r.json())
       .then((d) => setHistory(d.history ?? []))
       .catch(() => {})
       .finally(() => setHistoryLoading(false))
-  }, [investments])
+  }, [investments, historyRange])
 
   // Summary stats
   const totalCost = investments.reduce((s, inv) => s + inv.shares * inv.avg_cost, 0)
@@ -373,8 +374,23 @@ export function InvestmentsContent({ initialInvestments }: Props) {
           {/* Chart D: Portfolio Value Over Time */}
           <Card className="p-4">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-semibold">Portfolio Value (30d)</p>
-              {historyLoading && <span className="text-xs text-muted-foreground animate-pulse">Loading…</span>}
+              <p className="text-sm font-semibold">Portfolio Value</p>
+              <div className="flex items-center gap-1">
+                {historyLoading && <span className="text-xs text-muted-foreground animate-pulse mr-2">Loading…</span>}
+                {(["30d", "6m", "1y", "all"] as const).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setHistoryRange(r)}
+                    className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                      historyRange === r
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {r === "all" ? "All" : r.toUpperCase()}
+                  </button>
+                ))}
+              </div>
             </div>
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={history} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
