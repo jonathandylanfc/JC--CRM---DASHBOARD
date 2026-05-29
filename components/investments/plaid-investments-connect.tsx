@@ -56,10 +56,12 @@ export function PlaidInvestmentsConnect({ onSuccess }: Props) {
         })
         const syncData = await syncRes.json()
 
-        if (syncData.count > 0) {
+        if (syncData.error) {
+          toast.error(`Plaid error: ${syncData.error}`)
+        } else if (syncData.count > 0) {
           toast.success(`Synced ${syncData.count} holding${syncData.count !== 1 ? "s" : ""}`)
         } else {
-          toast.info("Connected! No holdings found — your broker may take a moment to share data.")
+          toast.info("Connected but no holdings returned — Plaid Investments may not be approved yet for this institution.")
         }
 
         onSuccess?.()

@@ -72,9 +72,11 @@ export async function POST(req: NextRequest) {
           totalSynced += rows.length
         }
       }
-    } catch (err) {
-      // This item may not have investments product — skip silently
-      console.warn(`investments sync skipped for item ${item.item_id}:`, err)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn(`investments sync skipped for item ${item.item_id}:`, msg)
+      // Surface the error so the UI can explain what happened
+      return NextResponse.json({ count: 0, error: msg })
     }
   }
 
