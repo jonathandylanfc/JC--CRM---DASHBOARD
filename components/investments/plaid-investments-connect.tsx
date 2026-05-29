@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { usePlaidLink } from "react-plaid-link"
 import { Button } from "@/components/ui/button"
-import { Loader2, Link2, RefreshCw } from "lucide-react"
+import { Loader2, Link2, RefreshCw, ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
 
 interface Props {
@@ -18,6 +18,13 @@ export function PlaidInvestmentsConnect({ onSuccess, hasBrokerage = false }: Pro
   const [connecting, setConnecting] = useState(false)
   const [syncing, setSyncing] = useState(false)
 
+  // Re-auth state: set when ADDITIONAL_CONSENT_REQUIRED is returned
+  const [reauthItemId, setReauthItemId] = useState<string | null>(null)
+  const [reauthInstitution, setReauthInstitution] = useState<string>("")
+  const [reauthLoading, setReauthLoading] = useState(false)
+  // When true and ready, auto-open Link for re-auth
+  const autoOpenRef = useRef(false)
+
   async function handleManualSync() {
     setSyncing(true)
     try {
@@ -30,6 +37,8 @@ export function PlaidInvestmentsConnect({ onSuccess, hasBrokerage = false }: Pro
       if (data.error) {
         if (data.error.includes("PRODUCT_NOT_READY")) {
           toast.info("Still loading — try again in a minute.", { duration: 5000 })
+        } else if (data.error.includes("ADDITIONAL_CONSENT_REQUIRED")) {
+          toast.warning("Investment access not authorized. Use 'Re-authorize' to fix this.", { duration: 6000 })
         } else {
           toast.error(`Sync failed: ${data.error}`)
         }
@@ -44,6 +53,31 @@ export function PlaidInvestmentsConnect({ onSuccess, hasBrokerage = false }: Pro
     }
   }
 
+  // Fetch update-mode link token for re-authorization
+  async function startReauth(itemId: string, institution: string) {
+    setReauthLoading(true)
+    try {
+      const res = await fetch("/api/plaid/create-link-token-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_id: itemId }),
+      })
+      const data = await res.json()
+      if (data.link_token) {
+        autoOpenRef.current = true
+        setLinkToken(data.link_token)
+        setReauthInstitution(institution)
+      } else {
+        toast.error("Could not start re-authorization. Try reconnecting.")
+      }
+    } catch {
+      toast.error("Could not start re-authorization.")
+    } finally {
+      setReauthLoading(false)
+    }
+  }
+
+  // Load the initial link token for new connections
   useEffect(() => {
     fetch("/api/plaid/create-link-token-investments", { method: "POST" })
       .then((r) => r.json())
@@ -58,23 +92,31 @@ export function PlaidInvestmentsConnect({ onSuccess, hasBrokerage = false }: Pro
   const { open, ready } = usePlaidLink({
     token: linkToken ?? "",
     onSuccess: async (public_token, metadata) => {
+      autoOpenRef.current = false
+      const isReauth = !!reauthItemId
+
       setConnecting(true)
       try {
-        // Exchange token (reuse existing endpoint — stores the item)
-        const exchangeRes = await fetch("/api/plaid/exchange-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            public_token,
-            institution: metadata.institution
-              ? { name: metadata.institution.name, institution_id: metadata.institution.institution_id }
-              : null,
-          }),
-        })
-        const exchangeData = await exchangeRes.json()
-        if (exchangeData.error) { toast.error(exchangeData.error); return }
-
-        toast.success(`${metadata.institution?.name ?? "Brokerage"} connected! Syncing holdings…`)
+        if (!isReauth) {
+          // New connection — exchange token
+          const exchangeRes = await fetch("/api/plaid/exchange-token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              public_token,
+              institution: metadata.institution
+                ? { name: metadata.institution.name, institution_id: metadata.institution.institution_id }
+                : null,
+            }),
+          })
+          const exchangeData = await exchangeRes.json()
+          if (exchangeData.error) { toast.error(exchangeData.error); return }
+          toast.success(`${metadata.institution?.name ?? "Brokerage"} connected! Syncing holdings…`)
+        } else {
+          // Re-auth — Plaid updates the existing item automatically; no exchange needed
+          toast.success(`${reauthInstitution} re-authorized! Syncing holdings…`)
+          setReauthItemId(null)
+        }
 
         // Sync investment holdings
         const syncRes = await fetch("/api/plaid/investments-sync", {
@@ -86,14 +128,24 @@ export function PlaidInvestmentsConnect({ onSuccess, hasBrokerage = false }: Pro
 
         if (syncData.error) {
           if (syncData.error.includes("PRODUCT_NOT_READY")) {
-            toast.info("Your brokerage is still loading — check back in a few minutes and hit Refresh Prices.", { duration: 6000 })
+            toast.info("Your brokerage is still loading — check back in a few minutes and hit Sync Holdings.", { duration: 6000 })
+          } else if (syncData.error.includes("ADDITIONAL_CONSENT_REQUIRED")) {
+            // Still needs consent — offer re-auth
+            if (syncData.item_id) {
+              setReauthItemId(syncData.item_id)
+              setReauthInstitution(metadata.institution?.name ?? "Brokerage")
+            }
+            toast.warning(
+              `${metadata.institution?.name ?? "Your brokerage"} needs investment access. Click "Re-authorize" to grant it.`,
+              { duration: 8000 }
+            )
           } else {
             toast.error(`Could not load holdings: ${syncData.error}`)
           }
         } else if (syncData.count > 0) {
           toast.success(`Synced ${syncData.count} holding${syncData.count !== 1 ? "s" : ""}`)
         } else {
-          toast.info("Connected but no holdings returned — Plaid Investments may not be approved yet for this institution.")
+          toast.info("Connected but no holdings returned yet — try Sync Holdings in a few minutes.")
         }
 
         onSuccess?.()
@@ -102,9 +154,17 @@ export function PlaidInvestmentsConnect({ onSuccess, hasBrokerage = false }: Pro
       }
     },
     onExit: (err) => {
+      autoOpenRef.current = false
       if (err) toast.error("Plaid connection closed with an error")
     },
   })
+
+  // Auto-open Link when a re-auth token is ready
+  useEffect(() => {
+    if (autoOpenRef.current && ready) {
+      open()
+    }
+  }, [ready, open])
 
   if (tokenError) {
     return (
@@ -123,7 +183,21 @@ export function PlaidInvestmentsConnect({ onSuccess, hasBrokerage = false }: Pro
 
   return (
     <div className="flex items-center gap-2">
-      {hasBrokerage && (
+      {/* Re-authorize button — shown when ADDITIONAL_CONSENT_REQUIRED */}
+      {reauthItemId && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2 bg-transparent border-yellow-500 text-yellow-500 hover:bg-yellow-500/10"
+          onClick={() => startReauth(reauthItemId, reauthInstitution)}
+          disabled={reauthLoading || connecting}
+        >
+          {reauthLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
+          Re-authorize
+        </Button>
+      )}
+
+      {hasBrokerage && !reauthItemId && (
         <Button
           variant="outline"
           size="sm"
@@ -135,12 +209,13 @@ export function PlaidInvestmentsConnect({ onSuccess, hasBrokerage = false }: Pro
           <span className="hidden sm:inline">Sync Holdings</span>
         </Button>
       )}
+
       <Button
         variant="outline"
         size="sm"
         className="gap-2 bg-transparent"
         onClick={() => open()}
-        disabled={!ready || loading || connecting}
+        disabled={!ready || loading || connecting || reauthLoading}
       >
         {loading || connecting
           ? <Loader2 className="w-4 h-4 animate-spin" />

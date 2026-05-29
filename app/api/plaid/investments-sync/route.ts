@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
         ? `${plaidErr.error_code}: ${plaidErr.error_message}`
         : (err instanceof Error ? err.message : String(err))
       console.warn(`investments sync skipped for item ${item.item_id}:`, msg)
-      return NextResponse.json({ count: 0, error: msg })
+      return NextResponse.json({ count: 0, error: msg, item_id: item.item_id })
     }
   }
 
