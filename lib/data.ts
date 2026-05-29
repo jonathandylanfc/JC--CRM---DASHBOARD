@@ -494,6 +494,7 @@ export async function getConnectedBankNames(): Promise<string[]> {
     .from("plaid_items")
     .select("id, institution_name, plaid_accounts(account_id, name, mask)")
     .eq("user_id", userId)
+    .eq("is_investment_item", false)
   const labels: string[] = []
   for (const item of items ?? []) {
     const accounts = (item as { plaid_accounts?: { account_id: string; name: string; mask: string | null }[] }).plaid_accounts ?? []

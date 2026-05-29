@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
     .from("plaid_items")
     .select("id, access_token, item_id, institution_name")
     .eq("user_id", user.id)
+    .eq("is_investment_item", false) // investment items are handled by /api/plaid/investments-sync
 
   const { data: items } = itemId
     ? await itemQuery.eq("item_id", itemId)
@@ -206,6 +207,7 @@ export async function GET() {
       plaid_sync_cursors(last_synced_at)
     `)
     .eq("user_id", user.id)
+    .eq("is_investment_item", false) // investment items belong on the Investments page only
 
   return NextResponse.json({ items: items ?? [] })
 }
