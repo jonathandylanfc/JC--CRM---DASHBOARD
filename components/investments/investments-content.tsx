@@ -47,6 +47,7 @@ import {
 } from "recharts"
 import { upsertInvestment, deleteInvestment, deleteAllInvestments, bulkUpsertInvestments, refreshPrices } from "@/app/investments/actions"
 import { PlaidInvestmentsConnect } from "./plaid-investments-connect"
+import { ConnectedBrokerages } from "./connected-brokerages"
 
 const CHART_COLORS = [
   "#6366f1","#8b5cf6","#ec4899","#f43f5e","#f97316",
@@ -520,6 +521,9 @@ export function InvestmentsContent({ initialInvestments }: Props) {
           </Dialog>
         </div>
       </div>
+
+      {/* Connected brokerages */}
+      <ConnectedBrokerages />
 
       {/* Holdings list */}
       {investments.length === 0 ? (
