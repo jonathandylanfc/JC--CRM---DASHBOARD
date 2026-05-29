@@ -13,7 +13,6 @@ export async function POST() {
       user: { client_user_id: user.id },
       client_name: "JDpro",
       products: [Products.Investments],
-      additional_consented_products: [Products.Investments],
       country_codes: [CountryCode.Us],
       language: "en",
     })
