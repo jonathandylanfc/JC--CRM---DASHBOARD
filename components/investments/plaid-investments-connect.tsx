@@ -57,7 +57,11 @@ export function PlaidInvestmentsConnect({ onSuccess }: Props) {
         const syncData = await syncRes.json()
 
         if (syncData.error) {
-          toast.error(`Plaid error: ${syncData.error}`)
+          if (syncData.error.includes("PRODUCT_NOT_READY")) {
+            toast.info("Your brokerage is still loading — check back in a few minutes and hit Refresh Prices.", { duration: 6000 })
+          } else {
+            toast.error(`Could not load holdings: ${syncData.error}`)
+          }
         } else if (syncData.count > 0) {
           toast.success(`Synced ${syncData.count} holding${syncData.count !== 1 ? "s" : ""}`)
         } else {
