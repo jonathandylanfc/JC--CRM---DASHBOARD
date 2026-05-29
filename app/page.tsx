@@ -7,7 +7,7 @@ import { RecentTransactionsCard } from "@/components/dashboard/recent-transactio
 import { BillRemindersCard } from "@/components/dashboard/bill-reminders-card"
 import { SpendingInsightsCard } from "@/components/dashboard/spending-insights-card"
 import { WeeklyGoalsCard } from "@/components/dashboard/weekly-goals-card"
-import { DashboardCustomizer } from "@/components/dashboard/dashboard-customizer"
+import { DashboardLayoutProvider, DashboardEditButton, DashboardVisibilityPanel } from "@/components/dashboard/dashboard-customizer"
 import { DashboardSections } from "@/components/dashboard/dashboard-sections"
 import {
   getTaskStats,
@@ -48,31 +48,35 @@ export default async function DashboardPage() {
   ])
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <div className="hidden lg:block">
-        <Sidebar />
+    <DashboardLayoutProvider>
+      <div className="flex min-h-screen bg-background">
+        <div className="hidden lg:block">
+          <Sidebar />
+        </div>
+
+        <main className="flex-1 min-w-0 overflow-x-hidden p-3 md:p-4 lg:p-5 lg:ml-64 pb-24 lg:pb-24">
+          <Header
+            title="Dashboard"
+            description="Plan, prioritize, and accomplish your tasks with ease."
+            user={user ?? undefined}
+          />
+
+          <DashboardSections
+            taskStats={taskStats}
+            recentTasks={recentTasks}
+            financeSummary={financeSummary}
+            expensesByCategory={expensesByCategory}
+            categories={categories}
+            recentTransactions={recentTransactions}
+            upcomingBills={upcomingBills}
+            savingsGoals={savingsGoals}
+            weeklyRecap={weeklyRecap}
+          />
+        </main>
+
+        <DashboardVisibilityPanel />
+        <DashboardEditButton />
       </div>
-
-      <main className="flex-1 min-w-0 overflow-x-hidden p-3 md:p-4 lg:p-5 lg:ml-64 pb-20 lg:pb-5">
-        <Header
-          title="Dashboard"
-          description="Plan, prioritize, and accomplish your tasks with ease."
-          user={user ?? undefined}
-          actions={<DashboardCustomizer />}
-        />
-
-        <DashboardSections
-          taskStats={taskStats}
-          recentTasks={recentTasks}
-          financeSummary={financeSummary}
-          expensesByCategory={expensesByCategory}
-          categories={categories}
-          recentTransactions={recentTransactions}
-          upcomingBills={upcomingBills}
-          savingsGoals={savingsGoals}
-          weeklyRecap={weeklyRecap}
-        />
-      </main>
-    </div>
+    </DashboardLayoutProvider>
   )
 }
