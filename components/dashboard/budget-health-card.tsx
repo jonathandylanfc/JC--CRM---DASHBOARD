@@ -23,10 +23,17 @@ function currency(n: number) {
 }
 
 export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome }: BudgetHealthCardProps) {
-  // Only expense-type budget categories
-  const expenseCats = categories.filter((c) => c.type === "expense" && c.value > 0)
+  // All categories with a value — resolve dollar amount for percentage types
+  const expenseCats = categories
+    .filter((c) => c.value > 0)
+    .map((c) => ({
+      ...c,
+      dollarValue: c.type === "percentage"
+        ? (c.value / 100) * monthlyIncome
+        : c.value,
+    }))
 
-  const totalBudgeted = expenseCats.reduce((sum, c) => sum + c.value, 0)
+  const totalBudgeted = expenseCats.reduce((sum, c) => sum + c.dollarValue, 0)
   const totalSpent = expenseCats.reduce((sum, c) => sum + (expensesByCategory[c.name.toLowerCase()] ?? 0), 0)
   const overallPct = totalBudgeted > 0 ? Math.min(Math.round((totalSpent / totalBudgeted) * 100), 100) : 0
 
@@ -41,7 +48,7 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
 
   const overBudget = expenseCats.filter((c) => {
     const spent = expensesByCategory[c.name.toLowerCase()] ?? 0
-    return spent > c.value
+    return spent > c.dollarValue
   })
 
   return (
@@ -78,7 +85,7 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
         <div className="space-y-3">
           {top3.map((cat) => {
             const spent = expensesByCategory[cat.name.toLowerCase()] ?? 0
-            const pct = cat.value > 0 ? Math.min(Math.round((spent / cat.value) * 100), 100) : 0
+            const pct = cat.dollarValue > 0 ? Math.min(Math.round((spent / cat.dollarValue) * 100), 100) : 0
             const color = pct >= 100 ? "bg-rose-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500"
             const textColor = pct >= 100 ? "text-rose-500" : pct >= 75 ? "text-amber-500" : "text-emerald-500"
             return (
@@ -91,7 +98,7 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
                   <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {currency(spent)} / {currency(cat.value)}
+                  {currency(spent)} / {currency(cat.dollarValue)}
                 </p>
               </div>
             )
@@ -99,7 +106,7 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
         </div>
       )}
 
-      {expenseCats.length === 0 && (
+      {top3.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-4">No budget categories set up.</p>
       )}
 
