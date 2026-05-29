@@ -48,6 +48,9 @@ import {
 import { upsertInvestment, deleteInvestment, deleteAllInvestments, bulkUpsertInvestments, refreshPrices } from "@/app/investments/actions"
 import { PlaidInvestmentsConnect } from "./plaid-investments-connect"
 import { ConnectedBrokerages } from "./connected-brokerages"
+import { MarketPulse } from "./market-pulse"
+import { MarketNews } from "./market-news"
+import { AnalystRatings } from "./analyst-ratings"
 
 
 interface Investment {
@@ -312,8 +315,29 @@ export function InvestmentsContent({ initialInvestments }: Props) {
     </form>
   )
 
+  const holdingSymbols = investments.map((inv) => inv.symbol)
+  const sharesMap = Object.fromEntries(investments.map((inv) => [inv.symbol, inv.shares]))
+  const avgCostMap = Object.fromEntries(investments.map((inv) => [inv.symbol, inv.avg_cost]))
+
   return (
     <div className="space-y-6">
+      {/* Market Pulse — live indices */}
+      <MarketPulse holdingSymbols={holdingSymbols} />
+
+      {/* News + Analyst Ratings */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2">
+          <MarketNews holdingSymbols={holdingSymbols} />
+        </div>
+        <div>
+          <AnalystRatings
+            holdingSymbols={holdingSymbols}
+            sharesMap={sharesMap}
+            avgCostMap={avgCostMap}
+          />
+        </div>
+      </div>
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="p-4">
