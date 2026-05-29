@@ -38,7 +38,14 @@ export function PlaidInvestmentsConnect({ onSuccess, hasBrokerage = false }: Pro
         if (data.error.includes("PRODUCT_NOT_READY")) {
           toast.info("Still loading — try again in a minute.", { duration: 5000 })
         } else if (data.error.includes("ADDITIONAL_CONSENT_REQUIRED")) {
-          toast.warning("Investment access not authorized. Use 'Re-authorize' to fix this.", { duration: 6000 })
+          // Surface the re-authorize button for the specific item that needs consent
+          if (data.item_id) {
+            setReauthItemId(data.item_id)
+            setReauthInstitution(
+              data.error.includes("E*TRADE") ? "E*TRADE from Morgan Stanley" : "Your brokerage"
+            )
+          }
+          toast.warning("Investment access not authorized — click Re-authorize below.", { duration: 6000 })
         } else {
           toast.error(`Sync failed: ${data.error}`)
         }
