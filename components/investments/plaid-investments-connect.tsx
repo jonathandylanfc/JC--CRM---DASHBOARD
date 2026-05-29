@@ -3,18 +3,46 @@
 import { useEffect, useState } from "react"
 import { usePlaidLink } from "react-plaid-link"
 import { Button } from "@/components/ui/button"
-import { Loader2, Link2 } from "lucide-react"
+import { Loader2, Link2, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 interface Props {
   onSuccess?: () => void
+  hasBrokerage?: boolean
 }
 
-export function PlaidInvestmentsConnect({ onSuccess }: Props) {
+export function PlaidInvestmentsConnect({ onSuccess, hasBrokerage = false }: Props) {
   const [linkToken, setLinkToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [tokenError, setTokenError] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+
+  async function handleManualSync() {
+    setSyncing(true)
+    try {
+      const res = await fetch("/api/plaid/investments-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (data.error) {
+        if (data.error.includes("PRODUCT_NOT_READY")) {
+          toast.info("Still loading — try again in a minute.", { duration: 5000 })
+        } else {
+          toast.error(`Sync failed: ${data.error}`)
+        }
+      } else if (data.count > 0) {
+        toast.success(`Synced ${data.count} holding${data.count !== 1 ? "s" : ""}`)
+        onSuccess?.()
+      } else {
+        toast.info("No holdings returned yet — try again in a moment.")
+      }
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   useEffect(() => {
     fetch("/api/plaid/create-link-token-investments", { method: "POST" })
@@ -94,17 +122,31 @@ export function PlaidInvestmentsConnect({ onSuccess }: Props) {
   }
 
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="gap-2 bg-transparent"
-      onClick={() => open()}
-      disabled={!ready || loading || connecting}
-    >
-      {loading || connecting
-        ? <Loader2 className="w-4 h-4 animate-spin" />
-        : <Link2 className="w-4 h-4" />}
-      {connecting ? "Syncing…" : "Connect via Plaid"}
-    </Button>
+    <div className="flex items-center gap-2">
+      {hasBrokerage && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2 bg-transparent"
+          onClick={handleManualSync}
+          disabled={syncing}
+        >
+          {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          <span className="hidden sm:inline">Sync Holdings</span>
+        </Button>
+      )}
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-2 bg-transparent"
+        onClick={() => open()}
+        disabled={!ready || loading || connecting}
+      >
+        {loading || connecting
+          ? <Loader2 className="w-4 h-4 animate-spin" />
+          : <Link2 className="w-4 h-4" />}
+        {connecting ? "Connecting…" : "Connect via Plaid"}
+      </Button>
+    </div>
   )
 }
