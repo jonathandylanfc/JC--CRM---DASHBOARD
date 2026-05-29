@@ -145,12 +145,14 @@ export function CalendarContent() {
   const [addingShifts, setAddingShifts] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>("local")
+  const [shiftEventTitle, setShiftEventTitle] = useState("Work")
 
   function handleScheduleFile(file: File) {
     setScheduleImage(file)
     setSchedulePreview(URL.createObjectURL(file))
     setParsedShifts([])
     setParseError(null)
+    setShiftEventTitle("Work")
   }
 
   async function handleParseSchedule() {
@@ -175,7 +177,9 @@ export function CalendarContent() {
   }
 
   async function handleAddShifts() {
-    const toAdd = parsedShifts.filter((s) => s.selected)
+    const toAdd = parsedShifts
+      .filter((s) => s.selected)
+      .map((s) => ({ ...s, title: shiftEventTitle.trim() || s.title }))
     if (!toAdd.length) return
     setAddingShifts(true)
     try {
@@ -1223,6 +1227,16 @@ export function CalendarContent() {
 
                 {parsedShifts.length > 0 && (
                   <div className="space-y-2">
+                    {/* Event title override */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground">Event title</label>
+                      <Input
+                        value={shiftEventTitle}
+                        onChange={(e) => setShiftEventTitle(e.target.value)}
+                        placeholder="e.g. Work, Shift, Apple Store…"
+                        className="h-8 text-sm"
+                      />
+                    </div>
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium">Found {parsedShifts.length} shift{parsedShifts.length !== 1 ? "s" : ""}</p>
                       <button
