@@ -1,9 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { Search, Bell, AlertTriangle, CheckCircle2, Info, DollarSign, PiggyBank, Calendar, TrendingDown, X } from "lucide-react"
+import { Bell, AlertTriangle, CheckCircle2, Info, DollarSign, PiggyBank, Calendar, TrendingDown, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { MobileNav } from "./mobile-nav"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -73,18 +72,8 @@ export function Header({ title, description, actions, user }: HeaderProps) {
   return (
     <header className="space-y-3 md:space-y-4 animate-slide-in-up">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-1">
+        <div className="flex items-center gap-2">
           <MobileNav />
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search tasks"
-              className="pl-9 pr-3 md:pr-16 h-9 text-sm bg-card border-border transition-all duration-300 focus:shadow-lg focus:shadow-primary/10"
-            />
-            <kbd className="hidden md:inline-block absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground bg-muted rounded border border-border">
-              ⌘F
-            </kbd>
-          </div>
         </div>
 
         <div className="flex items-center gap-1.5 md:gap-2">
