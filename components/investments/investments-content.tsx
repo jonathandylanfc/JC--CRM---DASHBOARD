@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useRef } from "react"
+import { useState, useTransition, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -34,26 +34,22 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import {
-  PieChart,
-  Pie,
-  Cell,
   BarChart,
   Bar,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Legend,
+  LineChart,
+  Line,
+  CartesianGrid,
+  Area,
+  AreaChart,
 } from "recharts"
 import { upsertInvestment, deleteInvestment, deleteAllInvestments, bulkUpsertInvestments, refreshPrices } from "@/app/investments/actions"
 import { PlaidInvestmentsConnect } from "./plaid-investments-connect"
 import { ConnectedBrokerages } from "./connected-brokerages"
 
-const CHART_COLORS = [
-  "#6366f1","#8b5cf6","#ec4899","#f43f5e","#f97316",
-  "#eab308","#22c55e","#14b8a6","#06b6d4","#3b82f6",
-  "#a855f7","#10b981","#f59e0b","#ef4444","#84cc16",
-]
 
 interface Investment {
   id: string
@@ -175,6 +171,20 @@ export function InvestmentsContent({ initialInvestments }: Props) {
   const [isRefreshing, startRefreshing] = useTransition()
   const [isImporting, startImporting] = useTransition()
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Portfolio history for line chart
+  const [history, setHistory] = useState<Array<{ date: string; label: string; value: number }>>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+
+  useEffect(() => {
+    if (investments.length === 0) return
+    setHistoryLoading(true)
+    fetch("/api/investments/history")
+      .then((r) => r.json())
+      .then((d) => setHistory(d.history ?? []))
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false))
+  }, [investments])
 
   // Summary stats
   const totalCost = investments.reduce((s, inv) => s + inv.shares * inv.avg_cost, 0)
@@ -332,75 +342,83 @@ export function InvestmentsContent({ initialInvestments }: Props) {
       {/* Charts */}
       {investments.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Allocation donut */}
+          {/* Chart A: Cost vs Current Value */}
           <Card className="p-4">
-            <p className="text-sm font-semibold mb-4">Portfolio Allocation</p>
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie
-                  data={investments
-                    .map((inv) => ({
-                      name: inv.symbol,
-                      value: inv.shares * (inv.current_price ?? inv.avg_cost),
-                    }))
-                    .sort((a, b) => b.value - a.value)}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={65}
-                  outerRadius={100}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {investments.map((_, i) => (
-                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value: number) => [currency(value), "Value"]}
-                  contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                />
-                <Legend
-                  iconType="circle"
-                  iconSize={8}
-                  formatter={(value) => <span style={{ fontSize: 11 }}>{value}</span>}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </Card>
-
-          {/* Gain/Loss bar chart */}
-          <Card className="p-4">
-            <p className="text-sm font-semibold mb-4">Gain / Loss by Position</p>
+            <p className="text-sm font-semibold mb-4">Cost vs. Current Value</p>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart
-                data={investments
-                  .map((inv) => {
-                    const price = inv.current_price ?? inv.avg_cost
-                    const gain = inv.shares * price - inv.shares * inv.avg_cost
-                    return { name: inv.symbol, gain: parseFloat(gain.toFixed(2)) }
-                  })
-                  .sort((a, b) => a.gain - b.gain)}
+                data={investments.map((inv) => ({
+                  name: inv.symbol,
+                  Cost: parseFloat((inv.shares * inv.avg_cost).toFixed(2)),
+                  Value: parseFloat((inv.shares * (inv.current_price ?? inv.avg_cost)).toFixed(2)),
+                }))}
                 margin={{ top: 4, right: 8, left: 8, bottom: 4 }}
               >
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-40} textAnchor="end" height={52} />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v}`} width={52} />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} width={44} />
                 <Tooltip
-                  formatter={(value: number) => [currency(value), "Gain/Loss"]}
+                  formatter={(value: number, name: string) => [currency(value), name]}
                   contentStyle={{ fontSize: 12, borderRadius: 8 }}
                 />
-                <Bar dataKey="gain" radius={[3, 3, 0, 0]}>
-                  {investments
-                    .map((inv) => {
-                      const gain = inv.shares * (inv.current_price ?? inv.avg_cost) - inv.shares * inv.avg_cost
-                      return gain
-                    })
-                    .sort((a, b) => a - b)
-                    .map((gain, i) => (
-                      <Cell key={i} fill={gain >= 0 ? "#22c55e" : "#f43f5e"} />
-                    ))}
+                <Bar dataKey="Cost" fill="#3b82f6" radius={[3, 3, 0, 0]} name="Cost Basis" />
+                <Bar dataKey="Value" radius={[3, 3, 0, 0]} name="Current Value">
+                  {investments.map((inv, i) => {
+                    const gain = inv.shares * (inv.current_price ?? inv.avg_cost) - inv.shares * inv.avg_cost
+                    return <Cell key={i} fill={gain >= 0 ? "#22c55e" : "#f43f5e"} />
+                  })}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+          </Card>
+
+          {/* Chart D: Portfolio Value Over Time */}
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-semibold">Portfolio Value (30d)</p>
+              {historyLoading && <span className="text-xs text-muted-foreground animate-pulse">Loading…</span>}
+            </div>
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={history} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                <defs>
+                  <linearGradient id="portfolioGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10 }}
+                  interval={Math.floor(history.length / 5)}
+                  angle={-25}
+                  textAnchor="end"
+                  height={40}
+                />
+                <YAxis
+                  tick={{ fontSize: 10 }}
+                  tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`}
+                  width={52}
+                  domain={["auto", "auto"]}
+                />
+                <Tooltip
+                  formatter={(value: number) => [currency(value), "Portfolio Value"]}
+                  contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                  labelStyle={{ fontSize: 11 }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#6366f1"
+                  strokeWidth={2}
+                  fill="url(#portfolioGrad)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: "#6366f1" }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+            {!historyLoading && history.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center mt-2">No history available yet</p>
+            )}
           </Card>
         </div>
       )}
