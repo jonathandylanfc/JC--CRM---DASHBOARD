@@ -45,7 +45,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts"
-import { upsertInvestment, deleteInvestment, bulkUpsertInvestments, refreshPrices } from "@/app/investments/actions"
+import { upsertInvestment, deleteInvestment, deleteAllInvestments, bulkUpsertInvestments, refreshPrices } from "@/app/investments/actions"
 import { PlaidInvestmentsConnect } from "./plaid-investments-connect"
 
 const CHART_COLORS = [
@@ -165,6 +165,8 @@ export function InvestmentsContent({ initialInvestments }: Props) {
   const [open, setOpen] = useState(false)
   const [editingInv, setEditingInv] = useState<Investment | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
+  const [isDeletingAll, startDeletingAll] = useTransition()
   const [csvOpen, setCsvOpen] = useState(false)
   const [csvPreview, setCsvPreview] = useState<ReturnType<typeof parseWebullCsv> | null>(null)
   const [csvError, setCsvError] = useState<string | null>(null)
@@ -488,6 +490,19 @@ export function InvestmentsContent({ initialInvestments }: Props) {
             </DialogContent>
           </Dialog>
 
+          {/* Delete all */}
+          {investments.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-muted-foreground hover:text-destructive"
+              onClick={() => setConfirmDeleteAll(true)}
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Clear All</span>
+            </Button>
+          )}
+
           {/* Add manually */}
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -590,6 +605,44 @@ export function InvestmentsContent({ initialInvestments }: Props) {
             <DialogTitle>Edit {editingInv?.symbol}</DialogTitle>
           </DialogHeader>
           {editingInv && dialogForm(editingInv)}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete ALL confirmation */}
+      <Dialog open={confirmDeleteAll} onOpenChange={(o) => { if (!o) setConfirmDeleteAll(false) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Clear all holdings?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <p className="text-sm text-muted-foreground">
+              This will permanently delete all {investments.length} holdings. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setConfirmDeleteAll(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                disabled={isDeletingAll}
+                onClick={() => {
+                  startDeletingAll(async () => {
+                    const result = await deleteAllInvestments()
+                    if (result.error) { toast.error(result.error); return }
+                    toast.success("All holdings deleted")
+                    setConfirmDeleteAll(false)
+                    router.refresh()
+                  })
+                }}
+              >
+                {isDeletingAll ? "Deleting…" : "Delete All"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

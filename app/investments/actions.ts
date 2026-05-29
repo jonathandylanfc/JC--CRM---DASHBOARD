@@ -37,6 +37,22 @@ export async function upsertInvestment(formData: FormData) {
   return { investment: data }
 }
 
+export async function deleteAllInvestments() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const { error } = await supabase
+    .from("investments")
+    .delete()
+    .eq("user_id", user.id)
+
+  if (error) return { error: error.message }
+  revalidatePath("/investments")
+  revalidatePath("/")
+  return { success: true }
+}
+
 export async function deleteInvestment(id: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
