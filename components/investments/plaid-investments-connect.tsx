@@ -114,6 +114,7 @@ export function PlaidInvestmentsConnect({ onSuccess, hasBrokerage = false }: Pro
               institution: metadata.institution
                 ? { name: metadata.institution.name, institution_id: metadata.institution.institution_id }
                 : null,
+              is_investment_item: true,
             }),
           })
           const exchangeData = await exchangeRes.json()

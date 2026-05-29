@@ -19,11 +19,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
   const itemId: string | undefined = body.item_id
 
-  // Get plaid items for this user (or specific item)
+  // Get plaid items for this user — only investment-flagged items (or a specific item)
   const itemQuery = supabase
     .from("plaid_items")
     .select("id, access_token, item_id, institution_name")
     .eq("user_id", user.id)
+    .eq("is_investment_item", true)
 
   const { data: items } = itemId
     ? await itemQuery.eq("item_id", itemId)

@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
-  const { public_token, institution } = await req.json()
+  const { public_token, institution, is_investment_item } = await req.json()
 
   // Exchange public token for access token
   const exchangeRes = await plaidClient.itemPublicTokenExchange({ public_token })
@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
       item_id,
       institution_name: institution?.name ?? null,
       institution_id: institution?.institution_id ?? null,
+      is_investment_item: is_investment_item ?? false,
       updated_at: new Date().toISOString(),
     }, { onConflict: "item_id" })
     .select("id")
