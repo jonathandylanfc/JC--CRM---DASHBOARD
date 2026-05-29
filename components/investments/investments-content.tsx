@@ -36,12 +36,11 @@ import { toast } from "sonner"
 import {
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
   CartesianGrid,
   Area,
   AreaChart,
