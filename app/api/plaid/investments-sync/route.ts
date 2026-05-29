@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { plaidClient } from "@/lib/plaid"
 
+// Errors that mean the item simply doesn't support investments — skip silently.
+const SKIP_CODES = new Set([
+  "PRODUCT_NOT_SUPPORTED",
+  "PRODUCTS_NOT_SUPPORTED",
+  "INVALID_PRODUCT",
+  "ITEM_NOT_SUPPORTED",
+  "NO_INVESTMENT_ACCOUNTS",
+])
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -23,6 +32,8 @@ export async function POST(req: NextRequest) {
   if (!items || items.length === 0) return NextResponse.json({ count: 0 })
 
   let totalSynced = 0
+  // Track items that need additional investment consent
+  let consentNeededItem: { item_id: string; institution_name: string } | null = null
 
   for (const item of items) {
     try {
@@ -75,12 +86,37 @@ export async function POST(req: NextRequest) {
     } catch (err: unknown) {
       // Extract Plaid-specific error details
       const plaidErr = (err as { response?: { data?: { error_code?: string; error_message?: string } } })?.response?.data
-      const msg = plaidErr?.error_code
-        ? `${plaidErr.error_code}: ${plaidErr.error_message}`
+      const errorCode = plaidErr?.error_code ?? ""
+      const msg = errorCode
+        ? `${errorCode}: ${plaidErr?.error_message}`
         : (err instanceof Error ? err.message : String(err))
-      console.warn(`investments sync skipped for item ${item.item_id}:`, msg)
-      return NextResponse.json({ count: 0, error: msg, item_id: item.item_id })
+
+      console.warn(`investments sync skipped for item ${item.item_id} (${item.institution_name}):`, msg)
+
+      if (errorCode === "ADDITIONAL_CONSENT_REQUIRED") {
+        // This item needs user to re-authorize for investment access
+        consentNeededItem = { item_id: item.item_id, institution_name: item.institution_name }
+        // Continue to try other items
+        continue
+      }
+
+      if (SKIP_CODES.has(errorCode)) {
+        // This institution simply doesn't support investments — skip silently
+        continue
+      }
+
+      // For PRODUCT_NOT_READY and other transient errors, return immediately with the error
+      return NextResponse.json({ count: totalSynced, error: msg, item_id: item.item_id })
     }
+  }
+
+  // If any item needs consent, surface that after processing everything else
+  if (consentNeededItem) {
+    return NextResponse.json({
+      count: totalSynced,
+      error: `ADDITIONAL_CONSENT_REQUIRED: investment access not yet authorized for ${consentNeededItem.institution_name}`,
+      item_id: consentNeededItem.item_id,
+    })
   }
 
   return NextResponse.json({ count: totalSynced })
