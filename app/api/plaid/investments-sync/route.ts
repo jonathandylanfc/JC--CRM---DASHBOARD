@@ -73,9 +73,12 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
+      // Extract Plaid-specific error details
+      const plaidErr = (err as { response?: { data?: { error_code?: string; error_message?: string } } })?.response?.data
+      const msg = plaidErr?.error_code
+        ? `${plaidErr.error_code}: ${plaidErr.error_message}`
+        : (err instanceof Error ? err.message : String(err))
       console.warn(`investments sync skipped for item ${item.item_id}:`, msg)
-      // Surface the error so the UI can explain what happened
       return NextResponse.json({ count: 0, error: msg })
     }
   }
