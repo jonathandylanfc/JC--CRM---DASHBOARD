@@ -54,13 +54,19 @@ export async function POST(req: NextRequest) {
 
   for (const item of items) {
     // Build account_id → display label map for this item
+    // Exclude investment-type accounts — their activity belongs on the Investments page, not Finance
     const { data: plaidAccounts } = await supabase
       .from("plaid_accounts")
-      .select("account_id, name, mask")
+      .select("account_id, name, mask, type")
       .eq("plaid_item_id", item.id)
+
+    const investmentAccountIds = new Set(
+      (plaidAccounts ?? []).filter((a) => a.type === "investment").map((a) => a.account_id)
+    )
 
     const accountLabelMap = new Map<string, string>()
     for (const acct of plaidAccounts ?? []) {
+      if (acct.type === "investment") continue // skip investment accounts
       const base = item.institution_name ?? "Bank"
       const label = acct.mask
         ? `${base} – ${acct.name} (••${acct.mask})`
@@ -95,6 +101,7 @@ export async function POST(req: NextRequest) {
 
       for (const tx of added) {
         if (tx.pending) continue
+        if (investmentAccountIds.has(tx.account_id)) continue // skip investment account transactions
 
         const isIncome = tx.amount < 0
         const amount = Math.abs(tx.amount)
