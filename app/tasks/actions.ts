@@ -72,6 +72,34 @@ export async function toggleTaskStatus(id: string, currentStatus: string) {
   return { success: true }
 }
 
+export async function updateTask(id: string, formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const title = formData.get("title") as string
+  if (!title?.trim()) return { error: "Title is required" }
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      title: title.trim(),
+      description: (formData.get("description") as string) || null,
+      due_date: (formData.get("due_date") as string) || null,
+      priority: (formData.get("priority") as string) || "medium",
+      status: (formData.get("status") as string) || "todo",
+      recurrence: (formData.get("recurrence") as string) || "none",
+      task_category: (formData.get("task_category") as string) || null,
+    })
+    .eq("id", id)
+    .eq("user_id", user.id)
+
+  if (error) return { error: error.message }
+  revalidatePath("/tasks")
+  revalidatePath("/")
+  return { success: true }
+}
+
 export async function deleteTask(id: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

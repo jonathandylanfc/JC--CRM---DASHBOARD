@@ -17,10 +17,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Search, Plus, Trash2, CalendarDays, ClipboardList, Calendar, RefreshCw, Tag } from "lucide-react"
+import { Search, Plus, Trash2, CalendarDays, ClipboardList, Calendar, RefreshCw, Tag, Pencil } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
-import { createTask, toggleTaskStatus, deleteTask } from "@/app/tasks/actions"
+import { createTask, updateTask, toggleTaskStatus, deleteTask } from "@/app/tasks/actions"
 
 interface Task {
   id: string
@@ -70,6 +70,8 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
   const [newCategory, setNewCategory] = useState("")
   const [formDueDate, setFormDueDate] = useState("")
   const [addToCalendar, setAddToCalendar] = useState(true)
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
 
   // Persist calendar preference
   useEffect(() => {
@@ -135,6 +137,20 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     })
   }
 
+  async function handleUpdate(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!editingTask) return
+    setEditError(null)
+    const fd = new FormData(e.currentTarget)
+    startTransition(async () => {
+      const result = await updateTask(editingTask.id, fd)
+      if (result?.error) { setEditError(result.error); return }
+      toast.success("Task updated")
+      setEditingTask(null)
+      router.refresh()
+    })
+  }
+
   async function handleSendToCalendar(task: Task) {
     if (!task.due_date) return
     setCalendarPending(task.id)
@@ -149,13 +165,11 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
           priority: task.priority,
         }),
       })
-      const data = await res.json()
-      if (data.error === "not_connected") {
-        toast.error("Connect Google Calendar in Settings first")
-      } else if (data.error === "reconnect_required") {
-        toast.error("Google Calendar needs to be reconnected in Settings")
-      } else if (data.error) {
-        toast.error(data.error)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        if (data.error === "not_connected") toast.error("Connect Google Calendar in Settings first")
+        else if (data.error === "reconnect_required") toast.error("Google Calendar needs to be reconnected in Settings")
+        else toast.error("Could not add to Google Calendar — check Settings")
       } else {
         toast.success("Added to Google Calendar")
       }
@@ -445,6 +459,15 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                           {recurrenceLabel[task.recurrence]}
                         </span>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                        onClick={() => { setEditingTask(task); setEditError(null) }}
+                        title="Edit task"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
                       {task.due_date && (
                         <Button
                           variant="ghost"
@@ -492,6 +515,92 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
           ))}
         </div>
       )}
+
+      {/* Edit Task Dialog */}
+      <Dialog open={!!editingTask} onOpenChange={(v) => { if (!v) setEditingTask(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Task</DialogTitle>
+          </DialogHeader>
+          {editingTask && (
+            <form onSubmit={handleUpdate} className="space-y-4 mt-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-title">Title</Label>
+                <Input id="edit-title" name="title" defaultValue={editingTask.title} required />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-description">Description <span className="text-muted-foreground">(optional)</span></Label>
+                <Textarea id="edit-description" name="description" defaultValue={editingTask.description ?? ""} rows={3} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-category">Category <span className="text-muted-foreground">(optional)</span></Label>
+                <Input
+                  id="edit-category"
+                  name="task_category"
+                  defaultValue={editingTask.task_category ?? ""}
+                  list="edit-category-suggestions"
+                  placeholder="e.g. Work, Personal, Health…"
+                />
+                <datalist id="edit-category-suggestions">
+                  {allCategories.map((c) => <option key={c} value={c} />)}
+                </datalist>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-due-date">Due Date</Label>
+                  <Input id="edit-due-date" name="due_date" type="date" defaultValue={editingTask.due_date ?? ""} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-priority">Priority</Label>
+                  <Select name="priority" defaultValue={editingTask.priority}>
+                    <SelectTrigger id="edit-priority"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-status">Status</Label>
+                  <Select name="status" defaultValue={editingTask.status}>
+                    <SelectTrigger id="edit-status"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todo">To Do</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="done">Done</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-recurrence">Repeat</Label>
+                  <Select name="recurrence" defaultValue={editingTask.recurrence ?? "none"}>
+                    <SelectTrigger id="edit-recurrence"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Does not repeat</SelectItem>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {editError && <p className="text-sm text-destructive">{editError}</p>}
+              <div className="flex gap-3 pt-1">
+                <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => setEditingTask(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1" disabled={isPending}>
+                  {isPending ? "Saving…" : "Save Changes"}
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
