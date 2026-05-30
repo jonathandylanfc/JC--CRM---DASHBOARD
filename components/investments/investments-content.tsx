@@ -179,15 +179,104 @@ export function InvestmentsContent({ initialInvestments }: Props) {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyRange, setHistoryRange] = useState<"1d" | "30d" | "6m" | "1y" | "all">("1d")
 
-  const fetchHistory = useCallback(() => {
+  // Fetch 5-min intraday data directly from Yahoo Finance in the browser
+  // (Railway's server IP is blocked by Yahoo, but browser requests are not)
+  const fetchIntradayData = useCallback(async (): Promise<Array<{ date: string; label: string; value: number }>> => {
+    if (!investments.length) return []
+
+    type SymbolData = {
+      timestamps: number[]
+      closes: (number | null)[]
+      shares: number
+      fallbackPrice: number
+    }
+
+    const symbolDataList: SymbolData[] = []
+
+    await Promise.allSettled(
+      investments.map(async (inv) => {
+        try {
+          const res = await fetch(
+            `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(inv.symbol)}?interval=5m&range=1d`,
+            { cache: "no-store" }
+          )
+          if (!res.ok) return
+          const json = await res.json()
+          const result = json?.chart?.result?.[0]
+          if (!result?.timestamp?.length) return
+          symbolDataList.push({
+            timestamps: result.timestamp as number[],
+            closes: (result.indicators?.quote?.[0]?.close ?? []) as (number | null)[],
+            shares: inv.shares,
+            fallbackPrice: inv.current_price ?? inv.avg_cost,
+          })
+        } catch {}
+      })
+    )
+
+    if (!symbolDataList.length) return []
+
+    // Collect all unique timestamps across all symbols
+    const allTimestamps = new Set<number>()
+    for (const { timestamps } of symbolDataList) {
+      timestamps.forEach((ts) => allTimestamps.add(ts))
+    }
+    const sortedTs = Array.from(allTimestamps).sort((a, b) => a - b)
+
+    return sortedTs
+      .map((ts) => {
+        let value = 0
+        for (const { timestamps, closes, shares, fallbackPrice } of symbolDataList) {
+          const idx = timestamps.indexOf(ts)
+          let price: number | null = null
+          if (idx >= 0 && closes[idx] != null) {
+            price = closes[idx]
+          } else {
+            // Forward-fill: use last known price before this timestamp
+            let lastIdx = -1
+            for (let j = timestamps.length - 1; j >= 0; j--) {
+              if (timestamps[j] <= ts && closes[j] != null) { lastIdx = j; break }
+            }
+            if (lastIdx >= 0) price = closes[lastIdx]
+          }
+          value += shares * (price ?? fallbackPrice)
+        }
+        return {
+          date: new Date(ts * 1000).toISOString(),
+          label: new Date(ts * 1000).toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+            timeZone: "America/New_York",
+          }),
+          value: parseFloat(value.toFixed(2)),
+        }
+      })
+      .filter((d) => d.value > 0)
+  }, [investments])
+
+  const fetchHistory = useCallback(async () => {
     if (investments.length === 0) return
     setHistoryLoading(true)
-    fetch(`/api/investments/history?range=${historyRange}`)
-      .then((r) => r.json())
-      .then((d) => setHistory(d.history ?? []))
-      .catch(() => {})
-      .finally(() => setHistoryLoading(false))
-  }, [investments, historyRange])
+    try {
+      if (historyRange === "1d") {
+        // Try live intraday data from browser (bypasses Railway IP block)
+        const intradayData = await fetchIntradayData()
+        if (intradayData.length > 0) {
+          setHistory(intradayData)
+          return
+        }
+      }
+      // Fall back to snapshot-based history from Supabase
+      const r = await fetch(`/api/investments/history?range=${historyRange}`)
+      const d = await r.json()
+      setHistory(d.history ?? [])
+    } catch {
+      setHistory([])
+    } finally {
+      setHistoryLoading(false)
+    }
+  }, [investments, historyRange, fetchIntradayData])
 
   useEffect(() => { fetchHistory() }, [fetchHistory])
 
