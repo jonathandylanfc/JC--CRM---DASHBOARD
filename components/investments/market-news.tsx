@@ -26,7 +26,7 @@ export function MarketNews({ holdingSymbols = [] }: Props) {
 
   useEffect(() => {
     setLoadingMarket(true)
-    fetch("/api/market/news?q=market&count=24")
+    fetch("/api/market/news?q=market&count=12")
       .then((r) => r.json())
       .then((d) => setMarketNews(d.news ?? []))
       .catch(() => {})
@@ -37,8 +37,7 @@ export function MarketNews({ holdingSymbols = [] }: Props) {
     if (tab !== "holdings" || fetchedHoldings || holdingSymbols.length === 0) return
     setLoadingHoldings(true)
     setFetchedHoldings(true)
-    const q = holdingSymbols.join(",")
-    fetch(`/api/market/news?q=${encodeURIComponent(q)}&count=24`)
+    fetch(`/api/market/news?q=${encodeURIComponent(holdingSymbols.join(" "))}&count=12`)
       .then((r) => r.json())
       .then((d) => setHoldingsNews(d.news ?? []))
       .catch(() => {})
@@ -81,84 +80,71 @@ export function MarketNews({ holdingSymbols = [] }: Props) {
 
       {/* News grid */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="rounded-xl border border-border bg-card p-4 animate-pulse space-y-2">
-              <div className="h-3 bg-muted rounded w-1/3" />
-              <div className="h-4 bg-muted rounded" />
-              <div className="h-4 bg-muted rounded w-5/6" />
-              <div className="h-3 bg-muted rounded w-1/4" />
-            </div>
+            <div key={i} className="rounded-xl border border-border bg-card p-3 animate-pulse h-20" />
           ))}
         </div>
       ) : news.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-10 text-center">
-          <Newspaper className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+        <div className="rounded-xl border border-border bg-card p-8 text-center">
+          <Newspaper className="w-7 h-7 text-muted-foreground/30 mx-auto mb-2" />
           <p className="text-sm text-muted-foreground">No news available right now.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {news.map((item) => (
             <a
               key={item.id}
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="group rounded-xl border border-border bg-card overflow-hidden hover:shadow-md hover:border-primary/30 transition-all duration-200 flex flex-col"
+              className="group flex gap-3 rounded-xl border border-border bg-card p-3 hover:shadow-md hover:border-primary/30 transition-all duration-200"
             >
               {/* Thumbnail */}
               {item.thumbnail && (
-                <div className="h-36 overflow-hidden bg-muted shrink-0">
+                <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted shrink-0">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={item.thumbnail}
                     alt=""
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = "none" }}
                   />
                 </div>
               )}
 
-              <div className="p-3 flex flex-col gap-1.5 flex-1">
+              <div className="flex-1 min-w-0 flex flex-col gap-1">
                 {/* Publisher + time */}
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-semibold text-primary uppercase tracking-wide truncate">
                     {item.publisher}
                   </span>
-                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0">
+                  <span className="text-[10px] text-muted-foreground shrink-0 flex items-center gap-0.5">
                     <Clock className="w-2.5 h-2.5" />
                     {timeAgo(item.time)}
                   </span>
                 </div>
 
                 {/* Headline */}
-                <p className="text-sm font-semibold text-foreground leading-snug line-clamp-3 group-hover:text-primary transition-colors">
+                <p className="text-xs font-semibold text-foreground leading-snug line-clamp-2 group-hover:text-primary transition-colors">
                   {item.title}
                 </p>
 
-                {/* Summary if available */}
-                {item.summary && (
-                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 mt-auto">
-                    {item.summary}
-                  </p>
-                )}
-
                 {/* Related tickers */}
                 {item.symbols.length > 0 && (
-                  <div className="flex items-center gap-1 mt-auto pt-1 flex-wrap">
-                    {item.symbols.slice(0, 4).map((s) => (
-                      <span key={s} className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">
+                  <div className="flex gap-1">
+                    {item.symbols.slice(0, 3).map((s) => (
+                      <span key={s} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground font-mono">
                         {s}
                       </span>
                     ))}
                   </div>
                 )}
 
-                {/* Read more */}
-                <div className="flex items-center gap-1 text-[10px] text-muted-foreground group-hover:text-primary transition-colors mt-1">
+                <span className="text-[10px] text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-0.5 mt-auto">
                   <ExternalLink className="w-2.5 h-2.5" />
-                  Read full story
-                </div>
+                  Read more
+                </span>
               </div>
             </a>
           ))}

@@ -21,6 +21,21 @@ export interface NewsItem {
 
 // ── Simple RSS/XML parser (no external deps) ──────────────────────────────────
 
+function decodeEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+}
+
+function stripHtml(str: string): string {
+  // Decode entities first, then strip tags
+  return decodeEntities(str).replace(/<[^>]+>/g, "").trim()
+}
+
 function extractCDATA(xml: string, tag: string): string | null {
   // Match <tag><![CDATA[...]]></tag> or <tag>...</tag>
   const re = new RegExp(
@@ -55,11 +70,12 @@ function parseRSSItems(xml: string): Array<{ title: string; link: string; pubDat
 
     if (!title || !link) continue
     items.push({
-      title,
+      title: stripHtml(title),
       link,
       pubDate,
       source: sourceName ?? (sourceUrl ? new URL(sourceUrl).hostname.replace("www.", "") : null),
-      description: description?.replace(/<[^>]+>/g, "").slice(0, 300) ?? null,
+      // Google News descriptions are nested HTML lists — not useful, skip them
+      description: null,
     })
   }
   return items
@@ -68,11 +84,16 @@ function parseRSSItems(xml: string): Array<{ title: string; link: string; pubDat
 // ── Google News RSS ──────────────────────────────────────────────────────────
 
 async function fetchGoogleNews(query: string, count: number): Promise<NewsItem[]> {
+  // Use finance-specific search when query is generic
+  const searchQuery = (query === "stock market investing finance" || query === "market")
+    ? "stock market stocks investing earnings Wall Street"
+    : query
+
   const urls = [
-    // Finance category feed
+    // Google News Business/Finance topic feed
     `https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
-    // Search-based feed
-    `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`,
+    // Search-based finance feed
+    `https://news.google.com/rss/search?q=${encodeURIComponent(searchQuery)}&hl=en-US&gl=US&ceid=US:en`,
   ]
 
   for (const url of urls) {
