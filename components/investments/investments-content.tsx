@@ -51,6 +51,7 @@ import { ConnectedBrokerages } from "./connected-brokerages"
 import { MarketPulse } from "./market-pulse"
 import { MarketNews } from "./market-news"
 import { AnalystRatings } from "./analyst-ratings"
+import { AiMarketInsights } from "./ai-market-insights"
 
 
 interface Investment {
@@ -532,9 +533,18 @@ export function InvestmentsContent({ initialInvestments }: Props) {
                 />
                 <YAxis
                   tick={{ fontSize: 10 }}
-                  tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`}
-                  width={52}
-                  domain={["auto", "auto"]}
+                  tickFormatter={(v) => {
+                    if (historyRange === "1d") {
+                      // Show dollar precision for intraday so small moves are visible
+                      return `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+                    }
+                    return `$${(v / 1000).toFixed(1)}k`
+                  }}
+                  width={60}
+                  domain={([dataMin, dataMax]: [number, number]) => {
+                    const pad = (dataMax - dataMin) * 0.15 || dataMin * 0.002
+                    return [Math.floor(dataMin - pad), Math.ceil(dataMax + pad)]
+                  }}
                 />
                 <Tooltip
                   formatter={(value: number) => [currency(value), "Portfolio Value"]}
@@ -758,19 +768,20 @@ export function InvestmentsContent({ initialInvestments }: Props) {
         </div>
       )}
 
-      {/* News + Analyst Ratings — bottom of page */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <MarketNews holdingSymbols={holdingSymbols} />
-        </div>
-        <div>
+      {/* AI Insights + Analyst Ratings */}
+      {investments.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <AiMarketInsights />
           <AnalystRatings
             holdingSymbols={holdingSymbols}
             sharesMap={sharesMap}
             avgCostMap={avgCostMap}
           />
         </div>
-      </div>
+      )}
+
+      {/* News — bottom of page */}
+      <MarketNews holdingSymbols={holdingSymbols} />
 
       {/* Edit dialog */}
       <Dialog open={!!editingInv} onOpenChange={(o) => { if (!o) setEditingInv(null) }}>
