@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Newspaper, ExternalLink, Clock, Loader2 } from "lucide-react"
+import { Newspaper, ExternalLink, Clock } from "lucide-react"
 import type { NewsItem } from "@/app/api/market/news/route"
 
 function timeAgo(unixTs: number): string {
@@ -18,47 +18,38 @@ interface Props {
 
 export function MarketNews({ holdingSymbols = [] }: Props) {
   const [tab, setTab] = useState<"market" | "holdings">("market")
-  const [marketNews, setMarketNews] = useState<NewsItem[]>([])
-  const [holdingsNews, setHoldingsNews] = useState<NewsItem[]>([])
-  const [loadingMarket, setLoadingMarket] = useState(true)
-  const [loadingHoldings, setLoadingHoldings] = useState(false)
-  const [fetchedHoldings, setFetchedHoldings] = useState(false)
+  const [allNews, setAllNews] = useState<NewsItem[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setLoadingMarket(true)
+    setLoading(true)
     fetch("/api/market/news?q=market&count=12")
       .then((r) => r.json())
-      .then((d) => setMarketNews(d.news ?? []))
+      .then((d) => setAllNews(d.news ?? []))
       .catch(() => {})
-      .finally(() => setLoadingMarket(false))
+      .finally(() => setLoading(false))
   }, [])
 
-  useEffect(() => {
-    if (tab !== "holdings" || fetchedHoldings || holdingSymbols.length === 0) return
-    setLoadingHoldings(true)
-    setFetchedHoldings(true)
-    fetch(`/api/market/news?q=${encodeURIComponent(holdingSymbols.join(" "))}&count=12`)
-      .then((r) => r.json())
-      .then((d) => setHoldingsNews(d.news ?? []))
-      .catch(() => {})
-      .finally(() => setLoadingHoldings(false))
-  }, [tab, fetchedHoldings, holdingSymbols.join(",")])
-
-  const loading = tab === "market" ? loadingMarket : loadingHoldings
-  const news = tab === "market" ? marketNews : holdingsNews
+  // Filter client-side for My Holdings tab — no second API call needed
+  const news = tab === "holdings"
+    ? allNews.filter((item) =>
+        holdingSymbols.some((sym) =>
+          item.title.toUpperCase().includes(sym.toUpperCase()) ||
+          item.symbols.map((s) => s.toUpperCase()).includes(sym.toUpperCase())
+        )
+      )
+    : allNews
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {/* Header + tabs */}
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-foreground">Market News</h2>
+        <h2 className="text-sm font-semibold text-foreground">Market News</h2>
         <div className="flex items-center gap-0.5 bg-muted/60 rounded-lg p-0.5">
           <button
             onClick={() => setTab("market")}
-            className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
-              tab === "market"
-                ? "bg-background shadow text-foreground"
-                : "text-muted-foreground hover:text-foreground"
+            className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-all ${
+              tab === "market" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Top Stories
@@ -66,87 +57,52 @@ export function MarketNews({ holdingSymbols = [] }: Props) {
           {holdingSymbols.length > 0 && (
             <button
               onClick={() => setTab("holdings")}
-              className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                tab === "holdings"
-                  ? "bg-background shadow text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
+              className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-all ${
+                tab === "holdings" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {tab === "holdings" && loadingHoldings && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
               My Holdings
             </button>
           )}
         </div>
       </div>
 
-      {/* News grid */}
+      {/* News list */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="rounded-xl border border-border bg-card p-3 animate-pulse h-20" />
+        <div className="space-y-1.5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />
           ))}
         </div>
       ) : news.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-8 text-center">
-          <Newspaper className="w-7 h-7 text-muted-foreground/30 mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">No news available right now.</p>
+        <div className="rounded-lg border border-border bg-card p-6 text-center">
+          <Newspaper className="w-6 h-6 text-muted-foreground/30 mx-auto mb-1.5" />
+          <p className="text-xs text-muted-foreground">
+            {tab === "holdings" ? `No news found for ${holdingSymbols.join(", ")}` : "No news available right now."}
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {news.map((item) => (
+        <div className="space-y-1">
+          {news.slice(0, 8).map((item) => (
             <a
               key={item.id}
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="group flex gap-3 rounded-xl border border-border bg-card p-3 hover:shadow-md hover:border-primary/30 transition-all duration-200"
+              className="group flex items-start gap-2.5 rounded-lg border border-border bg-card px-3 py-2.5 hover:border-primary/30 hover:bg-card/80 transition-all"
             >
-              {/* Thumbnail */}
-              {item.thumbnail && (
-                <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={item.thumbnail}
-                    alt=""
-                    className="w-full h-full object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = "none" }}
-                  />
-                </div>
-              )}
-
-              <div className="flex-1 min-w-0 flex flex-col gap-1">
-                {/* Publisher + time */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wide truncate">
-                    {item.publisher}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground shrink-0 flex items-center gap-0.5">
-                    <Clock className="w-2.5 h-2.5" />
-                    {timeAgo(item.time)}
-                  </span>
-                </div>
-
-                {/* Headline */}
-                <p className="text-xs font-semibold text-foreground leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-foreground leading-snug line-clamp-2 group-hover:text-primary transition-colors">
                   {item.title}
                 </p>
-
-                {/* Related tickers */}
-                {item.symbols.length > 0 && (
-                  <div className="flex gap-1">
-                    {item.symbols.slice(0, 3).map((s) => (
-                      <span key={s} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground font-mono">
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <span className="text-[10px] text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-0.5 mt-auto">
-                  <ExternalLink className="w-2.5 h-2.5" />
-                  Read more
-                </span>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wide">{item.publisher}</span>
+                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                    <Clock className="w-2 h-2" />{timeAgo(item.time)}
+                  </span>
+                </div>
               </div>
+              <ExternalLink className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
             </a>
           ))}
         </div>

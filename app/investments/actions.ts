@@ -161,8 +161,28 @@ export async function refreshPrices() {
     })
   )
 
+  // If still missing prices, try Stooq as final fallback
+  const stillMissing = investments.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
+  await Promise.allSettled(
+    stillMissing.map(async (inv) => {
+      try {
+        const url = `https://stooq.com/q/l/?s=${inv.symbol.toLowerCase()}.us&f=sd2ohlcv&h&e=csv`
+        const res = await fetch(url, { cache: "no-store" })
+        if (!res.ok) return
+        const text = await res.text()
+        const lines = text.trim().split("\n")
+        const cols = lines[1]?.split(",")
+        const close = parseFloat(cols?.[5] ?? "")
+        if (!isNaN(close) && close > 0) priceMap.set(inv.symbol.toUpperCase(), close)
+      } catch {}
+    })
+  )
+
   // Write all updated prices in parallel
   let updated = 0
+  const today = new Date().toISOString().slice(0, 10)
+  const snapshotRows: { user_id: string; symbol: string; price: number; snapshot_date: string }[] = []
+
   await Promise.allSettled(
     investments.map(async (inv) => {
       const price = priceMap.get(inv.symbol.toUpperCase())
@@ -172,9 +192,19 @@ export async function refreshPrices() {
         .update({ current_price: price, updated_at: new Date().toISOString() })
         .eq("id", inv.id)
         .eq("user_id", user.id)
-      if (!error) updated++
+      if (!error) {
+        updated++
+        snapshotRows.push({ user_id: user.id, symbol: inv.symbol.toUpperCase(), price, snapshot_date: today })
+      }
     })
   )
+
+  // Save daily snapshot so the portfolio chart can use our own DB
+  if (snapshotRows.length > 0) {
+    await supabase
+      .from("investment_price_snapshots")
+      .upsert(snapshotRows, { onConflict: "user_id,symbol,snapshot_date" })
+  }
 
   revalidatePath("/investments")
   revalidatePath("/")
