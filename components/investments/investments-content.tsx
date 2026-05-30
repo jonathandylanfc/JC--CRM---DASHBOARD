@@ -177,7 +177,7 @@ export function InvestmentsContent({ initialInvestments }: Props) {
   // Portfolio history for line chart
   const [history, setHistory] = useState<Array<{ date: string; label: string; value: number }>>([])
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [historyRange, setHistoryRange] = useState<"30d" | "6m" | "1y" | "all">("30d")
+  const [historyRange, setHistoryRange] = useState<"1d" | "30d" | "6m" | "1y" | "all">("1d")
 
   useEffect(() => {
     if (investments.length === 0) return
@@ -401,7 +401,7 @@ export function InvestmentsContent({ initialInvestments }: Props) {
               <p className="text-sm font-semibold">Portfolio Value</p>
               <div className="flex items-center gap-1">
                 {historyLoading && <span className="text-xs text-muted-foreground animate-pulse mr-2">Loading…</span>}
-                {(["30d", "6m", "1y", "all"] as const).map((r) => (
+                {(["1d", "30d", "6m", "1y", "all"] as const).map((r) => (
                   <button
                     key={r}
                     onClick={() => setHistoryRange(r)}
@@ -428,10 +428,10 @@ export function InvestmentsContent({ initialInvestments }: Props) {
                 <XAxis
                   dataKey="label"
                   tick={{ fontSize: 10 }}
-                  interval={Math.floor(history.length / 5)}
-                  angle={-25}
-                  textAnchor="end"
-                  height={40}
+                  interval={historyRange === "1d" ? 11 : Math.floor(history.length / 5)}
+                  angle={historyRange === "1d" ? 0 : -25}
+                  textAnchor={historyRange === "1d" ? "middle" : "end"}
+                  height={historyRange === "1d" ? 20 : 40}
                 />
                 <YAxis
                   tick={{ fontSize: 10 }}
@@ -456,7 +456,9 @@ export function InvestmentsContent({ initialInvestments }: Props) {
               </AreaChart>
             </ResponsiveContainer>
             {!historyLoading && history.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center mt-2">No history available yet</p>
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                {historyRange === "1d" ? "No intraday data yet — market may be closed" : "No history available yet"}
+              </p>
             )}
           </Card>
         </div>

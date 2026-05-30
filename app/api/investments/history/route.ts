@@ -43,12 +43,13 @@ async function fetchStooqHistory(symbol: string, days: number): Promise<Map<stri
 }
 
 // Fetch historical closes for one symbol — Yahoo Finance first, Stooq fallback
-async function fetchHistory(symbol: string, yRange: string, interval: string, days: number): Promise<Map<string, number>> {
+async function fetchHistory(symbol: string, yRange: string, interval: string, days: number, intraday = false): Promise<Map<string, number>> {
   // ── 1. Try Yahoo Finance ──────────────────────────────────────────────────
   const yfUrls = [
     `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${yRange}`,
     `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${yRange}`,
-    `https://query1.finance.yahoo.com/v7/finance/download/${symbol}?interval=${interval}&range=${yRange}&events=history`,
+    // CSV download doesn't support intraday intervals
+    ...(!intraday ? [`https://query1.finance.yahoo.com/v7/finance/download/${symbol}?interval=${interval}&range=${yRange}&events=history`] : []),
   ]
 
   for (const url of yfUrls) {
@@ -79,8 +80,11 @@ async function fetchHistory(symbol: string, yRange: string, interval: string, da
       timestamps.forEach((ts, i) => {
         const price = closes[i]
         if (!price || isNaN(price)) return
-        const date = new Date(ts * 1000).toISOString().slice(0, 10)
-        dateMap.set(date, price)
+        // Intraday: use full datetime key; daily: use date-only key
+        const key = intraday
+          ? new Date(ts * 1000).toISOString().slice(0, 16) // YYYY-MM-DDTHH:MM
+          : new Date(ts * 1000).toISOString().slice(0, 10) // YYYY-MM-DD
+        dateMap.set(key, price)
       })
       if (dateMap.size > 0) return dateMap
     } catch {
@@ -88,7 +92,8 @@ async function fetchHistory(symbol: string, yRange: string, interval: string, da
     }
   }
 
-  // ── 2. Fallback: Stooq ────────────────────────────────────────────────────
+  // ── 2. Fallback: Stooq (daily only, no intraday) ──────────────────────────
+  if (intraday) return new Map()
   return await fetchStooqHistory(symbol, days)
 }
 
@@ -106,18 +111,19 @@ export async function GET(req: NextRequest) {
 
   const rangeParam = req.nextUrl.searchParams.get("range") ?? "30d"
 
-  const rangeMap: Record<string, { yRange: string; interval: string; limit: number; days: number }> = {
-    "30d": { yRange: "1mo",  interval: "1d",  limit: 30,  days: 35  },
-    "6m":  { yRange: "6mo",  interval: "1d",  limit: 130, days: 185 },
-    "1y":  { yRange: "1y",   interval: "1d",  limit: 260, days: 370 },
-    "all": { yRange: "5y",   interval: "1wk", limit: 999, days: 1825 },
+  const rangeMap: Record<string, { yRange: string; interval: string; limit: number; days: number; intraday: boolean }> = {
+    "1d":  { yRange: "1d",   interval: "5m",  limit: 80,  days: 1,    intraday: true  },
+    "30d": { yRange: "1mo",  interval: "1d",  limit: 30,  days: 35,   intraday: false },
+    "6m":  { yRange: "6mo",  interval: "1d",  limit: 130, days: 185,  intraday: false },
+    "1y":  { yRange: "1y",   interval: "1d",  limit: 260, days: 370,  intraday: false },
+    "all": { yRange: "5y",   interval: "1wk", limit: 999, days: 1825, intraday: false },
   }
-  const { yRange, interval, limit, days } = rangeMap[rangeParam] ?? rangeMap["30d"]
+  const { yRange, interval, limit, days, intraday } = rangeMap[rangeParam] ?? rangeMap["30d"]
 
   const pricesBySymbol = new Map<string, Map<string, number>>()
   await Promise.allSettled(
     investments.map(async (inv) => {
-      const dateMap = await fetchHistory(inv.symbol, yRange, interval, days)
+      const dateMap = await fetchHistory(inv.symbol, yRange, interval, days, intraday)
       if (dateMap.size > 0) pricesBySymbol.set(inv.symbol, dateMap)
     })
   )
@@ -148,13 +154,17 @@ export async function GET(req: NextRequest) {
       }
       if (price) total += inv.shares * price
     }
+    const labelDate = intraday ? new Date(date + "Z") : new Date(date + "T12:00:00")
+    const label = intraday
+      ? labelDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/New_York" })
+      : labelDate.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          ...(rangeParam === "all" || rangeParam === "1y" ? { year: "2-digit" } : {}),
+        })
     return {
       date,
-      label: new Date(date + "T12:00:00").toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        ...(rangeParam === "all" || rangeParam === "1y" ? { year: "2-digit" } : {}),
-      }),
+      label,
       value: parseFloat(total.toFixed(2)),
     }
   }).filter((d) => d.value > 0)
