@@ -178,12 +178,22 @@ export function InvestmentsContent({ initialInvestments }: Props) {
   // Portfolio history for line chart
   const [history, setHistory] = useState<Array<{ date: string; label: string; value: number }>>([])
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [historyRange, setHistoryRange] = useState<"1d" | "30d" | "6m" | "1y" | "all">("1d")
+  const [historyRange, setHistoryRange] = useState<"1d" | "30d" | "6m" | "1y" | "all">("30d")
 
-  // Fetch 5-min intraday data directly from Yahoo Finance in the browser
-  // (Railway's server IP is blocked by Yahoo, but browser requests are not)
-  const fetchIntradayData = useCallback(async (): Promise<Array<{ date: string; label: string; value: number }>> => {
+  // Fetch historical price data directly from Yahoo Finance in the browser
+  // (Railway's server IP is blocked by Yahoo, but browser requests work fine)
+  const fetchYahooHistory = useCallback(async (range: string): Promise<Array<{ date: string; label: string; value: number }>> => {
     if (!investments.length) return []
+
+    // Map our range labels to Yahoo Finance API params
+    const rangeConfig: Record<string, { interval: string; yRange: string }> = {
+      "1d":  { interval: "5m",  yRange: "1d"  },
+      "30d": { interval: "1d",  yRange: "1mo" },
+      "6m":  { interval: "1d",  yRange: "6mo" },
+      "1y":  { interval: "1wk", yRange: "1y"  },
+      "all": { interval: "1wk", yRange: "5y"  },
+    }
+    const { interval, yRange } = rangeConfig[range] ?? rangeConfig["30d"]
 
     type SymbolData = {
       timestamps: number[]
@@ -198,7 +208,7 @@ export function InvestmentsContent({ initialInvestments }: Props) {
       investments.map(async (inv) => {
         try {
           const res = await fetch(
-            `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(inv.symbol)}?interval=5m&range=1d`,
+            `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(inv.symbol)}?interval=${interval}&range=${yRange}`,
             { cache: "no-store" }
           )
           if (!res.ok) return
@@ -217,14 +227,12 @@ export function InvestmentsContent({ initialInvestments }: Props) {
 
     if (!symbolDataList.length) return []
 
-    // Collect all unique timestamps across all symbols
-    const allTimestamps = new Set<number>()
-    for (const { timestamps } of symbolDataList) {
-      timestamps.forEach((ts) => allTimestamps.add(ts))
-    }
-    const sortedTs = Array.from(allTimestamps).sort((a, b) => a - b)
+    // Use the symbol with the most timestamps as the reference timeline
+    const reference = symbolDataList.reduce((a, b) =>
+      a.timestamps.length >= b.timestamps.length ? a : b
+    )
 
-    return sortedTs
+    return reference.timestamps
       .map((ts) => {
         let value = 0
         for (const { timestamps, closes, shares, fallbackPrice } of symbolDataList) {
@@ -233,7 +241,7 @@ export function InvestmentsContent({ initialInvestments }: Props) {
           if (idx >= 0 && closes[idx] != null) {
             price = closes[idx]
           } else {
-            // Forward-fill: use last known price before this timestamp
+            // Forward-fill: use last known price at or before this timestamp
             let lastIdx = -1
             for (let j = timestamps.length - 1; j >= 0; j--) {
               if (timestamps[j] <= ts && closes[j] != null) { lastIdx = j; break }
@@ -242,16 +250,20 @@ export function InvestmentsContent({ initialInvestments }: Props) {
           }
           value += shares * (price ?? fallbackPrice)
         }
-        return {
-          date: new Date(ts * 1000).toISOString(),
-          label: new Date(ts * 1000).toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: true,
-            timeZone: "America/New_York",
-          }),
-          value: parseFloat(value.toFixed(2)),
+
+        const date = new Date(ts * 1000)
+        let label: string
+        if (range === "1d") {
+          label = date.toLocaleTimeString("en-US", {
+            hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/New_York",
+          })
+        } else if (range === "all" || range === "1y") {
+          label = date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" })
+        } else {
+          label = date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
         }
+
+        return { date: date.toISOString(), label, value: parseFloat(value.toFixed(2)) }
       })
       .filter((d) => d.value > 0)
   }, [investments])
@@ -260,15 +272,13 @@ export function InvestmentsContent({ initialInvestments }: Props) {
     if (investments.length === 0) return
     setHistoryLoading(true)
     try {
-      if (historyRange === "1d") {
-        // Try live intraday data from browser (bypasses Railway IP block)
-        const intradayData = await fetchIntradayData()
-        if (intradayData.length > 0) {
-          setHistory(intradayData)
-          return
-        }
+      // Always try Yahoo Finance from the browser first (all ranges)
+      const yahooData = await fetchYahooHistory(historyRange)
+      if (yahooData.length > 0) {
+        setHistory(yahooData)
+        return
       }
-      // Fall back to snapshot-based history from Supabase
+      // Fall back to Supabase snapshots if Yahoo is unreachable
       const r = await fetch(`/api/investments/history?range=${historyRange}`)
       const d = await r.json()
       setHistory(d.history ?? [])
@@ -277,7 +287,7 @@ export function InvestmentsContent({ initialInvestments }: Props) {
     } finally {
       setHistoryLoading(false)
     }
-  }, [investments, historyRange, fetchIntradayData])
+  }, [investments, historyRange, fetchYahooHistory])
 
   useEffect(() => { fetchHistory() }, [fetchHistory])
 
@@ -564,7 +574,7 @@ export function InvestmentsContent({ initialInvestments }: Props) {
             </ResponsiveContainer>
             {!historyLoading && history.length === 0 && (
               <p className="text-xs text-muted-foreground text-center mt-2">
-                {historyRange === "1d" ? "No intraday data yet — market may be closed" : "No history available yet"}
+                {historyRange === "1d" ? "No data — market is closed or no trading today" : "No history available yet"}
               </p>
             )}
           </Card>
