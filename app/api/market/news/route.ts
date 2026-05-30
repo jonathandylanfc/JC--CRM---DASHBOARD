@@ -84,17 +84,18 @@ function parseRSSItems(xml: string): Array<{ title: string; link: string; pubDat
 // ── Google News RSS ──────────────────────────────────────────────────────────
 
 async function fetchGoogleNews(query: string, count: number): Promise<NewsItem[]> {
-  // Use finance-specific search when query is generic
-  const searchQuery = (query === "stock market investing finance" || query === "market")
-    ? "stock market stocks investing earnings Wall Street"
-    : query
+  const isGeneric = query === "stock market investing finance" || query === "market"
 
-  const urls = [
-    // Google News Business/Finance topic feed
-    `https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
-    // Search-based finance feed
-    `https://news.google.com/rss/search?q=${encodeURIComponent(searchQuery)}&hl=en-US&gl=US&ceid=US:en`,
-  ]
+  // For generic market queries use the finance category feed first (broader, better quality)
+  // For symbol-specific queries go straight to search so results are actually relevant
+  const urls = isGeneric
+    ? [
+        `https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
+        `https://news.google.com/rss/search?q=${encodeURIComponent("stock market stocks investing earnings Wall Street")}&hl=en-US&gl=US&ceid=US:en`,
+      ]
+    : [
+        `https://news.google.com/rss/search?q=${encodeURIComponent(query + " stock")}&hl=en-US&gl=US&ceid=US:en`,
+      ]
 
   for (const url of urls) {
     try {

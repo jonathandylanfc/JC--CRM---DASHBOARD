@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Newspaper, ExternalLink, Clock } from "lucide-react"
+import { Newspaper, ExternalLink, Clock, Loader2 } from "lucide-react"
 import type { NewsItem } from "@/app/api/market/news/route"
 
 function timeAgo(unixTs: number): string {
@@ -66,12 +66,13 @@ export function MarketNews({ holdingSymbols = [] }: Props) {
           {holdingSymbols.length > 0 && (
             <button
               onClick={() => setTab("holdings")}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition-all ${
                 tab === "holdings"
                   ? "bg-background shadow text-foreground"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
+              {tab === "holdings" && loadingHoldings && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
               My Holdings
             </button>
           )}
