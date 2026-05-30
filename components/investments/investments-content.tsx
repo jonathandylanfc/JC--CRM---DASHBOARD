@@ -324,20 +324,6 @@ export function InvestmentsContent({ initialInvestments }: Props) {
       {/* Market Pulse — live indices */}
       <MarketPulse holdingSymbols={holdingSymbols} />
 
-      {/* News + Analyst Ratings */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <MarketNews holdingSymbols={holdingSymbols} />
-        </div>
-        <div>
-          <AnalystRatings
-            holdingSymbols={holdingSymbols}
-            sharesMap={sharesMap}
-            avgCostMap={avgCostMap}
-          />
-        </div>
-      </div>
-
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="p-4">
@@ -660,6 +646,20 @@ export function InvestmentsContent({ initialInvestments }: Props) {
           })}
         </div>
       )}
+
+      {/* News + Analyst Ratings — bottom of page */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2">
+          <MarketNews holdingSymbols={holdingSymbols} />
+        </div>
+        <div>
+          <AnalystRatings
+            holdingSymbols={holdingSymbols}
+            sharesMap={sharesMap}
+            avgCostMap={avgCostMap}
+          />
+        </div>
+      </div>
 
       {/* Edit dialog */}
       <Dialog open={!!editingInv} onOpenChange={(o) => { if (!o) setEditingInv(null) }}>

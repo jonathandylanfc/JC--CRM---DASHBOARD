@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Newspaper, ExternalLink, Clock } from "lucide-react"
+import { Newspaper, ExternalLink, Clock, ChevronDown, ChevronUp } from "lucide-react"
 import type { NewsItem } from "@/app/api/market/news/route"
 
 function timeAgo(unixTs: number): string {
@@ -20,6 +20,7 @@ export function MarketNews({ holdingSymbols = [] }: Props) {
   const [tab, setTab] = useState<"market" | "holdings">("market")
   const [allNews, setAllNews] = useState<NewsItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -83,7 +84,7 @@ export function MarketNews({ holdingSymbols = [] }: Props) {
         </div>
       ) : (
         <div className="space-y-1">
-          {news.slice(0, 8).map((item) => (
+          {news.slice(0, expanded ? 8 : 1).map((item) => (
             <a
               key={item.id}
               href={item.url}
@@ -105,6 +106,18 @@ export function MarketNews({ holdingSymbols = [] }: Props) {
               <ExternalLink className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
             </a>
           ))}
+          {news.length > 1 && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {expanded ? (
+                <><ChevronUp className="w-3.5 h-3.5" /> Show less</>
+              ) : (
+                <><ChevronDown className="w-3.5 h-3.5" /> Show {Math.min(news.length - 1, 7)} more stories</>
+              )}
+            </button>
+          )}
         </div>
       )}
     </div>
