@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useRef, useEffect } from "react"
+import { useState, useTransition, useRef, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -177,9 +177,9 @@ export function InvestmentsContent({ initialInvestments }: Props) {
   // Portfolio history for line chart
   const [history, setHistory] = useState<Array<{ date: string; label: string; value: number }>>([])
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [historyRange, setHistoryRange] = useState<"1d" | "30d" | "6m" | "1y" | "all">("30d")
+  const [historyRange, setHistoryRange] = useState<"1d" | "30d" | "6m" | "1y" | "all">("1d")
 
-  useEffect(() => {
+  const fetchHistory = useCallback(() => {
     if (investments.length === 0) return
     setHistoryLoading(true)
     fetch(`/api/investments/history?range=${historyRange}`)
@@ -188,6 +188,28 @@ export function InvestmentsContent({ initialInvestments }: Props) {
       .catch(() => {})
       .finally(() => setHistoryLoading(false))
   }, [investments, historyRange])
+
+  useEffect(() => { fetchHistory() }, [fetchHistory])
+
+  // Auto-refresh prices + chart every 5 min during market hours (M-F 9:30–16:00 ET)
+  useEffect(() => {
+    function isMarketOpen() {
+      const now = new Date()
+      const day = now.getDay()
+      if (day === 0 || day === 6) return false
+      const etTime = now.toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false })
+      const [h, m] = etTime.split(":").map(Number)
+      const mins = h * 60 + m
+      return mins >= 9 * 60 + 30 && mins < 16 * 60
+    }
+    if (!isMarketOpen()) return
+    const interval = setInterval(async () => {
+      await refreshPrices()
+      router.refresh()
+      fetchHistory()
+    }, 5 * 60 * 1000) // every 5 minutes
+    return () => clearInterval(interval)
+  }, [fetchHistory])
 
   // Summary stats
   const totalCost = investments.reduce((s, inv) => s + inv.shares * inv.avg_cost, 0)

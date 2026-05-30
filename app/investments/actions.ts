@@ -199,11 +199,13 @@ export async function refreshPrices() {
     })
   )
 
-  // Save daily snapshot so the portfolio chart can use our own DB
+  // Save timestamped snapshot so the 1D chart can show intraday movement
   if (snapshotRows.length > 0) {
+    const now = new Date().toISOString()
+    const today = now.slice(0, 10)
     await supabase
       .from("investment_price_snapshots")
-      .upsert(snapshotRows, { onConflict: "user_id,symbol,snapshot_date" })
+      .insert(snapshotRows.map((r) => ({ ...r, snapshot_date: today, snapshot_at: now })))
   }
 
   revalidatePath("/investments")
