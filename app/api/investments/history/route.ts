@@ -44,10 +44,12 @@ async function fetchStooqHistory(symbol: string, days: number): Promise<Map<stri
 
 // Fetch historical closes for one symbol — Yahoo Finance first, Stooq fallback
 async function fetchHistory(symbol: string, yRange: string, interval: string, days: number, intraday = false): Promise<Map<string, number>> {
-  // ── 1. Try Yahoo Finance ──────────────────────────────────────────────────
+  // ── 1. Try Yahoo Finance (multiple endpoints) ─────────────────────────────
   const yfUrls = [
     `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${yRange}`,
     `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${yRange}`,
+    `https://query1.finance.yahoo.com/v7/finance/spark?symbols=${symbol}&range=${yRange}&interval=${interval}`,
+    `https://query2.finance.yahoo.com/v7/finance/spark?symbols=${symbol}&range=${yRange}&interval=${interval}`,
     // CSV download doesn't support intraday intervals
     ...(!intraday ? [`https://query1.finance.yahoo.com/v7/finance/download/${symbol}?interval=${interval}&range=${yRange}&events=history`] : []),
   ]
@@ -72,10 +74,15 @@ async function fetchHistory(symbol: string, yRange: string, interval: string, da
       }
 
       const json = JSON.parse(text)
-      const result = json?.chart?.result?.[0]
+
+      // Handle spark API format: { spark: { result: [{ symbol, response: [{ timestamp, indicators }] }] } }
+      const sparkResult = json?.spark?.result?.[0]?.response?.[0]
+      const chartResult = json?.chart?.result?.[0]
+      const result = sparkResult ?? chartResult
       if (!result) continue
+
       const timestamps: number[] = result.timestamp ?? []
-      const closes: number[] = result.indicators?.quote?.[0]?.close ?? []
+      const closes: number[] = result.indicators?.quote?.[0]?.close ?? result.indicators?.adjclose?.[0]?.adjclose ?? []
       const dateMap = new Map<string, number>()
       timestamps.forEach((ts, i) => {
         const price = closes[i]
@@ -92,9 +99,20 @@ async function fetchHistory(symbol: string, yRange: string, interval: string, da
     }
   }
 
-  // ── 2. Fallback: Stooq (daily only, no intraday) ──────────────────────────
-  if (intraday) return new Map()
-  return await fetchStooqHistory(symbol, days)
+  // ── 2. Fallback: Stooq (daily only — use yesterday's close for intraday too) ──
+  // For 1D with no intraday data, use yesterday's close so we show *something*
+  const stooq = await fetchStooqHistory(symbol, 5)
+  if (intraday && stooq.size > 0) {
+    // Return a single data point at 09:30 AM ET using the most recent daily close
+    const latestClose = [...stooq.entries()].sort(([a], [b]) => b.localeCompare(a))[0]
+    if (latestClose) {
+      const today = new Date().toISOString().slice(0, 10)
+      const key = `${today}T09:30`
+      return new Map([[key, latestClose[1]]])
+    }
+    return new Map()
+  }
+  return stooq
 }
 
 export async function GET(req: NextRequest) {

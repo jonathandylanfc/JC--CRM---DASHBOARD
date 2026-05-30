@@ -177,7 +177,7 @@ export function InvestmentsContent({ initialInvestments }: Props) {
   // Portfolio history for line chart
   const [history, setHistory] = useState<Array<{ date: string; label: string; value: number }>>([])
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [historyRange, setHistoryRange] = useState<"1d" | "30d" | "6m" | "1y" | "all">("1d")
+  const [historyRange, setHistoryRange] = useState<"1d" | "30d" | "6m" | "1y" | "all">("30d")
 
   useEffect(() => {
     if (investments.length === 0) return
