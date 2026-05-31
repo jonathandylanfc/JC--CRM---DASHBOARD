@@ -209,15 +209,18 @@ export function InvestmentsContent({ initialInvestments }: Props) {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyRange, setHistoryRange] = useState<"1d" | "1w" | "30d" | "6m" | "1y" | "all">("1w")
   const [historyNoKey, setHistoryNoKey] = useState(false)
+  const [historyRateLimited, setHistoryRateLimited] = useState(false)
 
   const fetchHistory = useCallback(async () => {
     if (investments.length === 0) return
     setHistoryLoading(true)
     setHistoryNoKey(false)
+    setHistoryRateLimited(false)
     try {
       const r = await fetch(`/api/investments/historical?range=${historyRange}`)
       const d = await r.json()
       if (d.noKey) setHistoryNoKey(true)
+      if (d.rateLimited) setHistoryRateLimited(true)
       setHistory(d.history ?? [])
     } catch {
       setHistory([])
@@ -513,7 +516,12 @@ export function InvestmentsContent({ initialInvestments }: Props) {
                 <p className="text-[10px] text-muted-foreground">Then add <code className="bg-muted px-1 rounded">ALPHA_VANTAGE_KEY</code> in Railway Variables.</p>
               </div>
             )}
-            {!historyLoading && !historyNoKey && history.length === 0 && (
+            {!historyLoading && historyRateLimited && history.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                API limit reached (25/day) — chart data will refresh tomorrow. Data is now cached so this won&apos;t happen again.
+              </p>
+            )}
+            {!historyLoading && !historyNoKey && !historyRateLimited && history.length === 0 && (
               <p className="text-xs text-muted-foreground text-center mt-2">
                 {historyRange === "1d" ? "No intraday data — click Refresh Prices during market hours" : "No history available"}
               </p>
