@@ -69,22 +69,28 @@ export async function GET(req: NextRequest) {
   type DayPrice = { date: string; price: number }
   const symbolHistory = new Map<string, DayPrice[]>()
 
+  // For 1Y/All use weekly series (smaller payload); daily compact covers up to ~5M
+  const useWeekly = days > 180
+  const avFunction = useWeekly ? "TIME_SERIES_WEEKLY" : "TIME_SERIES_DAILY"
+  const seriesKey = useWeekly ? "Weekly Time Series" : "Time Series (Daily)"
+
   await Promise.allSettled(
     investments.map(async (inv) => {
       try {
-        const outputsize = days <= 100 ? "compact" : "full"
-        const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${inv.symbol}&outputsize=${outputsize}&apikey=${AV_KEY}`
+        const url = useWeekly
+          ? `https://www.alphavantage.co/query?function=${avFunction}&symbol=${inv.symbol}&apikey=${AV_KEY}`
+          : `https://www.alphavantage.co/query?function=${avFunction}&symbol=${inv.symbol}&outputsize=compact&apikey=${AV_KEY}`
+
         const res = await fetch(url, { cache: "no-store" })
         if (!res.ok) return
         const json = await res.json()
 
-        // Alpha Vantage rate-limit response
         if (json["Note"] || json["Information"]) {
           console.warn("Alpha Vantage rate limit:", json["Note"] ?? json["Information"])
           return
         }
 
-        const series = json["Time Series (Daily)"] as Record<string, Record<string, string>> | undefined
+        const series = json[seriesKey] as Record<string, Record<string, string>> | undefined
         if (!series) return
 
         const data: DayPrice[] = Object.entries(series)
