@@ -105,7 +105,6 @@ function PortfolioTooltip({
     </div>
   )
 }
-}
 
 // Parse Webull CSV exports (positions or transaction history)
 function parseWebullCsv(text: string): Array<{ symbol: string; name?: string; shares: number; avg_cost: number; current_price?: number }> {
