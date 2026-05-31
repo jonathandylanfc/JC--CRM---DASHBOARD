@@ -77,6 +77,36 @@ function pct(n: number) {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`
 }
 
+// Custom tooltip for portfolio chart showing value + daily change
+function PortfolioTooltip({
+  active, payload, label, history,
+}: {
+  active?: boolean
+  payload?: Array<{ value: number }>
+  label?: string
+  history: Array<{ value: number }>
+}) {
+  if (!active || !payload?.length) return null
+  const value = payload[0].value
+  const idx = history.findIndex((h) => h.value === value)
+  const prev = idx > 0 ? history[idx - 1].value : null
+  const change = prev != null ? value - prev : null
+  const changePct = prev != null && prev > 0 ? ((value - prev) / prev) * 100 : null
+  return (
+    <div className="rounded-lg border border-border bg-card/95 backdrop-blur px-3 py-2 shadow-lg text-xs">
+      <p className="text-muted-foreground mb-1">{label}</p>
+      <p className="font-semibold text-foreground">{currency(value)}</p>
+      {change != null && (
+        <p className={`font-medium mt-0.5 ${change >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+          {change >= 0 ? "+" : ""}{currency(change)} ({changePct != null ? pct(changePct) : ""}){" "}
+          <span className="text-[10px] text-muted-foreground">day</span>
+        </p>
+      )}
+    </div>
+  )
+}
+}
+
 // Parse Webull CSV exports (positions or transaction history)
 function parseWebullCsv(text: string): Array<{ symbol: string; name?: string; shares: number; avg_cost: number; current_price?: number }> {
   const lines = text.trim().split("\n").filter((l) => l.trim())
@@ -180,106 +210,12 @@ export function InvestmentsContent({ initialInvestments }: Props) {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyRange, setHistoryRange] = useState<"1d" | "30d" | "6m" | "1y" | "all">("30d")
 
-  // Fetch historical price data directly from Yahoo Finance in the browser
-  // (Railway's server IP is blocked by Yahoo, but browser requests work fine)
-  const fetchYahooHistory = useCallback(async (range: string): Promise<Array<{ date: string; label: string; value: number }>> => {
-    if (!investments.length) return []
-
-    // Map our range labels to Yahoo Finance API params
-    const rangeConfig: Record<string, { interval: string; yRange: string }> = {
-      "1d":  { interval: "5m",  yRange: "1d"  },
-      "30d": { interval: "1d",  yRange: "1mo" },
-      "6m":  { interval: "1d",  yRange: "6mo" },
-      "1y":  { interval: "1wk", yRange: "1y"  },
-      "all": { interval: "1wk", yRange: "5y"  },
-    }
-    const { interval, yRange } = rangeConfig[range] ?? rangeConfig["30d"]
-
-    type SymbolData = {
-      timestamps: number[]
-      closes: (number | null)[]
-      shares: number
-      fallbackPrice: number
-    }
-
-    const symbolDataList: SymbolData[] = []
-
-    await Promise.allSettled(
-      investments.map(async (inv) => {
-        try {
-          const res = await fetch(
-            `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(inv.symbol)}?interval=${interval}&range=${yRange}`,
-            { cache: "no-store" }
-          )
-          if (!res.ok) return
-          const json = await res.json()
-          const result = json?.chart?.result?.[0]
-          if (!result?.timestamp?.length) return
-          symbolDataList.push({
-            timestamps: result.timestamp as number[],
-            closes: (result.indicators?.quote?.[0]?.close ?? []) as (number | null)[],
-            shares: inv.shares,
-            fallbackPrice: inv.current_price ?? inv.avg_cost,
-          })
-        } catch {}
-      })
-    )
-
-    if (!symbolDataList.length) return []
-
-    // Use the symbol with the most timestamps as the reference timeline
-    const reference = symbolDataList.reduce((a, b) =>
-      a.timestamps.length >= b.timestamps.length ? a : b
-    )
-
-    return reference.timestamps
-      .map((ts) => {
-        let value = 0
-        for (const { timestamps, closes, shares, fallbackPrice } of symbolDataList) {
-          const idx = timestamps.indexOf(ts)
-          let price: number | null = null
-          if (idx >= 0 && closes[idx] != null) {
-            price = closes[idx]
-          } else {
-            // Forward-fill: use last known price at or before this timestamp
-            let lastIdx = -1
-            for (let j = timestamps.length - 1; j >= 0; j--) {
-              if (timestamps[j] <= ts && closes[j] != null) { lastIdx = j; break }
-            }
-            if (lastIdx >= 0) price = closes[lastIdx]
-          }
-          value += shares * (price ?? fallbackPrice)
-        }
-
-        const date = new Date(ts * 1000)
-        let label: string
-        if (range === "1d") {
-          label = date.toLocaleTimeString("en-US", {
-            hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/New_York",
-          })
-        } else if (range === "all" || range === "1y") {
-          label = date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" })
-        } else {
-          label = date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-        }
-
-        return { date: date.toISOString(), label, value: parseFloat(value.toFixed(2)) }
-      })
-      .filter((d) => d.value > 0)
-  }, [investments])
-
   const fetchHistory = useCallback(async () => {
     if (investments.length === 0) return
     setHistoryLoading(true)
     try {
-      // Always try Yahoo Finance from the browser first (all ranges)
-      const yahooData = await fetchYahooHistory(historyRange)
-      if (yahooData.length > 0) {
-        setHistory(yahooData)
-        return
-      }
-      // Fall back to Supabase snapshots if Yahoo is unreachable
-      const r = await fetch(`/api/investments/history?range=${historyRange}`)
+      // Use server-side route: Stooq for multi-day (works from Railway), snapshots for 1D
+      const r = await fetch(`/api/investments/historical?range=${historyRange}`)
       const d = await r.json()
       setHistory(d.history ?? [])
     } catch {
@@ -287,7 +223,7 @@ export function InvestmentsContent({ initialInvestments }: Props) {
     } finally {
       setHistoryLoading(false)
     }
-  }, [investments, historyRange, fetchYahooHistory])
+  }, [investments, historyRange])
 
   useEffect(() => { fetchHistory() }, [fetchHistory])
 
@@ -556,11 +492,7 @@ export function InvestmentsContent({ initialInvestments }: Props) {
                     return [Math.floor(dataMin - pad), Math.ceil(dataMax + pad)]
                   }}
                 />
-                <Tooltip
-                  formatter={(value: number) => [currency(value), "Portfolio Value"]}
-                  contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                  labelStyle={{ fontSize: 11 }}
-                />
+                <Tooltip content={<PortfolioTooltip history={history} />} />
                 <Area
                   type="monotone"
                   dataKey="value"
