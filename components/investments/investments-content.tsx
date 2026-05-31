@@ -445,7 +445,7 @@ export function InvestmentsContent({ initialInvestments }: Props) {
 
           {/* Chart D: Portfolio Value Over Time */}
           <Card className="p-4">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-semibold">Portfolio Value</p>
               <div className="flex items-center gap-1">
                 {historyLoading && <span className="text-xs text-muted-foreground animate-pulse mr-2">Loading…</span>}
@@ -464,6 +464,31 @@ export function InvestmentsContent({ initialInvestments }: Props) {
                 ))}
               </div>
             </div>
+
+            {/* Period performance summary */}
+            {!historyLoading && history.length >= 2 && (() => {
+              const start = history[0].value
+              const end = history[history.length - 1].value
+              const change = end - start
+              const changePct = (change / start) * 100
+              const isUp = change >= 0
+              const rangeLabel: Record<string, string> = {
+                "1d": "Today", "1w": "Past week", "30d": "Past 30 days",
+                "6m": "Past 6 months", "1y": "Past year", "all": "All time",
+              }
+              return (
+                <div className="flex items-baseline gap-2 mb-3">
+                  <span className={`text-lg font-bold ${isUp ? "text-emerald-500" : "text-rose-500"}`}>
+                    {isUp ? "+" : ""}{currency(change)}
+                  </span>
+                  <span className={`text-sm font-semibold ${isUp ? "text-emerald-500" : "text-rose-500"}`}>
+                    ({isUp ? "+" : ""}{changePct.toFixed(2)}%)
+                  </span>
+                  <span className="text-xs text-muted-foreground">{rangeLabel[historyRange]}</span>
+                </div>
+              )
+            })()}
+
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={history} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
                 <defs>
