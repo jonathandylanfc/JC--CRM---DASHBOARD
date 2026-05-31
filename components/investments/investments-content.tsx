@@ -207,15 +207,17 @@ export function InvestmentsContent({ initialInvestments }: Props) {
   // Portfolio history for line chart
   const [history, setHistory] = useState<Array<{ date: string; label: string; value: number }>>([])
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [historyRange, setHistoryRange] = useState<"1d" | "30d" | "6m" | "1y" | "all">("30d")
+  const [historyRange, setHistoryRange] = useState<"1d" | "1w" | "30d" | "6m" | "1y" | "all">("1w")
+  const [historyNoKey, setHistoryNoKey] = useState(false)
 
   const fetchHistory = useCallback(async () => {
     if (investments.length === 0) return
     setHistoryLoading(true)
+    setHistoryNoKey(false)
     try {
-      // Use server-side route: Stooq for multi-day (works from Railway), snapshots for 1D
       const r = await fetch(`/api/investments/historical?range=${historyRange}`)
       const d = await r.json()
+      if (d.noKey) setHistoryNoKey(true)
       setHistory(d.history ?? [])
     } catch {
       setHistory([])
@@ -444,7 +446,7 @@ export function InvestmentsContent({ initialInvestments }: Props) {
               <p className="text-sm font-semibold">Portfolio Value</p>
               <div className="flex items-center gap-1">
                 {historyLoading && <span className="text-xs text-muted-foreground animate-pulse mr-2">Loading…</span>}
-                {(["1d", "30d", "6m", "1y", "all"] as const).map((r) => (
+                {(["1d", "1w", "30d", "6m", "1y", "all"] as const).map((r) => (
                   <button
                     key={r}
                     onClick={() => setHistoryRange(r)}
@@ -503,9 +505,17 @@ export function InvestmentsContent({ initialInvestments }: Props) {
                 />
               </AreaChart>
             </ResponsiveContainer>
-            {!historyLoading && history.length === 0 && (
+            {!historyLoading && historyNoKey && (
+              <div className="text-center mt-2 space-y-1">
+                <p className="text-xs text-muted-foreground">Add a free Alpha Vantage key to see historical data.</p>
+                <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-primary underline">Get free key →</a>
+                <p className="text-[10px] text-muted-foreground">Then add <code className="bg-muted px-1 rounded">ALPHA_VANTAGE_KEY</code> in Railway Variables.</p>
+              </div>
+            )}
+            {!historyLoading && !historyNoKey && history.length === 0 && (
               <p className="text-xs text-muted-foreground text-center mt-2">
-                {historyRange === "1d" ? "No data — market is closed or no trading today" : "No history available yet"}
+                {historyRange === "1d" ? "No intraday data — click Refresh Prices during market hours" : "No history available"}
               </p>
             )}
           </Card>

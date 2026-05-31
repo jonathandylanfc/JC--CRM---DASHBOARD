@@ -1,19 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-// Stooq symbol mapping (same as refreshPrices)
-function toStooqSymbol(symbol: string): string {
-  const upper = symbol.toUpperCase()
-  const map: Record<string, string> = {
-    "BTC-USD": "btc.v", "ETH-USD": "eth.v", "BTC": "btc.v", "ETH": "eth.v",
-  }
-  return map[upper] ?? `${symbol.toLowerCase()}.us`
-}
-
-function fmtDate(d: Date): string {
-  return d.toISOString().slice(0, 10).replace(/-/g, "")
-}
-
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -26,9 +13,9 @@ export async function GET(req: NextRequest) {
 
   if (!investments?.length) return NextResponse.json({ history: [] })
 
-  const rangeParam = req.nextUrl.searchParams.get("range") ?? "30d"
+  const rangeParam = req.nextUrl.searchParams.get("range") ?? "1w"
 
-  // ── 1D: use intraday snapshots from Supabase (populated by refreshPrices) ──
+  // ── 1D: intraday snapshots from Supabase ────────────────────────────────────
   if (rangeParam === "1d") {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const symbols = investments.map((i) => i.symbol.toUpperCase())
@@ -62,63 +49,96 @@ export async function GET(req: NextRequest) {
       if (history.length > 0) return NextResponse.json({ history })
     }
 
-    // Fallback: single current value
     const total = investments.reduce((s, i) => s + i.shares * (i.current_price ?? i.avg_cost), 0)
     return NextResponse.json({
       history: total > 0 ? [{ date: new Date().toISOString(), label: "Now", value: parseFloat(total.toFixed(2)) }] : [],
     })
   }
 
-  // ── Multi-day ranges: fetch from Stooq (works from Railway) ───────────────
-  const daysMap: Record<string, number> = { "30d": 30, "6m": 180, "1y": 365, "all": 1825 }
+  // ── Multi-day: Alpha Vantage TIME_SERIES_DAILY ─────────────────────────────
+  const AV_KEY = process.env.ALPHA_VANTAGE_KEY
+  if (!AV_KEY) {
+    // No key configured — return flag so UI can show setup prompt
+    return NextResponse.json({ history: [], noKey: true })
+  }
+
+  const daysMap: Record<string, number> = { "1w": 7, "30d": 30, "6m": 180, "1y": 365, "all": 1825 }
   const days = daysMap[rangeParam] ?? 30
-  const fromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
-  const toDate = new Date()
-  const d1 = fmtDate(fromDate)
-  const d2 = fmtDate(toDate)
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
   type DayPrice = { date: string; price: number }
   const symbolHistory = new Map<string, DayPrice[]>()
 
   await Promise.allSettled(
     investments.map(async (inv) => {
-      const stooqSym = toStooqSymbol(inv.symbol)
       try {
-        const res = await fetch(
-          `https://stooq.com/q/d/l/?s=${stooqSym}&d1=${d1}&d2=${d2}&i=d`,
-          {
-            headers: { "User-Agent": "Mozilla/5.0" },
-            cache: "no-store",
-          }
-        )
+        const outputsize = days <= 100 ? "compact" : "full"
+        const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${inv.symbol}&outputsize=${outputsize}&apikey=${AV_KEY}`
+        const res = await fetch(url, { cache: "no-store" })
         if (!res.ok) return
-        const text = await res.text()
-        const lines = text.trim().split("\n")
-        if (lines.length < 2) return
+        const json = await res.json()
 
-        const data: DayPrice[] = []
-        for (let i = 1; i < lines.length; i++) {
-          const cols = lines[i].split(",")
-          const date = cols[0]?.trim()
-          const close = parseFloat(cols[4]?.trim() ?? "")
-          if (date && !isNaN(close) && close > 0) {
-            data.push({ date, price: close })
-          }
+        // Alpha Vantage rate-limit response
+        if (json["Note"] || json["Information"]) {
+          console.warn("Alpha Vantage rate limit:", json["Note"] ?? json["Information"])
+          return
         }
 
-        if (data.length > 0) {
-          // Stooq returns newest-first sometimes — sort ascending
-          data.sort((a, b) => a.date.localeCompare(b.date))
-          symbolHistory.set(inv.symbol.toUpperCase(), data)
-        }
-      } catch {}
+        const series = json["Time Series (Daily)"] as Record<string, Record<string, string>> | undefined
+        if (!series) return
+
+        const data: DayPrice[] = Object.entries(series)
+          .filter(([date]) => date >= cutoff)
+          .map(([date, ohlc]) => ({ date, price: parseFloat(ohlc["4. close"]) }))
+          .filter((d) => !isNaN(d.price) && d.price > 0)
+          .sort((a, b) => a.date.localeCompare(b.date))
+
+        if (data.length > 0) symbolHistory.set(inv.symbol.toUpperCase(), data)
+      } catch (e) {
+        console.error("Alpha Vantage fetch error:", e)
+      }
     })
   )
 
   if (symbolHistory.size === 0) {
-    // Final fallback: single point today
+    // Fallback: Supabase snapshots
+    const fromDate = cutoff
+    const symbols = investments.map((i) => i.symbol.toUpperCase())
+    const { data: snapshots } = await supabase
+      .from("investment_price_snapshots")
+      .select("symbol, price, snapshot_date")
+      .eq("user_id", user.id)
+      .in("symbol", symbols)
+      .gte("snapshot_date", fromDate)
+      .order("snapshot_date", { ascending: true })
+
+    if (snapshots?.length) {
+      const dateMap = new Map<string, Map<string, number>>()
+      for (const snap of snapshots) {
+        const date = snap.snapshot_date as string
+        const sym = (snap.symbol as string).toUpperCase()
+        if (!dateMap.has(date)) dateMap.set(date, new Map())
+        dateMap.get(date)!.set(sym, Number(snap.price))
+      }
+      const history = Array.from(dateMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, priceMap]) => {
+          const value = investments.reduce((sum, inv) => {
+            const price = priceMap.get(inv.symbol.toUpperCase()) ?? inv.current_price ?? inv.avg_cost
+            return sum + inv.shares * price
+          }, 0)
+          return {
+            date,
+            label: new Date(date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            value: parseFloat(value.toFixed(2)),
+          }
+        })
+        .filter((d) => d.value > 0)
+      if (history.length > 0) return NextResponse.json({ history })
+    }
+
     const total = investments.reduce((s, i) => s + i.shares * (i.current_price ?? i.avg_cost), 0)
-    const today = toDate.toISOString().slice(0, 10)
+    const today = new Date().toISOString().slice(0, 10)
     return NextResponse.json({
       history: total > 0
         ? [{ date: today, label: new Date(today + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }), value: parseFloat(total.toFixed(2)) }]
@@ -126,14 +146,11 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // Build unified date list from all symbols
+  // Merge all symbols into a unified date timeline
   const allDates = new Set<string>()
-  for (const data of symbolHistory.values()) {
-    data.forEach((d) => allDates.add(d.date))
-  }
+  for (const data of symbolHistory.values()) data.forEach((d) => allDates.add(d.date))
   const sortedDates = Array.from(allDates).sort()
 
-  // Forward-fill: track last known price per symbol as we walk dates
   const lastKnownPrice = new Map<string, number>()
   for (const inv of investments) {
     lastKnownPrice.set(inv.symbol.toUpperCase(), inv.current_price ?? inv.avg_cost)
@@ -143,20 +160,14 @@ export async function GET(req: NextRequest) {
     let value = 0
     for (const inv of investments) {
       const sym = inv.symbol.toUpperCase()
-      const data = symbolHistory.get(sym)
-      if (data) {
-        const entry = data.find((d) => d.date === date)
-        if (entry) lastKnownPrice.set(sym, entry.price)
-      }
+      const dayEntry = symbolHistory.get(sym)?.find((d) => d.date === date)
+      if (dayEntry) lastKnownPrice.set(sym, dayEntry.price)
       value += inv.shares * (lastKnownPrice.get(sym) ?? inv.current_price ?? inv.avg_cost)
     }
-
-    const dateObj = new Date(date + "T12:00:00")
-    const label = dateObj.toLocaleDateString("en-US", {
+    const label = new Date(date + "T12:00:00").toLocaleDateString("en-US", {
       month: "short", day: "numeric",
       ...(rangeParam === "all" || rangeParam === "1y" ? { year: "2-digit" } : {}),
     })
-
     return { date, label, value: parseFloat(value.toFixed(2)) }
   }).filter((d) => d.value > 0)
 
