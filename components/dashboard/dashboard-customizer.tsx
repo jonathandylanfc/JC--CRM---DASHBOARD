@@ -13,6 +13,7 @@ export const WIDGET_DEFS = [
   { id: "bill_reminders",      label: "Bill Reminders",        fixedFull: false },
   { id: "weekly_recap",        label: "Weekly Recap",          fixedFull: false },
   { id: "insights",            label: "AI Spending Insights",  fixedFull: false },
+  { id: "portfolio",           label: "Portfolio Snapshot",    fixedFull: false },
 ] as const
 
 export type WidgetId = typeof WIDGET_DEFS[number]["id"]
@@ -27,13 +28,14 @@ export interface WidgetConfig {
 
 const DEFAULT_LAYOUT: WidgetConfig[] = [
   { id: "stats",               size: "full", visible: true,  order: 0 },
-  { id: "tasks",               size: "half", visible: true,  order: 1 },
-  { id: "budget_health",       size: "half", visible: true,  order: 2 },
-  { id: "recent_transactions", size: "full", visible: true,  order: 3 },
-  { id: "goals",               size: "half", visible: true,  order: 4 },
-  { id: "bill_reminders",      size: "half", visible: true,  order: 5 },
-  { id: "weekly_recap",        size: "half", visible: true,  order: 6 },
-  { id: "insights",            size: "half", visible: true,  order: 7 },
+  { id: "portfolio",           size: "half", visible: true,  order: 1 },
+  { id: "tasks",               size: "half", visible: true,  order: 2 },
+  { id: "budget_health",       size: "half", visible: true,  order: 3 },
+  { id: "recent_transactions", size: "full", visible: true,  order: 4 },
+  { id: "goals",               size: "half", visible: true,  order: 5 },
+  { id: "bill_reminders",      size: "half", visible: true,  order: 6 },
+  { id: "weekly_recap",        size: "half", visible: true,  order: 7 },
+  { id: "insights",            size: "half", visible: true,  order: 8 },
 ]
 
 const STORAGE_KEY = "dashboard_layout_v2"

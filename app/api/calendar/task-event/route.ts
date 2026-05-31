@@ -19,9 +19,12 @@ export async function POST(req: NextRequest) {
     due_date: string
     description?: string
     priority?: string
+    start_time?: string
+    end_time?: string
+    reminder?: string  // minutes as string, e.g. "0", "15", "60"
   }
 
-  const { title, due_date, description, priority } = body
+  const { title, due_date, description, priority, start_time, end_time, reminder } = body
   if (!title || !due_date) {
     return NextResponse.json({ error: "title and due_date are required" }, { status: 400 })
   }
@@ -64,13 +67,37 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Build start/end — timed event if times provided, all-day otherwise
+    let startObj: { date?: string; dateTime?: string; timeZone?: string }
+    let endObj: { date?: string; dateTime?: string; timeZone?: string }
+
+    if (start_time) {
+      startObj = { dateTime: `${due_date}T${start_time}:00`, timeZone: "America/New_York" }
+      // If no end_time, default to 1 hour after start
+      const endT = end_time ?? (() => {
+        const [h, m] = start_time.split(":").map(Number)
+        const endH = String(h + 1).padStart(2, "0")
+        return `${endH}:${String(m).padStart(2, "0")}`
+      })()
+      endObj = { dateTime: `${due_date}T${endT}:00`, timeZone: "America/New_York" }
+    } else {
+      startObj = { date: due_date }
+      endObj = { date: due_date }
+    }
+
+    const reminderMinutes = reminder != null ? parseInt(reminder) : null
+    const reminders = reminderMinutes != null && !isNaN(reminderMinutes)
+      ? { useDefault: false, overrides: [{ method: "popup", minutes: reminderMinutes }] }
+      : { useDefault: false, overrides: [] }
+
     const result = await calendar.events.insert({
       calendarId: "primary",
       requestBody: {
         summary: title,
         description: eventDescription,
-        start: { date: due_date },
-        end: { date: due_date },
+        start: startObj,
+        end: endObj,
+        reminders,
       },
     })
 

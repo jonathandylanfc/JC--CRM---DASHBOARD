@@ -9,6 +9,7 @@ import { BillRemindersCard } from "@/components/dashboard/bill-reminders-card"
 import { SpendingInsightsCard } from "@/components/dashboard/spending-insights-card"
 import { WeeklyGoalsCard } from "@/components/dashboard/weekly-goals-card"
 import { WeeklyRecapCard } from "@/components/dashboard/weekly-recap-card"
+import { PortfolioSnapshotCard } from "@/components/dashboard/portfolio-snapshot-card"
 import { useDashboardLayout, WidgetWrapper, type WidgetId } from "@/components/dashboard/dashboard-customizer"
 
 interface Props {
@@ -63,6 +64,8 @@ function WidgetContent({ id, props }: { id: WidgetId; props: Props }) {
       )
     case "insights":
       return <SpendingInsightsCard />
+    case "portfolio":
+      return <PortfolioSnapshotCard />
     default:
       return null
   }

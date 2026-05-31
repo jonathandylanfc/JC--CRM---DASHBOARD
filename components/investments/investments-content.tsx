@@ -52,6 +52,8 @@ import { MarketPulse } from "./market-pulse"
 import { MarketNews } from "./market-news"
 import { AnalystRatings } from "./analyst-ratings"
 import { AiMarketInsights } from "./ai-market-insights"
+import { DividendsTracker } from "./dividends-tracker"
+import { MorningBriefingButton } from "./morning-briefing-button"
 
 
 interface Investment {
@@ -184,11 +186,23 @@ function parseWebullCsv(text: string): Array<{ symbol: string; name?: string; sh
   return Array.from(results.values()).filter((r) => r.shares > 0)
 }
 
-interface Props {
-  initialInvestments: Investment[]
+interface Dividend {
+  id: string
+  symbol: string
+  amount_per_share: number
+  frequency: string
+  ex_dividend_date: string | null
+  pay_date: string | null
+  shares_held: number | null
 }
 
-export function InvestmentsContent({ initialInvestments }: Props) {
+interface Props {
+  initialInvestments: Investment[]
+  prevCloseMap?: Record<string, number>  // previous trading day's close price per symbol
+  initialDividends?: Dividend[]
+}
+
+export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDividends = [] }: Props) {
   const router = useRouter()
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments)
   const [open, setOpen] = useState(false)
@@ -565,6 +579,9 @@ export function InvestmentsContent({ initialInvestments }: Props) {
             <span className="hidden sm:inline">Refresh Prices</span>
           </Button>
 
+          {/* Morning briefing */}
+          <MorningBriefingButton />
+
           {/* Plaid connect */}
           <PlaidInvestmentsConnect onSuccess={() => router.refresh()} hasBrokerage={true} />
 
@@ -701,6 +718,12 @@ export function InvestmentsContent({ initialInvestments }: Props) {
             const gainPct = cost > 0 ? (gain / cost) * 100 : 0
             const hasPrice = inv.current_price != null
 
+            // Today's change vs previous trading day close
+            const prevClose = prevCloseMap[inv.symbol.toUpperCase()]
+            const todayChange = hasPrice && prevClose ? inv.current_price! - prevClose : null
+            const todayChangePct = todayChange != null && prevClose ? (todayChange / prevClose) * 100 : null
+            const todayChangeTotal = todayChange != null ? todayChange * inv.shares : null
+
             return (
               <Card key={inv.id} className="p-4 group hover:shadow-md transition-all duration-200">
                 <div className="flex items-center gap-3">
@@ -718,6 +741,18 @@ export function InvestmentsContent({ initialInvestments }: Props) {
                       {inv.shares} shares · avg {currency(inv.avg_cost)}
                       {hasPrice && <> · now {currency(inv.current_price!)}</>}
                     </p>
+                    {/* Today's intraday change */}
+                    {todayChange != null && todayChangePct != null && (
+                      <p className={`text-xs font-medium mt-0.5 ${todayChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                        {todayChange >= 0 ? "▲" : "▼"} {todayChange >= 0 ? "+" : ""}{currency(todayChange)}/sh
+                        {" "}({todayChange >= 0 ? "+" : ""}{todayChangePct.toFixed(2)}%)
+                        {todayChangeTotal != null && (
+                          <span className="text-muted-foreground font-normal">
+                            {" "}· {todayChangeTotal >= 0 ? "+" : ""}{currency(todayChangeTotal)} today
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right shrink-0">
                     <p className="font-semibold text-sm">{currency(value)}</p>
@@ -752,20 +787,28 @@ export function InvestmentsContent({ initialInvestments }: Props) {
         </div>
       )}
 
-      {/* AI Insights + Analyst Ratings */}
-      {investments.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <AiMarketInsights />
+      {/* Dividends Tracker */}
+      <DividendsTracker
+        initialDividends={initialDividends}
+        investments={investments.map((i) => ({ symbol: i.symbol, shares: i.shares }))}
+      />
+
+      {/* AI Insights — full width */}
+      {investments.length > 0 && <AiMarketInsights />}
+
+      {/* News + Analyst Ratings — bottom of page */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2">
+          <MarketNews holdingSymbols={holdingSymbols} />
+        </div>
+        <div>
           <AnalystRatings
             holdingSymbols={holdingSymbols}
             sharesMap={sharesMap}
             avgCostMap={avgCostMap}
           />
         </div>
-      )}
-
-      {/* News — bottom of page */}
-      <MarketNews holdingSymbols={holdingSymbols} />
+      </div>
 
       {/* Edit dialog */}
       <Dialog open={!!editingInv} onOpenChange={(o) => { if (!o) setEditingInv(null) }}>

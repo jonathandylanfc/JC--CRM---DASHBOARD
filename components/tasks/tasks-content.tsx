@@ -27,6 +27,8 @@ interface Task {
   title: string
   description: string | null
   due_date: string | null
+  start_time: string | null
+  end_time: string | null
   priority: string
   status: string
   created_at: string
@@ -163,6 +165,8 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
           due_date: task.due_date,
           description: task.description ?? undefined,
           priority: task.priority,
+          start_time: task.start_time ?? undefined,
+          end_time: task.end_time ?? undefined,
         }),
       })
       if (!res.ok) {
@@ -186,6 +190,9 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     const fd = new FormData(e.currentTarget)
     const title = fd.get("title") as string
     const due_date = (fd.get("due_date") as string) || null
+    const start_time = (fd.get("start_time") as string) || null
+    const end_time = (fd.get("end_time") as string) || null
+    const reminder = (fd.get("reminder") as string) || "none"
     const description = (fd.get("description") as string) || null
     const priority = (fd.get("priority") as string) || "medium"
 
@@ -194,6 +201,8 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
       title,
       description,
       due_date,
+      start_time,
+      end_time,
       priority,
       status: "todo",
       created_at: new Date().toISOString(),
@@ -214,7 +223,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
           const res = await fetch("/api/calendar/task-event", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, due_date, description: description ?? undefined, priority }),
+            body: JSON.stringify({ title, due_date, description: description ?? undefined, priority, start_time: start_time ?? undefined, end_time: end_time ?? undefined, reminder: reminder !== "none" ? reminder : undefined }),
           })
           const data = await res.json()
           if (data.error === "not_connected") toast.info("Connect Google Calendar in Settings to auto-add tasks")
@@ -303,6 +312,37 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                   </Select>
                 </div>
               </div>
+
+              {/* Time range + reminder — only show when a date is set */}
+              {formDueDate && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="start_time">Start Time <span className="text-muted-foreground">(optional)</span></Label>
+                      <Input id="start_time" name="start_time" type="time" className="block" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="end_time">End Time <span className="text-muted-foreground">(optional)</span></Label>
+                      <Input id="end_time" name="end_time" type="time" className="block" />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reminder">Alert</Label>
+                    <Select name="reminder" defaultValue="none">
+                      <SelectTrigger id="reminder"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No alert</SelectItem>
+                        <SelectItem value="0">At start time</SelectItem>
+                        <SelectItem value="5">5 minutes before</SelectItem>
+                        <SelectItem value="15">15 minutes before</SelectItem>
+                        <SelectItem value="30">30 minutes before</SelectItem>
+                        <SelectItem value="60">1 hour before</SelectItem>
+                        <SelectItem value="1440">1 day before</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
 
               {/* Recurrence */}
               <div className="space-y-1.5">
@@ -500,6 +540,12 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                       <span className="flex items-center gap-1">
                         <CalendarDays className="w-3.5 h-3.5" />
                         {format(new Date(task.due_date), "MMM d, yyyy")}
+                        {task.start_time && (
+                          <span className="ml-1 font-medium text-foreground">
+                            {new Date(`2000-01-01T${task.start_time}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                            {task.end_time && ` – ${new Date(`2000-01-01T${task.end_time}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}`}
+                          </span>
+                        )}
                       </span>
                     )}
                     <Badge
@@ -563,6 +609,35 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                   </Select>
                 </div>
               </div>
+              {editingTask.due_date && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-start-time">Start Time <span className="text-muted-foreground">(optional)</span></Label>
+                      <Input id="edit-start-time" name="start_time" type="time" defaultValue={editingTask.start_time ?? ""} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-end-time">End Time <span className="text-muted-foreground">(optional)</span></Label>
+                      <Input id="edit-end-time" name="end_time" type="time" defaultValue={editingTask.end_time ?? ""} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-reminder">Alert</Label>
+                    <Select name="reminder" defaultValue="none">
+                      <SelectTrigger id="edit-reminder"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No alert</SelectItem>
+                        <SelectItem value="0">At start time</SelectItem>
+                        <SelectItem value="5">5 minutes before</SelectItem>
+                        <SelectItem value="15">15 minutes before</SelectItem>
+                        <SelectItem value="30">30 minutes before</SelectItem>
+                        <SelectItem value="60">1 hour before</SelectItem>
+                        <SelectItem value="1440">1 day before</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="edit-status">Status</Label>

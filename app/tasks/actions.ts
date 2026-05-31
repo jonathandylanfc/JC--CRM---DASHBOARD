@@ -13,11 +13,15 @@ export async function createTask(formData: FormData) {
   if (!title?.trim()) return { error: "Title is required" }
 
   const due_date = formData.get("due_date") as string
+  const start_time = (formData.get("start_time") as string) || null
+  const end_time = (formData.get("end_time") as string) || null
   const { error } = await supabase.from("tasks").insert({
     user_id: user.id,
     title: title.trim(),
     description: (formData.get("description") as string) || null,
     due_date: due_date || null,
+    start_time,
+    end_time,
     priority: (formData.get("priority") as string) || "medium",
     status: "todo",
     recurrence: (formData.get("recurrence") as string) || "none",
@@ -86,6 +90,8 @@ export async function updateTask(id: string, formData: FormData) {
       title: title.trim(),
       description: (formData.get("description") as string) || null,
       due_date: (formData.get("due_date") as string) || null,
+      start_time: (formData.get("start_time") as string) || null,
+      end_time: (formData.get("end_time") as string) || null,
       priority: (formData.get("priority") as string) || "medium",
       status: (formData.get("status") as string) || "todo",
       recurrence: (formData.get("recurrence") as string) || "none",
