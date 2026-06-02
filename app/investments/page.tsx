@@ -3,17 +3,7 @@ import { Header } from "@/components/dashboard/header"
 import { InvestmentsContent } from "@/components/investments/investments-content"
 import { createClient } from "@/lib/supabase/server"
 import { getUserProfile } from "@/lib/data"
-import { refreshPrices } from "./actions"
 
-async function getDividends(userId: string) {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("dividends")
-    .select("*")
-    .eq("user_id", userId)
-    .order("symbol")
-  return data ?? []
-}
 
 async function getInvestments() {
   const supabase = await createClient()
@@ -57,46 +47,11 @@ async function getPrevCloseMap(symbols: string[]): Promise<Record<string, number
 }
 
 export default async function InvestmentsPage() {
-  const supabase = await createClient()
-  const { data: { user: authUser } } = await supabase.auth.getUser()
-
   const [investments, user] = await Promise.all([getInvestments(), getUserProfile()])
 
-  // Auto-refresh prices if any holding has no price or was last updated over 1 hour ago
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-  const needsRefresh = investments.some(
-    (inv) => !inv.current_price || (inv.updated_at && inv.updated_at < oneHourAgo)
-  )
-  let finalInvestments = investments
-  if (needsRefresh && investments.length > 0) {
-    try {
-      await refreshPrices()
-      finalInvestments = await getInvestments()
-    } catch {
-      // Don't let a price-refresh failure crash the whole page — show stale prices instead
-    }
-  }
+  const symbols = investments.map((i) => i.symbol.toUpperCase())
+  const prevCloseMap = await getPrevCloseMap(symbols)
 
-  const symbols = finalInvestments.map((i) => i.symbol.toUpperCase())
-  const [prevCloseMap, dividends] = await Promise.all([
-    getPrevCloseMap(symbols),
-    authUser ? getDividends(authUser.id) : Promise.resolve([]),
-  ])
-
-  return <InvestmentsPageUI investments={finalInvestments} user={user} prevCloseMap={prevCloseMap} dividends={dividends} />
-}
-
-function InvestmentsPageUI({
-  investments,
-  user,
-  prevCloseMap,
-  dividends,
-}: {
-  investments: Awaited<ReturnType<typeof getInvestments>>
-  user: Awaited<ReturnType<typeof getUserProfile>>
-  prevCloseMap: Record<string, number>
-  dividends: Awaited<ReturnType<typeof getDividends>>
-}) {
   return (
     <div className="flex min-h-screen bg-background">
       <div className="hidden lg:block">
@@ -112,7 +67,6 @@ function InvestmentsPageUI({
           <InvestmentsContent
             initialInvestments={investments}
             prevCloseMap={prevCloseMap}
-            initialDividends={dividends}
           />
         </div>
       </main>

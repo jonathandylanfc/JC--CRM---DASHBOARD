@@ -52,7 +52,6 @@ import { MarketPulse } from "./market-pulse"
 import { MarketNews } from "./market-news"
 import { AnalystRatings } from "./analyst-ratings"
 import { AiMarketInsights } from "./ai-market-insights"
-import { DividendsTracker } from "./dividends-tracker"
 import { MorningBriefingButton } from "./morning-briefing-button"
 
 
@@ -186,23 +185,12 @@ function parseWebullCsv(text: string): Array<{ symbol: string; name?: string; sh
   return Array.from(results.values()).filter((r) => r.shares > 0)
 }
 
-interface Dividend {
-  id: string
-  symbol: string
-  amount_per_share: number
-  frequency: string
-  ex_dividend_date: string | null
-  pay_date: string | null
-  shares_held: number | null
-}
-
 interface Props {
   initialInvestments: Investment[]
   prevCloseMap?: Record<string, number>  // previous trading day's close price per symbol
-  initialDividends?: Dividend[]
 }
 
-export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDividends = [] }: Props) {
+export function InvestmentsContent({ initialInvestments, prevCloseMap = {} }: Props) {
   const router = useRouter()
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments)
   const [open, setOpen] = useState(false)
@@ -796,12 +784,6 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
           })}
         </div>
       )}
-
-      {/* Dividends Tracker */}
-      <DividendsTracker
-        initialDividends={initialDividends}
-        investments={investments.map((i) => ({ symbol: i.symbol, shares: i.shares }))}
-      />
 
       {/* AI Insights — full width */}
       {investments.length > 0 && <AiMarketInsights />}

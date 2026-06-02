@@ -14,6 +14,7 @@ function pct(n: number) {
 }
 
 export async function POST(req: NextRequest) {
+  try {
   // Optional: protect with a secret so only Railway cron can call this
   const secret = req.headers.get("x-briefing-secret")
   const expectedSecret = process.env.BRIEFING_SECRET
@@ -22,14 +23,15 @@ export async function POST(req: NextRequest) {
   }
 
   const RESEND_KEY = process.env.RESEND_API_KEY
-  if (!RESEND_KEY) return NextResponse.json({ error: "RESEND_API_KEY not configured" }, { status: 500 })
+  if (!RESEND_KEY) return NextResponse.json({ error: "RESEND_API_KEY not set — add it in Railway environment variables" }, { status: 500 })
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 })
 
   // Get user (allow unauthenticated cron calls with a target email, or auth-based)
   let userEmail: string | null = null
   let userId: string | null = null
 
-  const body = req.headers.get("content-length") !== "0"
+  const contentLength = req.headers.get("content-length")
+  const body = contentLength && contentLength !== "0"
     ? await req.json().catch(() => ({}))
     : {}
 
@@ -190,22 +192,30 @@ Sign off as "JDpro AI — Your Morning Briefing".`,
 
   if (sendError) {
     console.error("Resend error:", sendError)
-    return NextResponse.json({ error: String(sendError) }, { status: 500 })
+    return NextResponse.json({ error: `Email send failed: ${(sendError as { message?: string }).message ?? String(sendError)}` }, { status: 500 })
   }
 
   return NextResponse.json({ success: true, sentTo: userEmail })
+  } catch (err) {
+    console.error("Briefing error:", err)
+    const message = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: `Briefing failed: ${message}` }, { status: 500 })
+  }
 }
 
-// GET: allow sending a test briefing directly from browser (authenticated)
+// GET: allow sending a briefing directly from the browser (authenticated)
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
-  // Forward to POST handler
-  const req = new Request("/api/briefing", {
+  // Build a proper POST request that includes the user's email and id in the body
+  // so the POST handler doesn't need to re-authenticate (cookies aren't forwarded on the synthetic request)
+  const body = JSON.stringify({ email: user.email, user_id: user.id })
+  const req = new Request("http://localhost/api/briefing", {
     method: "POST",
-    headers: { "content-length": "0" },
+    headers: { "content-type": "application/json", "content-length": String(body.length) },
+    body,
   })
   return POST(req as NextRequest)
 }

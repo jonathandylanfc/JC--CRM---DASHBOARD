@@ -16,8 +16,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Search, Plus, Trash2, CalendarDays, ClipboardList, Calendar, RefreshCw, Tag, Pencil } from "lucide-react"
-import { format } from "date-fns"
+import { Search, Plus, Trash2, CalendarDays, ClipboardList, Calendar, RefreshCw, Tag, Pencil, ChevronDown, ChevronRight, CheckCircle2 } from "lucide-react"
+import { format, startOfDay } from "date-fns"
 import { toast } from "sonner"
 import { createTask, updateTask, toggleTaskStatus, deleteTask } from "@/app/tasks/actions"
 
@@ -31,6 +31,7 @@ interface Task {
   priority: string
   status: string
   created_at: string
+  completed_at: string | null
   recurrence: string
   task_category: string | null
 }
@@ -73,6 +74,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
   const [addToCalendar, setAddToCalendar] = useState(true)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
+  const [expandCompletedOpen, setExpandCompletedOpen] = useState(false)
 
   // Persist calendar preference
   useEffect(() => {
@@ -90,7 +92,13 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     (state: Task[], action: { type: "toggle"; id: string } | { type: "delete"; id: string } | { type: "add"; task: Task }) => {
       if (action.type === "toggle") {
         return state.map((t) =>
-          t.id === action.id ? { ...t, status: t.status === "done" ? "todo" : "done" } : t
+          t.id === action.id
+            ? {
+                ...t,
+                status: t.status === "done" ? "todo" : "done",
+                completed_at: t.status === "done" ? null : new Date().toISOString(),
+              }
+            : t
         )
       }
       if (action.type === "delete") {
@@ -108,18 +116,39 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     new Set(optimisticTasks.map((t) => t.task_category).filter(Boolean) as string[])
   ).sort()
 
+  // Tasks completed today vs older (local-timezone aware)
+  const todayStart = startOfDay(new Date())
+  const isCompletedToday = (t: Task) =>
+    t.status === "done" && !!t.completed_at && new Date(t.completed_at) >= todayStart
+
+  // Active (non-done) tasks for the main list
   const visible = optimisticTasks.filter((t) => {
+    if (t.status === "done") {
+      // Only show done tasks in the main list when the Done tab is active, and only today's
+      if (filter !== "done") return false
+      return isCompletedToday(t) &&
+        (categoryFilter === "all" || t.task_category === categoryFilter) &&
+        t.title.toLowerCase().includes(search.toLowerCase())
+    }
     const matchesStatus = filter === "all" || t.status === filter
     const matchesCategory = categoryFilter === "all" || t.task_category === categoryFilter
     const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase())
     return matchesStatus && matchesCategory && matchesSearch
   })
 
+  // Today's completed tasks (for the collapsible summary row, shown when not on Done tab)
+  const completedToday = optimisticTasks.filter((t) => {
+    if (!isCompletedToday(t)) return false
+    const matchesCategory = categoryFilter === "all" || t.task_category === categoryFilter
+    const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase())
+    return matchesCategory && matchesSearch
+  })
+
   const counts = {
-    all: optimisticTasks.length,
+    all: optimisticTasks.filter((t) => t.status !== "done" || isCompletedToday(t)).length,
     todo: optimisticTasks.filter((t) => t.status === "todo").length,
     in_progress: optimisticTasks.filter((t) => t.status === "in_progress").length,
-    done: optimisticTasks.filter((t) => t.status === "done").length,
+    done: optimisticTasks.filter((t) => isCompletedToday(t)).length,
   }
 
   function handleToggle(task: Task) {
@@ -205,6 +234,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
       priority,
       status: "todo",
       created_at: new Date().toISOString(),
+      completed_at: null,
       recurrence: (fd.get("recurrence") as string) || "none",
       task_category: (fd.get("task_category") as string) || null,
     }
@@ -440,7 +470,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
       )}
 
       {/* Task list */}
-      {visible.length === 0 ? (
+      {visible.length === 0 && completedToday.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
           <ClipboardList className="w-12 h-12 text-primary/30" />
           <p className="text-muted-foreground text-sm">
@@ -570,6 +600,70 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
               </div>
             </Card>
           ))}
+
+          {/* Completed today — collapsible summary row (hidden when Done tab is active) */}
+          {filter !== "done" && completedToday.length > 0 && (
+            <div className="mt-1">
+              <button
+                type="button"
+                onClick={() => setExpandCompletedOpen((v) => !v)}
+                className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-green-500/40 bg-green-500/5 hover:bg-green-500/10 transition-colors text-sm text-green-600 dark:text-green-400"
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span className="flex-1 text-left font-medium">
+                  ✓ {completedToday.length} completed today
+                </span>
+                {expandCompletedOpen
+                  ? <ChevronDown className="w-4 h-4 shrink-0 opacity-60" />
+                  : <ChevronRight className="w-4 h-4 shrink-0 opacity-60" />
+                }
+              </button>
+
+              {expandCompletedOpen && (
+                <div className="mt-2 grid gap-2">
+                  {completedToday.map((task) => (
+                    <Card
+                      key={task.id}
+                      className="p-3 opacity-60 hover:opacity-80 transition-opacity"
+                    >
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleToggle(task)}
+                          className="shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all bg-primary border-primary"
+                          aria-label="Mark as todo"
+                        >
+                          <svg className="w-3.5 h-3.5 text-primary-foreground" viewBox="0 0 12 12" fill="none">
+                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                        <div className="flex-1 min-w-0 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium line-through text-muted-foreground truncate">{task.title}</p>
+                            {task.task_category && (
+                              <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                <Tag className="w-3 h-3" />
+                                {task.task_category}
+                              </span>
+                            )}
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="w-7 h-7 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => handleDelete(task.id)}
+                            title="Delete task"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

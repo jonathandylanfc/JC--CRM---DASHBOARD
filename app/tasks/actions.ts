@@ -40,6 +40,7 @@ export async function toggleTaskStatus(id: string, currentStatus: string) {
   if (!user) return { error: "Not authenticated" }
 
   const newStatus = currentStatus === "done" ? "todo" : "done"
+  const completed_at = newStatus === "done" ? new Date().toISOString() : null
 
   // Fetch the task to check recurrence
   const { data: task } = await supabase
@@ -48,7 +49,7 @@ export async function toggleTaskStatus(id: string, currentStatus: string) {
     .eq("id", id)
     .single()
 
-  const { error } = await supabase.from("tasks").update({ status: newStatus }).eq("id", id)
+  const { error } = await supabase.from("tasks").update({ status: newStatus, completed_at }).eq("id", id)
   if (error) return { error: error.message }
 
   // If marking done and task has recurrence + due_date, spawn the next occurrence
