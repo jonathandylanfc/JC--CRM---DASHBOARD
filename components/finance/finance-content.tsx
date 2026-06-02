@@ -125,18 +125,32 @@ type OptimisticAction =
   | { type: "deleteMany"; ids: string[] }
   | { type: "setType"; id: string; newType: string }
 
-type DateRange = "this_month" | "last_month" | "last_3_months" | "last_6_months" | "last_year" | "all_time"
+type DateRange = "this_month" | "last_3_months" | "last_6_months" | "last_year" | "all_time"
 
 const DATE_RANGES: Array<{ value: DateRange; label: string }> = [
-  { value: "this_month", label: "This Month" },
-  { value: "last_month", label: "Last Month" },
+  { value: "this_month", label: "Month" },
   { value: "last_3_months", label: "3 Months" },
   { value: "last_6_months", label: "6 Months" },
   { value: "last_year", label: "Last Year" },
   { value: "all_time", label: "All Time" },
 ]
 
-function getDateBounds(range: DateRange): { start: string | null; end: string | null } {
+// monthOffset: 0 = current month, -1 = last month, -2 = two months ago, etc.
+function getMonthBounds(offset: number): { start: string; end: string; label: string } {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, "0")
+  const year = now.getFullYear()
+  const month = now.getMonth() + offset  // JS handles underflow automatically
+  const first = new Date(year, month, 1)
+  const last = new Date(year, month + 1, 0)
+  const toISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const label = offset === 0
+    ? "This Month"
+    : first.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+  return { start: toISO(first), end: toISO(last), label }
+}
+
+function getDateBounds(range: DateRange, monthOffset = 0): { start: string | null; end: string | null } {
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, "0")
   const toISO = (d: Date) =>
@@ -145,14 +159,8 @@ function getDateBounds(range: DateRange): { start: string | null; end: string | 
 
   switch (range) {
     case "this_month": {
-      const start = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`
-      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-      return { start, end: toISO(last) }
-    }
-    case "last_month": {
-      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      const last = new Date(now.getFullYear(), now.getMonth(), 0)
-      return { start: toISO(first), end: toISO(last) }
+      const { start, end } = getMonthBounds(monthOffset)
+      return { start, end }
     }
     case "last_3_months": {
       const d = new Date(now); d.setMonth(d.getMonth() - 3)
@@ -279,6 +287,7 @@ export function FinanceContent({
 
   // Date-range, category, account filters, and search
   const [dateRange, setDateRange] = useState<DateRange>("this_month")
+  const [monthOffset, setMonthOffset] = useState(0) // 0 = current month, -1 = last month, etc.
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
@@ -286,8 +295,11 @@ export function FinanceContent({
 
   function changeRange(r: DateRange) {
     setDateRange(r)
+    setMonthOffset(0)
     setChartPage(0)
   }
+
+  const monthInfo = getMonthBounds(monthOffset)
 
 
   const allAccounts = useMemo(() => {
@@ -310,7 +322,7 @@ export function FinanceContent({
   }, [accountTransactions])
 
   const { filteredIncome, filteredExpenses, filteredNet } = useMemo(() => {
-    const { start, end } = getDateBounds(dateRange)
+    const { start, end } = getDateBounds(dateRange, monthOffset)
     const filtered = accountTransactions.filter((tx) => {
       if (start && tx.date < start) return false
       if (end && tx.date > end) return false
@@ -383,28 +395,17 @@ export function FinanceContent({
     })
 
     if (dateRange === "this_month") {
-      const year = now.getFullYear()
-      const month = now.getMonth()
-      const daysInMonth = new Date(year, month + 1, 0).getDate()
+      // monthOffset: 0 = current month, -1 = last month, etc.
+      const targetYear = now.getFullYear()
+      const targetMonth = now.getMonth() + monthOffset
+      const firstOfMonth = new Date(targetYear, targetMonth, 1)
+      const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
+      const y = firstOfMonth.getFullYear()
+      const m = firstOfMonth.getMonth()
       return {
         chartData: Array.from({ length: daysInMonth }, (_, i) => {
           const day = i + 1
-          const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
-          return bucket(accountTransactions.filter((tx) => tx.date === dateStr), String(day))
-        }),
-        chartHasOlder: false,
-        chartHasNewer: false,
-      }
-    }
-
-    if (dateRange === "last_month") {
-      const prevMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1
-      const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
-      const daysInMonth = new Date(prevYear, prevMonth + 1, 0).getDate()
-      return {
-        chartData: Array.from({ length: daysInMonth }, (_, i) => {
-          const day = i + 1
-          const dateStr = `${prevYear}-${pad(prevMonth + 1)}-${pad(day)}`
+          const dateStr = `${y}-${pad(m + 1)}-${pad(day)}`
           return bucket(accountTransactions.filter((tx) => tx.date === dateStr), String(day))
         }),
         chartHasOlder: false,
@@ -447,14 +448,14 @@ export function FinanceContent({
     }
   }, [accountTransactions, dateRange, chartPage])
 
-  const chartTitle = {
-    this_month: "This Month — Daily",
-    last_month: "Last Month — Daily",
-    last_3_months: "Last 3 Months",
-    last_6_months: "Last 6 Months",
-    last_year: "Last 12 Months",
-    all_time: "All Time",
-  }[dateRange]
+  const chartTitle = dateRange === "this_month"
+    ? `${monthInfo.label} — Daily`
+    : {
+        last_3_months: "Last 3 Months",
+        last_6_months: "Last 6 Months",
+        last_year: "Last 12 Months",
+        all_time: "All Time",
+      }[dateRange]
 
   // Auto-detect subscriptions: same title+amount in 2+ months, or "subscription" keyword.
   const detectedSubscriptions = useMemo(() => {
@@ -736,20 +737,46 @@ export function FinanceContent({
       )}
       {/* Date range selector */}
       <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
-        <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-max">
-          {DATE_RANGES.map((r) => (
-            <button
-              key={r.value}
-              onClick={() => changeRange(r.value)}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
-                dateRange === r.value
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-max">
+            {DATE_RANGES.map((r) => (
+              <button
+                key={r.value}
+                onClick={() => changeRange(r.value)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
+                  dateRange === r.value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {r.value === "this_month" && dateRange === "this_month"
+                  ? monthInfo.label
+                  : r.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Month navigation arrows — only visible in monthly view */}
+          {dateRange === "this_month" && (
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => { setMonthOffset((o) => o - 1); setChartPage(0) }}
+                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-sm font-bold"
+                title="Previous month"
+              >
+                ‹
+              </button>
+              {monthOffset < 0 && (
+                <button
+                  onClick={() => { setMonthOffset((o) => Math.min(0, o + 1)); setChartPage(0) }}
+                  className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-sm font-bold"
+                  title="Next month"
+                >
+                  ›
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
       </div>
@@ -821,7 +848,7 @@ export function FinanceContent({
           <BarChart
             data={chartData}
             barGap={4}
-            barCategoryGap={(dateRange === "this_month" || dateRange === "last_month") ? "10%" : "30%"}
+            barCategoryGap={dateRange === "this_month" ? "10%" : "30%"}
             margin={{ bottom: chartData.length > 12 ? 24 : 0 }}
           >
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
@@ -832,7 +859,7 @@ export function FinanceContent({
               tickLine={false}
               angle={chartData.length > 12 ? -35 : 0}
               textAnchor={chartData.length > 12 ? "end" : "middle"}
-              interval={(dateRange === "this_month" || dateRange === "last_month") ? 4 : 0}
+              interval={dateRange === "this_month" ? 4 : 0}
             />
             <YAxis
               tick={{ fontSize: 11 }}
