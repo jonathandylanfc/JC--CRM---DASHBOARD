@@ -128,6 +128,14 @@ export async function deleteBudgetCategory(id: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Not authenticated" }
 
+  // Get the category name before deleting so we can clean up savings goals
+  const { data: cat } = await supabase
+    .from("budget_categories")
+    .select("name")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single()
+
   const { error } = await supabase
     .from("budget_categories")
     .delete()
@@ -135,6 +143,28 @@ export async function deleteBudgetCategory(id: string) {
     .eq("user_id", user.id)
 
   if (error) return { error: error.message }
+
+  // Remove this category name from any savings goals that reference it
+  if (cat?.name) {
+    const { data: goals } = await supabase
+      .from("savings_goals")
+      .select("id, linked_category")
+      .eq("user_id", user.id)
+      .not("linked_category", "is", null)
+
+    for (const goal of goals ?? []) {
+      const cats = (goal.linked_category as string).split(",").filter(Boolean)
+      if (cats.includes(cat.name)) {
+        const updated = cats.filter((c) => c !== cat.name).join(",") || null
+        await supabase
+          .from("savings_goals")
+          .update({ linked_category: updated })
+          .eq("id", goal.id)
+          .eq("user_id", user.id)
+      }
+    }
+  }
+
   revalidatePath("/budget")
   return { success: true }
 }

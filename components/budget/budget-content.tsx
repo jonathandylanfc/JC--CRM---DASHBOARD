@@ -961,8 +961,9 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               const over = cat.is_goal_mode ? false : (actual > budgeted && budgeted > 0)
               const warn = cat.is_goal_mode ? false : (pct >= 80 && !over)
               const goalMet = cat.is_goal_mode && actual >= budgeted && budgeted > 0
-              const goalPartial = cat.is_goal_mode && pct >= 50 && !goalMet
-              const goalShort = cat.is_goal_mode && pct < 50
+              const goalNoTarget = cat.is_goal_mode && budgeted === 0  // no income → no goal amount, show neutral
+              const goalPartial = cat.is_goal_mode && pct >= 50 && !goalMet && !goalNoTarget
+              const goalShort = cat.is_goal_mode && pct < 50 && !goalNoTarget
 
               // Catch-all shows all transactions not claimed by other named categories
               const namedCatNames = new Set(categories.filter((c) => !c.is_catchall).map((c) => c.name.toLowerCase()))
@@ -995,7 +996,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                             </Badge>
                           )}
                           {cat.is_goal_mode && (
-                            <Badge variant="outline" className={`text-[10px] h-4 px-1.5 gap-1 ${goalMet ? "text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700" : "text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-700"}`}>
+                            <Badge variant="outline" className={`text-[10px] h-4 px-1.5 gap-1 ${goalMet ? "text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700" : goalNoTarget ? "text-muted-foreground" : "text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-700"}`}>
                               {goalMet ? "✓ goal met" : "goal mode"}
                             </Badge>
                           )}
@@ -1015,7 +1016,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                         {rolloverAmount > 0 && (
                           <p className="text-[11px] text-muted-foreground">{currency(baseBudget)} base + {currency(rolloverAmount)} rollover</p>
                         )}
-                        <p className={`text-xs ${cat.is_goal_mode ? (goalMet ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-rose-600 dark:text-rose-400 font-medium") : over ? "text-rose-600 dark:text-rose-400 font-medium" : "text-muted-foreground"}`}>
+                        <p className={`text-xs ${cat.is_goal_mode ? (goalMet ? "text-emerald-600 dark:text-emerald-400 font-medium" : goalNoTarget ? "text-muted-foreground" : "text-rose-600 dark:text-rose-400 font-medium") : over ? "text-rose-600 dark:text-rose-400 font-medium" : "text-muted-foreground"}`}>
                           {currency(actual)} {cat.is_goal_mode ? "paid" : "spent"}
                         </p>
                         {lastMonthActual > 0 && (
@@ -1050,7 +1051,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${
                           cat.is_goal_mode
-                            ? goalMet ? "bg-emerald-500" : goalPartial ? "bg-amber-400" : "bg-rose-500"
+                            ? goalMet ? "bg-emerald-500" : goalNoTarget ? "bg-muted-foreground/30" : goalPartial ? "bg-amber-400" : "bg-rose-500"
                             : over ? "bg-rose-500" : warn ? "bg-amber-400" : "bg-emerald-500"
                         }`}
                         style={{ width: `${pct}%` }}
