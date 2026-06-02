@@ -184,7 +184,7 @@ Sign off as "JDpro AI — Your Morning Briefing".`,
 
   const resend = new Resend(RESEND_KEY)
   const { error: sendError } = await resend.emails.send({
-    from: "JDpro Briefing <briefing@jdpro.app>",
+    from: "JDpro Briefing <onboarding@resend.dev>",
     to: [userEmail],
     subject: `☀️ Morning Briefing — ${today}`,
     html: htmlBody,
