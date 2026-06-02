@@ -447,13 +447,14 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                   contentStyle={{
                     fontSize: 12,
                     borderRadius: 8,
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    color: "hsl(var(--foreground))",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                    background: "#1c1c1e",
+                    border: "1px solid #2d2d2f",
+                    color: "#f5f5f7",
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
                   }}
-                  labelStyle={{ color: "hsl(var(--muted-foreground))", marginBottom: 2 }}
-                  cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
+                  labelStyle={{ color: "#8e8e93", marginBottom: 4 }}
+                  itemStyle={{ color: "#f5f5f7" }}
+                  cursor={{ fill: "rgba(255,255,255,0.05)" }}
                 />
                 <Bar dataKey="Cost" fill="#3b82f6" radius={[3, 3, 0, 0]} name="Cost Basis" />
                 <Bar dataKey="Value" radius={[3, 3, 0, 0]} name="Current Value">
