@@ -9,12 +9,14 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
   try {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://jc-crm-dashboard-production.up.railway.app"
     const response = await plaidClient.linkTokenCreate({
       user: { client_user_id: user.id },
       client_name: "JDpro",
       products: [Products.Transactions],
       country_codes: [CountryCode.Us],
       language: "en",
+      redirect_uri: `${appUrl}/finance`,
     })
     return NextResponse.json({ link_token: response.data.link_token })
   } catch (err) {

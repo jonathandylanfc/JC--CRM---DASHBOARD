@@ -444,7 +444,16 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                 <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} width={44} />
                 <Tooltip
                   formatter={(value: number, name: string) => [currency(value), name]}
-                  contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                  contentStyle={{
+                    fontSize: 12,
+                    borderRadius: 8,
+                    background: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    color: "hsl(var(--foreground))",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                  }}
+                  labelStyle={{ color: "hsl(var(--muted-foreground))", marginBottom: 2 }}
+                  cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
                 />
                 <Bar dataKey="Cost" fill="#3b82f6" radius={[3, 3, 0, 0]} name="Cost Basis" />
                 <Bar dataKey="Value" radius={[3, 3, 0, 0]} name="Current Value">

@@ -123,6 +123,7 @@ export async function refreshPrices() {
           "Accept-Language": "en-US,en;q=0.9",
         },
         cache: "no-store",
+        signal: AbortSignal.timeout(8000),
       }
     )
 
@@ -152,6 +153,7 @@ export async function refreshPrices() {
               "Accept": "application/json",
             },
             cache: "no-store",
+            signal: AbortSignal.timeout(6000),
           }
         )
         const json = await res.json()
@@ -167,7 +169,7 @@ export async function refreshPrices() {
     stillMissing.map(async (inv) => {
       try {
         const url = `https://stooq.com/q/l/?s=${inv.symbol.toLowerCase()}.us&f=sd2ohlcv&h&e=csv`
-        const res = await fetch(url, { cache: "no-store" })
+        const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(6000) })
         if (!res.ok) return
         const text = await res.text()
         const lines = text.trim().split("\n")

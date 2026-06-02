@@ -69,8 +69,12 @@ export default async function InvestmentsPage() {
   )
   let finalInvestments = investments
   if (needsRefresh && investments.length > 0) {
-    await refreshPrices()
-    finalInvestments = await getInvestments()
+    try {
+      await refreshPrices()
+      finalInvestments = await getInvestments()
+    } catch {
+      // Don't let a price-refresh failure crash the whole page — show stale prices instead
+    }
   }
 
   const symbols = finalInvestments.map((i) => i.symbol.toUpperCase())

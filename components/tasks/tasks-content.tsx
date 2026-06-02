@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -459,15 +458,26 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
           {visible.map((task, index) => (
             <Card
               key={task.id}
-              className="p-4 hover:shadow-lg transition-all duration-300 group animate-slide-in-up"
+              className="p-4 hover:shadow-lg transition-all duration-300 animate-slide-in-up"
               style={{ animationDelay: `${index * 40}ms` }}
             >
-              <div className="flex items-start gap-4">
-                <Checkbox
-                  checked={task.status === "done"}
-                  onCheckedChange={() => handleToggle(task)}
-                  className="mt-1 shrink-0"
-                />
+              <div className="flex items-start gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleToggle(task)}
+                  className={`mt-0.5 shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                    task.status === "done"
+                      ? "bg-primary border-primary"
+                      : "border-muted-foreground/50 hover:border-primary bg-background hover:bg-primary/10"
+                  }`}
+                  aria-label={task.status === "done" ? "Mark as todo" : "Mark as done"}
+                >
+                  {task.status === "done" && (
+                    <svg className="w-3.5 h-3.5 text-primary-foreground" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </button>
                 <div className="flex-1 min-w-0 space-y-1.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -502,31 +512,32 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                        className="w-8 h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60"
                         onClick={() => { setEditingTask(task); setEditError(null) }}
                         title="Edit task"
                       >
-                        <Pencil className="w-3.5 h-3.5" />
+                        <Pencil className="w-4 h-4" />
                       </Button>
                       {task.due_date && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
+                          className="w-8 h-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
                           onClick={() => handleSendToCalendar(task)}
                           disabled={calendarPending === task.id}
                           title="Send to Google Calendar"
                         >
-                          <Calendar className="w-3.5 h-3.5" />
+                          <Calendar className="w-4 h-4" />
                         </Button>
                       )}
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                        className="w-8 h-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         onClick={() => handleDelete(task.id)}
+                        title="Delete task"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>

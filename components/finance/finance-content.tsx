@@ -125,10 +125,11 @@ type OptimisticAction =
   | { type: "deleteMany"; ids: string[] }
   | { type: "setType"; id: string; newType: string }
 
-type DateRange = "this_month" | "last_3_months" | "last_6_months" | "last_year" | "all_time"
+type DateRange = "this_month" | "last_month" | "last_3_months" | "last_6_months" | "last_year" | "all_time"
 
 const DATE_RANGES: Array<{ value: DateRange; label: string }> = [
   { value: "this_month", label: "This Month" },
+  { value: "last_month", label: "Last Month" },
   { value: "last_3_months", label: "3 Months" },
   { value: "last_6_months", label: "6 Months" },
   { value: "last_year", label: "Last Year" },
@@ -147,6 +148,11 @@ function getDateBounds(range: DateRange): { start: string | null; end: string | 
       const start = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`
       const last = new Date(now.getFullYear(), now.getMonth() + 1, 0)
       return { start, end: toISO(last) }
+    }
+    case "last_month": {
+      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const last = new Date(now.getFullYear(), now.getMonth(), 0)
+      return { start: toISO(first), end: toISO(last) }
     }
     case "last_3_months": {
       const d = new Date(now); d.setMonth(d.getMonth() - 3)
@@ -391,6 +397,21 @@ export function FinanceContent({
       }
     }
 
+    if (dateRange === "last_month") {
+      const prevMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1
+      const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
+      const daysInMonth = new Date(prevYear, prevMonth + 1, 0).getDate()
+      return {
+        chartData: Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1
+          const dateStr = `${prevYear}-${pad(prevMonth + 1)}-${pad(day)}`
+          return bucket(accountTransactions.filter((tx) => tx.date === dateStr), String(day))
+        }),
+        chartHasOlder: false,
+        chartHasNewer: false,
+      }
+    }
+
     if (dateRange === "all_time") {
       if (!accountTransactions.length) return { chartData: [], chartHasOlder: false, chartHasNewer: false }
       const sorted = [...accountTransactions].sort((a, b) => a.date.localeCompare(b.date))
@@ -428,6 +449,7 @@ export function FinanceContent({
 
   const chartTitle = {
     this_month: "This Month — Daily",
+    last_month: "Last Month — Daily",
     last_3_months: "Last 3 Months",
     last_6_months: "Last 6 Months",
     last_year: "Last 12 Months",
@@ -799,7 +821,7 @@ export function FinanceContent({
           <BarChart
             data={chartData}
             barGap={4}
-            barCategoryGap={dateRange === "this_month" ? "10%" : "30%"}
+            barCategoryGap={(dateRange === "this_month" || dateRange === "last_month") ? "10%" : "30%"}
             margin={{ bottom: chartData.length > 12 ? 24 : 0 }}
           >
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
@@ -810,7 +832,7 @@ export function FinanceContent({
               tickLine={false}
               angle={chartData.length > 12 ? -35 : 0}
               textAnchor={chartData.length > 12 ? "end" : "middle"}
-              interval={dateRange === "this_month" ? 4 : 0}
+              interval={(dateRange === "this_month" || dateRange === "last_month") ? 4 : 0}
             />
             <YAxis
               tick={{ fontSize: 11 }}
