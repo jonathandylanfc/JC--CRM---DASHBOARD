@@ -80,22 +80,64 @@ export async function POST(req: NextRequest) {
     ? `Portfolio total: ${currency(totalValue)} (${pct(totalGainPct)} all-time)\n\nHoldings:\n${holdingLines}`
     : "No holdings tracked yet."
 
+  // Fetch live market news & trending tickers from Alpha Vantage
+  let newsContext = ""
+  try {
+    const avKey = process.env.ALPHA_VANTAGE_KEY
+    if (avKey) {
+      const newsRes = await fetch(
+        `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&sort=LATEST&limit=30&apikey=${avKey}`,
+        { signal: AbortSignal.timeout(6000) }
+      )
+      if (newsRes.ok) {
+        const newsData = await newsRes.json()
+        const feed: Array<{
+          title: string
+          summary: string
+          ticker_sentiment?: Array<{ ticker: string; ticker_sentiment_label: string; relevance_score: string }>
+        }> = newsData.feed ?? []
+
+        // Build a compact news digest — top 12 headlines + most mentioned tickers
+        const tickerMentions: Record<string, number> = {}
+        const headlines = feed.slice(0, 12).map((item) => {
+          for (const t of item.ticker_sentiment ?? []) {
+            if (parseFloat(t.relevance_score) > 0.4) {
+              tickerMentions[t.ticker] = (tickerMentions[t.ticker] ?? 0) + 1
+            }
+          }
+          return `- ${item.title}`
+        }).join("\n")
+
+        const trending = Object.entries(tickerMentions)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([ticker]) => ticker)
+          .join(", ")
+
+        newsContext = `\n\nLATEST MARKET NEWS (live as of now):\n${headlines}${trending ? `\n\nMost mentioned tickers in the news right now: ${trending}` : ""}`
+      }
+    }
+  } catch {
+    // News fetch failed — briefing continues without it
+  }
+
   // Generate AI briefing
   const aiResponse = await anthropic.messages.create({
     model: "claude-haiku-4-5",
-    max_tokens: 600,
+    max_tokens: 900,
     system: `You are a concise personal finance assistant writing a morning market briefing email.
-Today is ${today}. Keep it tight, actionable, and friendly — 4-6 bullet points covering:
-1. A brief note on general market sentiment for today (be realistic, mention any known macro factors for this week)
-2. Notable moves or news relevant to the user's specific holdings
-3. One thing to watch or consider today
-4. A quick personal finance tip
+Today is ${today}. Be tight, actionable, and friendly. Structure your response in these sections:
 
-Use plain text formatting — no markdown, no headers. Start with a warm greeting.
-Sign off as "JDpro AI — Your Morning Briefing".`,
+1. MARKET PULSE — 2-3 sentences on general market sentiment and key macro factors today.
+2. YOUR HOLDINGS — 1-2 bullet points on anything notable for the user's specific stocks.
+3. STOCKS TO WATCH TODAY — Based on the live news and trending tickers provided, suggest 3-5 specific stocks worth researching today. For each give: ticker, why it's interesting right now (earnings, news catalyst, buzz), and a one-line note on what to look for. Be specific and direct.
+4. QUICK TIP — One actionable personal finance tip.
+
+Use plain text, no markdown symbols. Separate sections with a blank line and a clear label.
+Start with a warm one-line greeting. Sign off as "JDpro AI — Your Morning Briefing".`,
     messages: [{
       role: "user",
-      content: `My portfolio:\n${portfolioContext}\n\nWrite my morning briefing for ${today}.`,
+      content: `My portfolio:\n${portfolioContext}${newsContext}\n\nWrite my morning briefing for ${today}.`,
     }],
   })
 
