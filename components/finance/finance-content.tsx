@@ -336,7 +336,7 @@ export function FinanceContent({
       .filter((tx) => tx.type === "expense")
       .reduce((s, tx) => s + Number(tx.amount), 0)
     return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
-  }, [accountTransactions, dateRange, selectedCategory])
+  }, [accountTransactions, dateRange, monthOffset, selectedCategory])
 
   // Computes anchor balance + post-anchor net for a given set of transactions.
   function anchorBalance(txs: Transaction[]): number | null {
@@ -380,7 +380,7 @@ export function FinanceContent({
     const isAllTime = dateRange === "all_time" && !selectedCategory && currentBalance != null
     if (!isAllTime) return 0
     return Math.max(0, currentBalance - filteredNet)
-  }, [dateRange, selectedCategory, currentBalance, filteredNet])
+  }, [dateRange, monthOffset, selectedCategory, currentBalance, filteredNet])
 
   // Chart data — buckets match the selected date range
   const { chartData, chartHasOlder, chartHasNewer } = useMemo(() => {
@@ -446,7 +446,7 @@ export function FinanceContent({
       chartHasOlder: false,
       chartHasNewer: false,
     }
-  }, [accountTransactions, dateRange, chartPage])
+  }, [accountTransactions, dateRange, monthOffset, chartPage])
 
   const chartTitle = dateRange === "this_month"
     ? `${monthInfo.label} — Daily`
@@ -511,13 +511,17 @@ export function FinanceContent({
         list = [savedTx, ...rest]
       }
     }
+    // Apply date range filter
+    const { start, end } = getDateBounds(dateRange, monthOffset)
+    if (start) list = list.filter((tx) => tx.date >= start)
+    if (end) list = list.filter((tx) => tx.date <= end)
     if (selectedCategory) list = list.filter((tx) => tx.category === selectedCategory)
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase()
       list = list.filter((tx) => tx.title.toLowerCase().includes(q))
     }
     return list
-  }, [accountTransactions, savedTx, selectedCategory, searchQuery])
+  }, [accountTransactions, savedTx, dateRange, monthOffset, selectedCategory, searchQuery])
 
   function exitSelectMode() {
     setSelectMode(false)
@@ -758,21 +762,21 @@ export function FinanceContent({
 
           {/* Month navigation arrows — only visible in monthly view */}
           {dateRange === "this_month" && (
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => { setMonthOffset((o) => o - 1); setChartPage(0) }}
-                className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-sm font-bold"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-muted text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors border border-border"
                 title="Previous month"
               >
-                ‹
+                ← Prev
               </button>
               {monthOffset < 0 && (
                 <button
                   onClick={() => { setMonthOffset((o) => Math.min(0, o + 1)); setChartPage(0) }}
-                  className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-sm font-bold"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-muted text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors border border-border"
                   title="Next month"
                 >
-                  ›
+                  Next →
                 </button>
               )}
             </div>
