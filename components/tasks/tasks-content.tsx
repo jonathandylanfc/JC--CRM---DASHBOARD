@@ -124,6 +124,29 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
   const isCompletedBefore = (t: Task) =>
     t.status === "done" && (!t.completed_at || new Date(t.completed_at) < todayStart)
 
+  // Sorting helpers
+  const priorityOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
+
+  const sortActive = (a: Task, b: Task) => {
+    // Due date first: tasks with a date before tasks without
+    if (a.due_date && !b.due_date) return -1
+    if (!a.due_date && b.due_date) return 1
+    if (a.due_date && b.due_date) {
+      const diff = new Date(a.due_date).getTime() - new Date(b.due_date).getTime()
+      if (diff !== 0) return diff
+    }
+    // Secondary: priority (urgent → low)
+    return (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2)
+  }
+
+  const sortCompleted = (a: Task, b: Task) => {
+    // Most recently completed first
+    if (!a.completed_at && !b.completed_at) return 0
+    if (!a.completed_at) return 1
+    if (!b.completed_at) return -1
+    return new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()
+  }
+
   // Active (non-done) tasks for the main list
   const visible = optimisticTasks.filter((t) => {
     if (t.status === "done") {
@@ -137,7 +160,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     const matchesCategory = categoryFilter === "all" || t.task_category === categoryFilter
     const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase())
     return matchesStatus && matchesCategory && matchesSearch
-  })
+  }).sort((a, b) => a.status === "done" ? sortCompleted(a, b) : sortActive(a, b))
 
   // Today's completed tasks (for the collapsible summary row, shown when not on Done tab)
   const completedToday = optimisticTasks.filter((t) => {
@@ -145,7 +168,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     const matchesCategory = categoryFilter === "all" || t.task_category === categoryFilter
     const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase())
     return matchesCategory && matchesSearch
-  })
+  }).sort(sortCompleted)
 
   // Previously completed tasks (before today)
   const completedBefore = optimisticTasks.filter((t) => {
@@ -153,7 +176,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     const matchesCategory = categoryFilter === "all" || t.task_category === categoryFilter
     const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase())
     return matchesCategory && matchesSearch
-  })
+  }).sort(sortCompleted)
 
   const counts = {
     all: optimisticTasks.filter((t) => t.status !== "done").length,
