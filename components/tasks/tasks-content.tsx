@@ -121,8 +121,11 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
   const todayStart = startOfDay(new Date())
   const isCompletedToday = (t: Task) =>
     t.status === "done" && !!t.completed_at && new Date(t.completed_at) >= todayStart
+  const oneWeekAgo = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000)
   const isCompletedBefore = (t: Task) =>
-    t.status === "done" && (!t.completed_at || new Date(t.completed_at) < todayStart)
+    t.status === "done" &&
+    (!t.completed_at || new Date(t.completed_at) < todayStart) &&
+    (!!t.completed_at && new Date(t.completed_at) >= oneWeekAgo)
 
   // Sorting helpers
   const priorityOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
