@@ -1,14 +1,8 @@
 import { SidebarServer as Sidebar } from "@/components/dashboard/sidebar-server"
 import { Header } from "@/components/dashboard/header"
-import { StatsCards } from "@/components/dashboard/stats-cards"
-import { TaskBoardCard } from "@/components/dashboard/task-board-card"
-import { BudgetHealthCard } from "@/components/dashboard/budget-health-card"
-import { RecentTransactionsCard } from "@/components/dashboard/recent-transactions-card"
-import { BillRemindersCard } from "@/components/dashboard/bill-reminders-card"
-import { SpendingInsightsCard } from "@/components/dashboard/spending-insights-card"
-import { WeeklyGoalsCard } from "@/components/dashboard/weekly-goals-card"
 import { DashboardLayoutProvider, DashboardEditButton, DashboardVisibilityPanel } from "@/components/dashboard/dashboard-customizer"
 import { DashboardSections } from "@/components/dashboard/dashboard-sections"
+import { MorningBriefingCard } from "@/components/dashboard/morning-briefing-card"
 import {
   getTaskStats,
   getRecentTasks,
@@ -20,6 +14,7 @@ import {
   getUpcomingSubscriptions,
   getSavingsGoals,
   getWeeklySpendingSummary,
+  getLatestBriefing,
 } from "@/lib/data"
 
 export default async function DashboardPage() {
@@ -34,6 +29,7 @@ export default async function DashboardPage() {
     upcomingBills,
     savingsGoals,
     weeklyRecap,
+    latestBriefing,
   ] = await Promise.all([
     getTaskStats(),
     getRecentTasks(),
@@ -45,6 +41,7 @@ export default async function DashboardPage() {
     getUpcomingSubscriptions(7),
     getSavingsGoals(),
     getWeeklySpendingSummary(),
+    getLatestBriefing(),
   ])
 
   return (
@@ -61,17 +58,21 @@ export default async function DashboardPage() {
             user={user ?? undefined}
           />
 
-          <DashboardSections
-            taskStats={taskStats}
-            recentTasks={recentTasks}
-            financeSummary={financeSummary}
-            expensesByCategory={expensesByCategory}
-            categories={categories}
-            recentTransactions={recentTransactions}
-            upcomingBills={upcomingBills}
-            savingsGoals={savingsGoals}
-            weeklyRecap={weeklyRecap}
-          />
+          <div className="mt-4 space-y-4">
+            <MorningBriefingCard briefing={latestBriefing} />
+
+            <DashboardSections
+              taskStats={taskStats}
+              recentTasks={recentTasks}
+              financeSummary={financeSummary}
+              expensesByCategory={expensesByCategory}
+              categories={categories}
+              recentTransactions={recentTransactions}
+              upcomingBills={upcomingBills}
+              savingsGoals={savingsGoals}
+              weeklyRecap={weeklyRecap}
+            />
+          </div>
         </main>
 
         <DashboardVisibilityPanel />

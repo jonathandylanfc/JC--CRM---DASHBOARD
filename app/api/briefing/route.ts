@@ -143,6 +143,16 @@ Start with a warm one-line greeting. Sign off as "JDpro AI — Your Morning Brie
 
   const aiText = aiResponse.content[0].type === "text" ? aiResponse.content[0].text : ""
 
+  // Save briefing to DB so it can be displayed on the dashboard
+  try {
+    if (userId) {
+      const briefingClient = await createClient()
+      await briefingClient.rpc("insert_briefing", { p_user_id: userId, p_content: aiText })
+    }
+  } catch (e) {
+    console.error("Failed to save briefing to DB:", e)
+  }
+
   // Build HTML email
   const holdingRows = investments.length > 0
     ? investments.map((i) => {

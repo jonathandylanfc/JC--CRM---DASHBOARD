@@ -31,6 +31,7 @@ function WidgetContent({ id, props }: { id: WidgetId; props: Props }) {
         <StatsCards
           totalTasks={props.taskStats.total}
           tasksDone={props.taskStats.done}
+          tasksDueToday={props.taskStats.dueToday ?? 0}
           monthlyIncome={props.financeSummary.income}
           monthlyExpenses={props.financeSummary.expenses}
         />

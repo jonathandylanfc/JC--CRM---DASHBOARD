@@ -8,6 +8,7 @@ import Link from "next/link"
 interface StatsCardsProps {
   totalTasks: number
   tasksDone: number
+  tasksDueToday: number
   monthlyIncome: number
   monthlyExpenses: number
 }
@@ -16,17 +17,16 @@ function currency(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n)
 }
 
-export function StatsCards({ totalTasks, tasksDone, monthlyIncome, monthlyExpenses }: StatsCardsProps) {
+export function StatsCards({ totalTasks, tasksDone, tasksDueToday, monthlyIncome, monthlyExpenses }: StatsCardsProps) {
   const [hoveredCard, setHoveredCard] = useState<number | null>(null)
 
-  const completionPct = totalTasks > 0 ? Math.round((tasksDone / totalTasks) * 100) : 0
   const netBalance = monthlyIncome - monthlyExpenses
 
   const stats = [
     {
-      title: "Total Tasks",
+      title: "Open Tasks",
       value: String(totalTasks),
-      subtitle: `${completionPct}% done`,
+      subtitle: tasksDueToday > 0 ? `${tasksDueToday} due today` : "none due today",
       Icon: CheckSquare,
       bgColor: "bg-primary",
       textColor: "text-primary-foreground",

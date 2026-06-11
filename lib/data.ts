@@ -20,14 +20,25 @@ async function getAuthenticatedClient() {
 
 export async function getTaskStats() {
   const { supabase, userId } = await getAuthenticatedClient()
-  if (!userId) return { total: 0, done: 0, inProgress: 0, todo: 0 }
-  const { data } = await supabase.from("tasks").select("status").eq("user_id", userId)
-  if (!data) return { total: 0, done: 0, inProgress: 0, todo: 0 }
+  if (!userId) return { total: 0, done: 0, inProgress: 0, todo: 0, dueToday: 0 }
+  const today = format(new Date(), "yyyy-MM-dd")
+  const [{ data }, { count: dueToday }] = await Promise.all([
+    supabase.from("tasks").select("status").eq("user_id", userId),
+    supabase.from("tasks").select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("due_date", today)
+      .neq("status", "done"),
+  ])
+  if (!data) return { total: 0, done: 0, inProgress: 0, todo: 0, dueToday: 0 }
+  const done = data.filter((t) => t.status === "done").length
+  const inProgress = data.filter((t) => t.status === "in_progress").length
+  const todo = data.filter((t) => t.status === "todo").length
   return {
-    total: data.length,
-    done: data.filter((t) => t.status === "done").length,
-    inProgress: data.filter((t) => t.status === "in_progress").length,
-    todo: data.filter((t) => t.status === "todo").length,
+    total: inProgress + todo, // only incomplete tasks
+    done,
+    inProgress,
+    todo,
+    dueToday: dueToday ?? 0,
   }
 }
 
@@ -508,4 +519,17 @@ export async function getConnectedBankNames(): Promise<string[]> {
     }
   }
   return labels
+}
+
+export async function getLatestBriefing(): Promise<{ content: string; created_at: string } | null> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return null
+  const { data } = await supabase
+    .from("briefings")
+    .select("content, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single()
+  return data ?? null
 }
