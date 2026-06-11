@@ -30,26 +30,27 @@ export async function POST(req: NextRequest) {
           },
           {
             type: "text",
-            text: `Extract ALL trade details from this screenshot. It may be a single trade confirmation, a TradingView balance history, a brokerage order history, or any trading platform.
+            text: `Extract ALL executed trade details from this screenshot. It may be a TradingView order history table, balance history, a brokerage confirmation, or any trading platform.
 
-For TradingView / futures screenshots:
-- "Close long position" = a sell (closing a buy). action = "sell"
-- "Close short position" = a buy (covering a short). action = "buy"
-- Strip exchange prefixes from symbols: "CME_MINI:NQ1!" becomes "NQ1", "CME_MINI:NQM2026" becomes "NQM2026"
-- Use the close price as "price"
-- Put the entry AVG price and realized P&L in notes
+Rules:
+- SKIP any row where Status is "Cancelled", "Rejected", or "Pending" — only include "Filled" / executed orders
+- For TradingView Order History tables: use the "Side" column directly for action (Buy→buy, Sell→sell), use "Fill price" as the price
+- For TradingView Balance History: "Close long position"→sell, "Close short position"→buy, use the close price
+- Strip exchange prefixes and punctuation from symbols: "CME_MINI:NQ1!" → "NQ1", "CME_MINI:NQM2026" → "NQM2026"
+- Use "Placing time" or the timestamp shown as traded_at
+- Put order type (Market/Limit/Stop) in notes
 
 Return ONLY a JSON array (no markdown, no explanation). Each element:
 {
   "symbol": "ticker in uppercase, no exchange prefix or exclamation mark",
   "action": "buy" or "sell",
-  "shares": number (units/contracts/shares),
-  "price": number (execution/close price per unit),
+  "shares": number (quantity/units/contracts),
+  "price": number (fill price / execution price per unit),
   "traded_at": "ISO 8601 datetime, infer year from context or use current year",
-  "notes": "P&L, entry price, order type, or other useful info"
+  "notes": "order type, entry price, P&L, or other useful info"
 }
 
-If a field is unknown use null. If there are no trades at all, return [].`,
+If a field is unknown use null. If there are no filled trades, return [].`,
           },
         ],
       }],
