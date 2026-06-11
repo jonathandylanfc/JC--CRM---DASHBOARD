@@ -533,3 +533,19 @@ export async function getLatestBriefing(): Promise<{ content: string; created_at
     .single()
   return data ?? null
 }
+
+export async function getUpcomingCalendarEvents(): Promise<Array<{ id: string; title: string; start_at: string; all_day: boolean; color: string }>> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const now = new Date().toISOString()
+  const sevenDaysOut = new Date(Date.now() + 7 * 86400000).toISOString()
+  const { data } = await supabase
+    .from("local_calendar_events")
+    .select("id, title, start_at, all_day, color")
+    .eq("user_id", userId)
+    .gte("start_at", now)
+    .lte("start_at", sevenDaysOut)
+    .order("start_at", { ascending: true })
+    .limit(10)
+  return data ?? []
+}

@@ -3,6 +3,7 @@ import { Header } from "@/components/dashboard/header"
 import { DashboardLayoutProvider, DashboardEditButton, DashboardVisibilityPanel } from "@/components/dashboard/dashboard-customizer"
 import { DashboardSections } from "@/components/dashboard/dashboard-sections"
 import { MorningBriefingCard } from "@/components/dashboard/morning-briefing-card"
+import { UpcomingEventsCard } from "@/components/dashboard/upcoming-events-card"
 import {
   getTaskStats,
   getRecentTasks,
@@ -15,6 +16,7 @@ import {
   getSavingsGoals,
   getWeeklySpendingSummary,
   getLatestBriefing,
+  getUpcomingCalendarEvents,
 } from "@/lib/data"
 
 export default async function DashboardPage() {
@@ -30,6 +32,7 @@ export default async function DashboardPage() {
     savingsGoals,
     weeklyRecap,
     latestBriefing,
+    upcomingEvents,
   ] = await Promise.all([
     getTaskStats(),
     getRecentTasks(),
@@ -42,6 +45,7 @@ export default async function DashboardPage() {
     getSavingsGoals(),
     getWeeklySpendingSummary(),
     getLatestBriefing(),
+    getUpcomingCalendarEvents(),
   ])
 
   return (
@@ -60,6 +64,7 @@ export default async function DashboardPage() {
 
           <div className="mt-4 space-y-4">
             <MorningBriefingCard briefing={latestBriefing} />
+            <UpcomingEventsCard events={upcomingEvents} />
 
             <DashboardSections
               taskStats={taskStats}

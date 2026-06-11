@@ -302,6 +302,7 @@ export function CalendarContent() {
   const [evNotes, setEvNotes] = useState("")
   const [evAllDay, setEvAllDay] = useState(false)
   const [evColor, setEvColor] = useState("#10b981")
+  const [evCalendarId, setEvCalendarId] = useState("local")
   const [savingEvent, setSavingEvent] = useState(false)
 
   async function handleConnectIcloud() {
@@ -476,28 +477,56 @@ export function CalendarContent() {
     if (!evTitle.trim() || !evDate) return
     setSavingEvent(true)
     try {
-      // Use local time → UTC conversion so dates don't shift across timezones
-      const startAt = new Date(`${evDate}T${evAllDay ? "12:00" : (evStartTime || "12:00")}:00`).toISOString()
-      const endAt = (!evAllDay && evEndTime) ? new Date(`${evDate}T${evEndTime}:00`).toISOString() : null
-      const res = await fetch("/api/calendar/local-events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      if (evCalendarId.startsWith("icloud:")) {
+        const calendarUrl = evCalendarId.replace("icloud:", "")
+        await handleAddToIcloud(calendarUrl, {
           title: evTitle.trim(),
-          start_at: startAt,
-          end_at: endAt,
-          all_day: evAllDay,
-          location: evLocation.trim() || null,
-          notes: evNotes.trim() || null,
-          color: evColor,
-        }),
-      })
-      const data = await res.json()
-      if (data.error) { toast.error(data.error); return }
-      toast.success(`"${evTitle}" added!`)
+          date: evDate,
+          start_time: evAllDay ? undefined : evStartTime || undefined,
+          end_time: evAllDay ? undefined : evEndTime || undefined,
+          notes: evNotes.trim() || undefined,
+        })
+        const calName = icloudCalendars.find((c) => c.url === calendarUrl)?.displayName ?? "iCloud"
+        toast.success(`"${evTitle}" added to ${calName}!`)
+      } else if (evCalendarId !== "local") {
+        const res = await fetch("/api/calendar/add-shifts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            calendarId: evCalendarId,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            shifts: [{
+              title: evTitle.trim(), date: evDate,
+              start_time: evAllDay ? undefined : evStartTime || undefined,
+              end_time: evAllDay ? undefined : evEndTime || undefined,
+              notes: evNotes.trim() || undefined,
+            }],
+          }),
+        })
+        const data = await res.json()
+        if (data.error) { toast.error(data.error); return }
+        const calName = calendarSources.find((c) => c.id === evCalendarId)?.name ?? "Google Calendar"
+        toast.success(`"${evTitle}" added to ${calName} — syncing to your phone!`)
+      } else {
+        const startAt = new Date(`${evDate}T${evAllDay ? "12:00" : (evStartTime || "12:00")}:00`).toISOString()
+        const endAt = (!evAllDay && evEndTime) ? new Date(`${evDate}T${evEndTime}:00`).toISOString() : null
+        const res = await fetch("/api/calendar/local-events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: evTitle.trim(), start_at: startAt, end_at: endAt,
+            all_day: evAllDay, location: evLocation.trim() || null,
+            notes: evNotes.trim() || null, color: evColor,
+          }),
+        })
+        const data = await res.json()
+        if (data.error) { toast.error(data.error); return }
+        toast.success(`"${evTitle}" added!`)
+      }
       setAddEventOpen(false)
       setEvTitle(""); setEvDate(""); setEvStartTime(""); setEvEndTime("")
       setEvLocation(""); setEvNotes(""); setEvAllDay(false); setEvColor("#10b981")
+      setEvCalendarId("local")
       fetchAll(true)
     } finally {
       setSavingEvent(false)
@@ -1164,6 +1193,45 @@ export function CalendarContent() {
                 ))}
               </div>
             </div>
+            {(calendarSources.some((c) => c.source === "google") || icloudCalendars.length > 0) && (
+              <div className="space-y-1.5">
+                <Label>Add to calendar</Label>
+                <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto">
+                  <button
+                    onClick={() => setEvCalendarId("local")}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm text-left transition-all ${evCalendarId === "local" ? "border-primary bg-primary/5 font-medium" : "border-border hover:border-primary/40"}`}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full bg-muted-foreground shrink-0" />
+                    <span className="flex-1">This app only</span>
+                    {evCalendarId === "local" && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                  </button>
+                  {calendarSources.filter((c) => c.source === "google").map((cal) => (
+                    <button
+                      key={cal.id}
+                      onClick={() => setEvCalendarId(cal.id ?? "primary")}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm text-left transition-all ${evCalendarId === cal.id ? "border-primary bg-primary/5 font-medium" : "border-border hover:border-primary/40"}`}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cal.color }} />
+                      <span className="flex-1 truncate">{cal.name}</span>
+                      <span className="text-[10px] text-muted-foreground">Google</span>
+                      {evCalendarId === cal.id && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                    </button>
+                  ))}
+                  {icloudCalendars.map((cal) => (
+                    <button
+                      key={cal.url}
+                      onClick={() => setEvCalendarId(`icloud:${cal.url}`)}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm text-left transition-all ${evCalendarId === `icloud:${cal.url}` ? "border-primary bg-primary/5 font-medium" : "border-border hover:border-primary/40"}`}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cal.color }} />
+                      <span className="flex-1 truncate">{cal.displayName}</span>
+                      <span className="text-[10px] text-muted-foreground">iCloud</span>
+                      {evCalendarId === `icloud:${cal.url}` && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <Button className="w-full" onClick={handleAddEvent} disabled={savingEvent || !evTitle.trim() || !evDate}>
               {savingEvent ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               {savingEvent ? "Saving…" : "Save Event"}

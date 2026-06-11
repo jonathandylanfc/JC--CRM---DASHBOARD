@@ -80,6 +80,59 @@ export async function POST(req: NextRequest) {
     ? `Portfolio total: ${currency(totalValue)} (${pct(totalGainPct)} all-time)\n\nHoldings:\n${holdingLines}`
     : "No holdings tracked yet."
 
+  // Fetch weather from Open-Meteo (free, no key)
+  let weatherContext = ""
+  try {
+    const lat = process.env.WEATHER_LAT ?? "34.0522"
+    const lon = process.env.WEATHER_LON ?? "-118.2437"
+    const wRes = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&current_weather=true&temperature_unit=fahrenheit&timezone=America%2FLos_Angeles&forecast_days=1`,
+      { signal: AbortSignal.timeout(5000) }
+    )
+    if (wRes.ok) {
+      const wData = await wRes.json()
+      const cur = wData.current_weather
+      const daily = wData.daily
+      const wmoDesc: Record<number, string> = {
+        0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+        45: "Foggy", 48: "Icy fog", 51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
+        61: "Light rain", 63: "Rain", 65: "Heavy rain", 71: "Light snow", 73: "Snow", 75: "Heavy snow",
+        80: "Rain showers", 81: "Rain showers", 82: "Heavy rain showers", 95: "Thunderstorm",
+      }
+      const desc = wmoDesc[cur?.weathercode] ?? "Mixed conditions"
+      const hi = daily?.temperature_2m_max?.[0]?.toFixed(0)
+      const lo = daily?.temperature_2m_min?.[0]?.toFixed(0)
+      const rain = daily?.precipitation_probability_max?.[0]
+      weatherContext = `\n\nWEATHER TODAY (Los Angeles area): ${desc}, ${cur?.temperature?.toFixed(0)}°F now, High ${hi}°F / Low ${lo}°F${rain > 20 ? `, ${rain}% chance of rain` : ""}`
+    }
+  } catch {
+    // Weather fetch failed — continue without it
+  }
+
+  // Fetch today's tasks and local calendar events from Supabase
+  let tasksContext = ""
+  let eventsContext = ""
+  if (userId) {
+    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
+    const tomorrowStr = new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
+    const [{ data: todayTasks }, { data: calEvents }] = await Promise.all([
+      supabase.from("tasks").select("title, due_date, priority").eq("user_id", userId)
+        .eq("due_date", todayStr).neq("status", "done").order("priority"),
+      supabase.from("local_calendar_events").select("title, start_at, all_day").eq("user_id", userId)
+        .gte("start_at", `${todayStr}T00:00:00`).lte("start_at", `${tomorrowStr}T00:00:00`)
+        .order("start_at"),
+    ])
+    if (todayTasks?.length) {
+      tasksContext = `\n\nTASKS DUE TODAY:\n${todayTasks.map((t) => `• ${t.title} [${t.priority}]`).join("\n")}`
+    }
+    if (calEvents?.length) {
+      eventsContext = `\n\nCALENDAR EVENTS TODAY:\n${calEvents.map((e) => {
+        const time = e.all_day ? "All day" : new Date(e.start_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" })
+        return `• ${e.title} at ${time}`
+      }).join("\n")}`
+    }
+  }
+
   // Fetch live market news & trending tickers from Alpha Vantage
   let newsContext = ""
   try {
@@ -124,20 +177,22 @@ export async function POST(req: NextRequest) {
   // Generate AI briefing
   const aiResponse = await anthropic.messages.create({
     model: "claude-haiku-4-5",
-    max_tokens: 900,
+    max_tokens: 1200,
     system: `You are a concise personal finance assistant writing a morning market briefing email.
-Today is ${today}. Be tight, actionable, and friendly. Structure your response in these sections:
+Today is ${today}. Be tight, actionable, and friendly. Structure your response in these 6 sections:
 
-1. MARKET PULSE — 2-3 sentences on general market sentiment and key macro factors today.
-2. YOUR HOLDINGS — 1-2 bullet points on anything notable for the user's specific stocks.
-3. STOCKS TO WATCH TODAY — Based on the live news and trending tickers provided, suggest 3-5 specific stocks worth researching today. For each give: ticker, why it's interesting right now (earnings, news catalyst, buzz), and a one-line note on what to look for. Be specific and direct.
-4. QUICK TIP — One actionable personal finance tip.
+1. WEATHER & DAY AHEAD — One line on today's weather (if provided), then 1-2 sentences previewing the day based on their tasks and calendar events. Keep it energizing.
+2. MARKET PULSE — 2-3 sentences on general market sentiment and key macro factors today (Nasdaq direction, rates, major economic events). Be specific.
+3. YOUR INVESTMENTS — The user actively trades Apple (AAPL) and NQ1/NQ futures (Nasdaq-100 e-mini). Call out specific news, pre-market moves, technical levels, or catalysts for AAPL and Nasdaq today. Be direct and specific — price levels, percent moves, key support/resistance if relevant.
+4. STOCKS & MARKETS TO WATCH — Based on live news, call out 3-5 specific things to watch today: could be stocks with earnings, macro events (oil, bonds), sector rotations, or high-buzz names. For each: what it is, why it matters today, what to look for. Include macro instruments (oil, gold, bonds) if they're moving.
+5. YOUR TASKS TODAY — List their tasks due today (if any) in a clean bullet list. If none, skip this section.
+6. QUICK TIP — One sharp, actionable trading or personal finance insight relevant to today.
 
-Use plain text, no markdown symbols. Separate sections with a blank line and a clear label.
-Start with a warm one-line greeting. Sign off as "JDpro AI — Your Morning Briefing".`,
+Use plain text, no markdown. Separate sections with a blank line and a clear label in ALL CAPS.
+Start with a one-line greeting. Sign off as "JDpro AI — Your Morning Briefing".`,
     messages: [{
       role: "user",
-      content: `My portfolio:\n${portfolioContext}${newsContext}\n\nWrite my morning briefing for ${today}.`,
+      content: `My portfolio:\n${portfolioContext}${weatherContext}${tasksContext}${eventsContext}${newsContext}\n\nWrite my morning briefing for ${today}.`,
     }],
   })
 
