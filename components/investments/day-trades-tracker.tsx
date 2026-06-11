@@ -217,20 +217,6 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const symbolTotals = computeSymbolTotals(trips)
   const totalPnl = symbolTotals.reduce((s, r) => s + r.pnl, 0)
 
-  // PDT count: round-trips where open and close are same calendar day
-  const fiveBusinessDaysAgo = new Date()
-  let daysBack = 0, calDays = 0
-  while (daysBack < 5) {
-    calDays++
-    const d = new Date(fiveBusinessDaysAgo.getTime() - calDays * 86400000)
-    if (d.getDay() !== 0 && d.getDay() !== 6) daysBack++
-  }
-  fiveBusinessDaysAgo.setTime(fiveBusinessDaysAgo.getTime() - calDays * 86400000)
-  const pdtCount = trips.filter((t) => {
-    if (new Date(t.closedAt) < fiveBusinessDaysAgo) return false
-    return t.openedAt.slice(0, 10) === t.closedAt.slice(0, 10)
-  }).length
-
   return (
     <div
       className={`space-y-3 transition-colors ${dragging ? "outline-2 outline-dashed outline-primary/50 rounded-xl bg-primary/5" : ""}`}
@@ -255,13 +241,6 @@ export function DayTradesTracker({ initialTrades }: Props) {
           )}
         </button>
         <div className="flex items-center gap-2">
-          {pdtCount >= 2 && (
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${
-              pdtCount >= 3
-                ? "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800"
-                : "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800"
-            }`}>PDT: {pdtCount}/3</span>
-          )}
           <input ref={fileRef} type="file" accept="image/*" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = "" }} />
           <Button variant="outline" size="sm" className="gap-2 bg-transparent" onClick={() => fileRef.current?.click()} disabled={parsing}>
