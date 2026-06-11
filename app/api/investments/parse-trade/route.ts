@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 1200,
+      max_tokens: 4096,
       messages: [{
         role: "user",
         content: [
@@ -37,7 +37,7 @@ Rules:
 - For TradingView Order History tables: use the "Side" column directly for action (Buy→buy, Sell→sell), use "Fill price" as the price
 - For TradingView Balance History: "Close long position"→sell, "Close short position"→buy, use the close price
 - Strip exchange prefixes and punctuation from symbols: "CME_MINI:NQ1!" → "NQ1", "CME_MINI:NQM2026" → "NQM2026"
-- Use "Placing time" or the timestamp shown as traded_at — TradingView timestamps are always UTC, so append "Z" to make them ISO 8601 UTC (e.g. "2026-06-11T09:31:59Z")
+- Use "Placing time" or the timestamp shown as traded_at — do NOT append "Z" or any timezone suffix; return the time exactly as shown (e.g. "2026-06-11T09:31:59")
 - Put order type (Market/Limit/Stop) in notes
 
 Return ONLY a JSON array (no markdown, no explanation). Each element:
