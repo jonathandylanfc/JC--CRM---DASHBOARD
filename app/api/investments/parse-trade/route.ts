@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 400,
+      max_tokens: 1200,
       messages: [{
         role: "user",
         content: [
@@ -30,27 +30,39 @@ export async function POST(req: NextRequest) {
           },
           {
             type: "text",
-            text: `Extract the trade details from this brokerage screenshot. Return ONLY a JSON object with these fields (no markdown, no explanation):
+            text: `Extract ALL trade details from this screenshot. It may be a single trade confirmation, a TradingView balance history, a brokerage order history, or any trading platform.
+
+For TradingView / futures screenshots:
+- "Close long position" = a sell (closing a buy). action = "sell"
+- "Close short position" = a buy (covering a short). action = "buy"
+- Strip exchange prefixes from symbols: "CME_MINI:NQ1!" becomes "NQ1", "CME_MINI:NQM2026" becomes "NQM2026"
+- Use the close price as "price"
+- Put the entry AVG price and realized P&L in notes
+
+Return ONLY a JSON array (no markdown, no explanation). Each element:
 {
-  "symbol": "ticker symbol in uppercase",
+  "symbol": "ticker in uppercase, no exchange prefix or exclamation mark",
   "action": "buy" or "sell",
-  "shares": number,
-  "price": number (price per share),
-  "traded_at": "ISO 8601 datetime string, use today's date if only time is visible",
-  "notes": "any additional info like order type, fees, account"
+  "shares": number (units/contracts/shares),
+  "price": number (execution/close price per unit),
+  "traded_at": "ISO 8601 datetime, infer year from context or use current year",
+  "notes": "P&L, entry price, order type, or other useful info"
 }
-If you cannot determine a field, use null. If this is not a trade confirmation, return {"error": "Not a trade screenshot"}.`,
+
+If a field is unknown use null. If there are no trades at all, return [].`,
           },
         ],
       }],
     })
 
-    const text = response.content[0].type === "text" ? response.content[0].text.trim() : ""
-    const parsed = JSON.parse(text)
+    const text = response.content[0].type === "text" ? response.content[0].text.trim() : "[]"
+    const clean = text.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim()
+    const parsed = JSON.parse(clean)
+    const trades = Array.isArray(parsed) ? parsed : [parsed]
 
-    if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 422 })
+    if (trades.length === 0) return NextResponse.json({ error: "No trades found in screenshot" }, { status: 422 })
 
-    return NextResponse.json({ trade: parsed })
+    return NextResponse.json({ trades })
   } catch (err) {
     console.error("parse-trade error:", err)
     return NextResponse.json({ error: "Failed to parse screenshot" }, { status: 500 })

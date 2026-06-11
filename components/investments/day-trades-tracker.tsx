@@ -65,9 +65,13 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const [expanded, setExpanded] = useState(true)
   const [parsing, setParsing] = useState(false)
   const [saving, setSaving] = useState(false)
+  // Multi-trade review mode (from screenshot) vs single draft mode (manual)
+  const [drafts, setDrafts] = useState<Partial<DayTrade>[]>([])
   const [draft, setDraft] = useState<Partial<DayTrade> | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const isMultiMode = drafts.length > 0
 
   async function handleImageUpload(file: File) {
     setParsing(true)
@@ -77,21 +81,48 @@ export function DayTradesTracker({ initialTrades }: Props) {
       fd.append("image", file)
       const res = await fetch("/api/investments/parse-trade", { method: "POST", body: fd })
       const data = await res.json()
-      if (data.error) { toast.error(data.error); return }
-      setDraft({
-        symbol: data.trade.symbol ?? "",
-        action: data.trade.action ?? "buy",
-        shares: data.trade.shares ?? 0,
-        price: data.trade.price ?? 0,
-        traded_at: data.trade.traded_at ?? new Date().toISOString(),
-        notes: data.trade.notes ?? "",
-      })
+      if (data.error) { toast.error(data.error); setParsing(false); return }
+      const parsed: Partial<DayTrade>[] = (data.trades as Array<Partial<DayTrade>>).map((t) => ({
+        symbol: t.symbol ?? "",
+        action: t.action ?? "buy",
+        shares: t.shares ?? 0,
+        price: t.price ?? 0,
+        traded_at: t.traded_at ?? new Date().toISOString(),
+        notes: t.notes ?? "",
+      }))
+      setDrafts(parsed)
+      setDraft(null)
       setOpen(true)
     } catch {
       toast.error("Failed to parse screenshot")
     } finally {
       setParsing(false)
     }
+  }
+
+  async function handleSaveAll() {
+    setSaving(true)
+    let saved = 0
+    for (const d of drafts) {
+      if (!d.symbol || !d.action || !d.shares || !d.price || !d.traded_at) continue
+      const result = await saveDayTrade({
+        symbol: d.symbol.toUpperCase(),
+        action: d.action as "buy" | "sell",
+        shares: Number(d.shares),
+        price: Number(d.price),
+        traded_at: d.traded_at,
+        notes: d.notes ?? null,
+      })
+      if (!result.error && result.trade) {
+        setTrades((prev) => [result.trade!, ...prev])
+        saved++
+      }
+    }
+    setSaving(false)
+    setOpen(false)
+    setDrafts([])
+    setImagePreview(null)
+    toast.success(`${saved} trade${saved !== 1 ? "s" : ""} saved`)
   }
 
   async function handleSave() {
@@ -301,24 +332,83 @@ export function DayTradesTracker({ initialTrades }: Props) {
       )}
 
       {/* Add / Edit trade dialog */}
-      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setDraft(null); setImagePreview(null) } }}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setDraft(null); setDrafts([]); setImagePreview(null) } }}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Log Trade</DialogTitle>
+            <DialogTitle>{isMultiMode ? `Review ${drafts.length} Parsed Trades` : "Log Trade"}</DialogTitle>
           </DialogHeader>
+
           {imagePreview && (
-            <img src={imagePreview} alt="Trade screenshot" className="w-full rounded-lg max-h-40 object-contain bg-muted" />
+            <img src={imagePreview} alt="Trade screenshot" className="w-full rounded-lg max-h-32 object-contain bg-muted" />
           )}
-          {draft && (
+
+          {/* Multi-trade review mode (from screenshot) */}
+          {isMultiMode && (
+            <div className="space-y-3 mt-1">
+              <p className="text-xs text-muted-foreground">Review and edit before saving. Remove any trades that look wrong.</p>
+              {drafts.map((d, i) => (
+                <div key={i} className="rounded-lg border border-border p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        d.action === "buy"
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                          : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
+                      }`}>{(d.action ?? "buy").toUpperCase()}</span>
+                      <Input
+                        className="h-7 w-24 text-sm font-semibold"
+                        value={d.symbol ?? ""}
+                        onChange={(e) => setDrafts((prev) => prev.map((x, j) => j === i ? { ...x, symbol: e.target.value.toUpperCase() } : x))}
+                      />
+                      <Select value={d.action ?? "buy"} onValueChange={(v) => setDrafts((prev) => prev.map((x, j) => j === i ? { ...x, action: v as "buy" | "sell" } : x))}>
+                        <SelectTrigger className="h-7 w-20 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="buy">Buy</SelectItem>
+                          <SelectItem value="sell">Sell</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-destructive" onClick={() => setDrafts((prev) => prev.filter((_, j) => j !== i))}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Shares</Label>
+                      <Input className="h-7 text-sm" type="number" value={d.shares ?? ""} onChange={(e) => setDrafts((prev) => prev.map((x, j) => j === i ? { ...x, shares: parseFloat(e.target.value) } : x))} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Price</Label>
+                      <Input className="h-7 text-sm" type="number" step="0.01" value={d.price ?? ""} onChange={(e) => setDrafts((prev) => prev.map((x, j) => j === i ? { ...x, price: parseFloat(e.target.value) } : x))} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Total</Label>
+                      <p className="h-7 flex items-center text-sm font-medium">{d.shares && d.price ? currency(Number(d.shares) * Number(d.price)) : "—"}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Date & Time</Label>
+                    <Input className="h-7 text-sm" type="datetime-local" value={d.traded_at ? d.traded_at.slice(0, 16) : ""} onChange={(e) => setDrafts((prev) => prev.map((x, j) => j === i ? { ...x, traded_at: e.target.value } : x))} />
+                  </div>
+                  {d.notes && <p className="text-xs text-muted-foreground truncate">{d.notes}</p>}
+                </div>
+              ))}
+              <div className="flex gap-3 pt-1">
+                <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setOpen(false)}>Cancel</Button>
+                <Button className="flex-1" onClick={handleSaveAll} disabled={saving || drafts.length === 0}>
+                  {saving ? "Saving…" : `Save ${drafts.length} Trade${drafts.length !== 1 ? "s" : ""}`}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Single manual entry mode */}
+          {!isMultiMode && draft && (
             <div className="space-y-4 mt-1">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Symbol</Label>
-                  <Input
-                    value={draft.symbol ?? ""}
-                    onChange={(e) => setDraft((d) => ({ ...d, symbol: e.target.value.toUpperCase() }))}
-                    placeholder="AAPL"
-                  />
+                  <Input value={draft.symbol ?? ""} onChange={(e) => setDraft((d) => ({ ...d, symbol: e.target.value.toUpperCase() }))} placeholder="AAPL" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Action</Label>
@@ -333,46 +423,25 @@ export function DayTradesTracker({ initialTrades }: Props) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Shares</Label>
-                  <Input
-                    type="number"
-                    value={draft.shares ?? ""}
-                    onChange={(e) => setDraft((d) => ({ ...d, shares: parseFloat(e.target.value) }))}
-                    placeholder="100"
-                  />
+                  <Label>Shares / Contracts</Label>
+                  <Input type="number" value={draft.shares ?? ""} onChange={(e) => setDraft((d) => ({ ...d, shares: parseFloat(e.target.value) }))} placeholder="1" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Price per share</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={draft.price ?? ""}
-                    onChange={(e) => setDraft((d) => ({ ...d, price: parseFloat(e.target.value) }))}
-                    placeholder="150.00"
-                  />
+                  <Label>Price per unit</Label>
+                  <Input type="number" step="0.01" value={draft.price ?? ""} onChange={(e) => setDraft((d) => ({ ...d, price: parseFloat(e.target.value) }))} placeholder="28845.75" />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label>Date & Time</Label>
-                <Input
-                  type="datetime-local"
-                  value={draft.traded_at ? draft.traded_at.slice(0, 16) : ""}
-                  onChange={(e) => setDraft((d) => ({ ...d, traded_at: e.target.value }))}
-                />
+                <Input type="datetime-local" value={draft.traded_at ? draft.traded_at.slice(0, 16) : ""} onChange={(e) => setDraft((d) => ({ ...d, traded_at: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
                 <Label>Notes <span className="text-muted-foreground">(optional)</span></Label>
-                <Input
-                  value={draft.notes ?? ""}
-                  onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
-                  placeholder="Order type, fees, etc."
-                />
+                <Input value={draft.notes ?? ""} onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))} placeholder="Entry price, fees, etc." />
               </div>
-              {draft.shares && draft.price ? (
-                <p className="text-sm text-muted-foreground">
-                  Total: <span className="font-semibold text-foreground">{currency(Number(draft.shares) * Number(draft.price))}</span>
-                </p>
-              ) : null}
+              {draft.shares && draft.price && (
+                <p className="text-sm text-muted-foreground">Total: <span className="font-semibold text-foreground">{currency(Number(draft.shares) * Number(draft.price))}</span></p>
+              )}
               <div className="flex gap-3">
                 <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setOpen(false)}>Cancel</Button>
                 <Button className="flex-1" onClick={handleSave} disabled={saving}>
