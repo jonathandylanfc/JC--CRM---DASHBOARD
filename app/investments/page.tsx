@@ -3,6 +3,7 @@ import { Header } from "@/components/dashboard/header"
 import { InvestmentsContent } from "@/components/investments/investments-content"
 import { createClient } from "@/lib/supabase/server"
 import { getUserProfile } from "@/lib/data"
+import type { DayTrade } from "./day-trades-actions"
 
 
 async function getInvestments() {
@@ -46,8 +47,22 @@ async function getPrevCloseMap(symbols: string[]): Promise<Record<string, number
   return map
 }
 
+async function getDayTrades(): Promise<DayTrade[]> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+  const { data } = await supabase
+    .from("day_trades")
+    .select("id, symbol, action, shares, price, total, traded_at, notes")
+    .eq("user_id", user.id)
+    .order("traded_at", { ascending: false })
+  return (data ?? []) as DayTrade[]
+}
+
 export default async function InvestmentsPage() {
-  const [investments, user] = await Promise.all([getInvestments(), getUserProfile()])
+  const [investments, user, dayTrades] = await Promise.all([
+    getInvestments(), getUserProfile(), getDayTrades(),
+  ])
 
   const symbols = investments.map((i) => i.symbol.toUpperCase())
   const prevCloseMap = await getPrevCloseMap(symbols)
@@ -67,6 +82,7 @@ export default async function InvestmentsPage() {
           <InvestmentsContent
             initialInvestments={investments}
             prevCloseMap={prevCloseMap}
+            initialDayTrades={dayTrades}
           />
         </div>
       </main>

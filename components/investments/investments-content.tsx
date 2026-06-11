@@ -53,6 +53,8 @@ import { MarketNews } from "./market-news"
 import { AnalystRatings } from "./analyst-ratings"
 import { AiMarketInsights } from "./ai-market-insights"
 import { MorningBriefingButton } from "./morning-briefing-button"
+import { DayTradesTracker } from "./day-trades-tracker"
+import type { DayTrade } from "@/app/investments/day-trades-actions"
 
 
 interface Investment {
@@ -187,10 +189,11 @@ function parseWebullCsv(text: string): Array<{ symbol: string; name?: string; sh
 
 interface Props {
   initialInvestments: Investment[]
-  prevCloseMap?: Record<string, number>  // previous trading day's close price per symbol
+  prevCloseMap?: Record<string, number>
+  initialDayTrades?: DayTrade[]
 }
 
-export function InvestmentsContent({ initialInvestments, prevCloseMap = {} }: Props) {
+export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [] }: Props) {
   const router = useRouter()
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments)
   const [open, setOpen] = useState(false)
@@ -784,6 +787,11 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {} }: Pr
           })}
         </div>
       )}
+
+      {/* Day Trades Tracker */}
+      <Card className="p-4 md:p-6">
+        <DayTradesTracker initialTrades={initialDayTrades} />
+      </Card>
 
       {/* AI Insights — full width */}
       {investments.length > 0 && <AiMarketInsights />}
