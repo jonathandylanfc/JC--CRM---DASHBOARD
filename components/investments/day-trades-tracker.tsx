@@ -122,7 +122,15 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const [drafts, setDrafts] = useState<Partial<DayTrade>[]>([])
   const [draft, setDraft] = useState<Partial<DayTrade> | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file && file.type.startsWith("image/")) handleImageUpload(file)
+  }
 
   const isMultiMode = drafts.length > 0
 
@@ -224,7 +232,13 @@ export function DayTradesTracker({ initialTrades }: Props) {
   }).length
 
   return (
-    <div className="space-y-3">
+    <div
+      className={`space-y-3 transition-colors ${dragging ? "outline-2 outline-dashed outline-primary/50 rounded-xl bg-primary/5" : ""}`}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+      onDragEnter={(e) => { e.preventDefault(); setDragging(true) }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false) }}
+      onDrop={handleDrop}
+    >
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <button
