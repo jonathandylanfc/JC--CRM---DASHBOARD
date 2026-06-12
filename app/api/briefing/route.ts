@@ -142,66 +142,153 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Fetch live market news & trending tickers from Alpha Vantage
+  const NQ_COMPONENTS = new Set(["AAPL", "MSFT", "NVDA", "META", "AMZN", "GOOGL", "GOOG", "TSLA", "AVGO", "COST"])
+
+  // Fetch live market news + NQ market data in parallel (all non-critical)
   let newsContext = ""
-  try {
-    const avKey = process.env.ALPHA_VANTAGE_KEY
-    if (avKey) {
-      const newsRes = await fetch(
-        `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&sort=LATEST&limit=30&apikey=${avKey}`,
-        { signal: AbortSignal.timeout(6000) }
-      )
-      if (newsRes.ok) {
-        const newsData = await newsRes.json()
-        const feed: Array<{
-          title: string
-          summary: string
-          ticker_sentiment?: Array<{ ticker: string; ticker_sentiment_label: string; relevance_score: string }>
-        }> = newsData.feed ?? []
+  let nqContext = ""
 
-        // Build a compact news digest — top 12 headlines + most mentioned tickers
-        const tickerMentions: Record<string, number> = {}
-        const headlines = feed.slice(0, 12).map((item) => {
-          for (const t of item.ticker_sentiment ?? []) {
-            if (parseFloat(t.relevance_score) > 0.4) {
-              tickerMentions[t.ticker] = (tickerMentions[t.ticker] ?? 0) + 1
-            }
+  const avKey = process.env.ALPHA_VANTAGE_KEY
+  const todayDateStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
+  const tomorrowDateStr = new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
+
+  const [newsResult, qqqResult, vixResult, earningsResult] = await Promise.allSettled([
+    avKey
+      ? fetch(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&sort=LATEST&limit=30&apikey=${avKey}`, { signal: AbortSignal.timeout(7000) })
+      : Promise.reject("no key"),
+    avKey
+      ? fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=QQQ&apikey=${avKey}`, { signal: AbortSignal.timeout(6000) })
+      : Promise.reject("no key"),
+    avKey
+      ? fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=VIX&apikey=${avKey}`, { signal: AbortSignal.timeout(6000) })
+      : Promise.reject("no key"),
+    avKey
+      ? fetch(`https://www.alphavantage.co/query?function=EARNINGS_CALENDAR&horizon=3month&apikey=${avKey}`, { signal: AbortSignal.timeout(8000) })
+      : Promise.reject("no key"),
+  ])
+
+  // Parse news + extract NQ component headlines
+  if (newsResult.status === "fulfilled" && newsResult.value.ok) {
+    try {
+      const newsData = await newsResult.value.json()
+      const feed: Array<{
+        title: string
+        ticker_sentiment?: Array<{ ticker: string; relevance_score: string }>
+      }> = newsData.feed ?? []
+
+      const tickerMentions: Record<string, number> = {}
+      const nqHeadlines: string[] = []
+      const generalHeadlines: string[] = []
+
+      for (const item of feed.slice(0, 25)) {
+        const tickers = item.ticker_sentiment ?? []
+        const hasNqComponent = tickers.some(
+          (t) => NQ_COMPONENTS.has(t.ticker) && parseFloat(t.relevance_score) > 0.3
+        )
+        for (const t of tickers) {
+          if (parseFloat(t.relevance_score) > 0.4) {
+            tickerMentions[t.ticker] = (tickerMentions[t.ticker] ?? 0) + 1
           }
-          return `- ${item.title}`
-        }).join("\n")
-
-        const trending = Object.entries(tickerMentions)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 8)
-          .map(([ticker]) => ticker)
-          .join(", ")
-
-        newsContext = `\n\nLATEST MARKET NEWS (live as of now):\n${headlines}${trending ? `\n\nMost mentioned tickers in the news right now: ${trending}` : ""}`
+        }
+        if (hasNqComponent && nqHeadlines.length < 8) {
+          nqHeadlines.push(`- ${item.title}`)
+        } else if (generalHeadlines.length < 8) {
+          generalHeadlines.push(`- ${item.title}`)
+        }
       }
-    }
-  } catch {
-    // News fetch failed — briefing continues without it
+
+      const trending = Object.entries(tickerMentions)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([ticker]) => ticker)
+        .join(", ")
+
+      if (nqHeadlines.length) {
+        newsContext += `\n\nNQ COMPONENT NEWS (AAPL/MSFT/NVDA/META/AMZN/GOOGL/TSLA):\n${nqHeadlines.join("\n")}`
+      }
+      if (generalHeadlines.length) {
+        newsContext += `\n\nGENERAL MARKET NEWS:\n${generalHeadlines.join("\n")}`
+      }
+      if (trending) {
+        newsContext += `\n\nMost mentioned tickers in the news: ${trending}`
+      }
+    } catch { /* skip */ }
+  }
+
+  // Parse QQQ quote (NQ proxy)
+  const nqLines: string[] = []
+  if (qqqResult.status === "fulfilled" && qqqResult.value.ok) {
+    try {
+      const d = await qqqResult.value.json()
+      const q = d["Global Quote"]
+      if (q?.["05. price"]) {
+        const price = parseFloat(q["05. price"])
+        const change = parseFloat(q["09. change"])
+        const changePct = (q["10. change percent"] as string).replace("%" , "")
+        const dir = change >= 0 ? "▲" : "▼"
+        nqLines.push(`QQQ (Nasdaq-100 ETF / NQ proxy): $${price.toFixed(2)}  ${dir} ${Math.abs(change).toFixed(2)} (${parseFloat(changePct).toFixed(2)}%)`)
+      }
+    } catch { /* skip */ }
+  }
+
+  // Parse VIX
+  if (vixResult.status === "fulfilled" && vixResult.value.ok) {
+    try {
+      const d = await vixResult.value.json()
+      const q = d["Global Quote"]
+      if (q?.["05. price"]) {
+        const vix = parseFloat(q["05. price"])
+        const vixLabel = vix < 15 ? "low — calm market" : vix < 20 ? "moderate" : vix < 30 ? "elevated — volatility up" : "high — fear/panic mode"
+        nqLines.push(`VIX (fear index): ${vix.toFixed(2)} — ${vixLabel}`)
+      }
+    } catch { /* skip */ }
+  }
+
+  // Parse earnings calendar — show today's and tomorrow's reporting companies
+  if (earningsResult.status === "fulfilled" && earningsResult.value.ok) {
+    try {
+      const csv = await earningsResult.value.text()
+      const rows = csv.split("\n").slice(1).filter(Boolean)
+      const todayEarnings: string[] = []
+      const tomorrowEarnings: string[] = []
+      for (const row of rows) {
+        const cols = row.split(",")
+        const symbol = cols[0]?.trim()
+        const reportDate = cols[2]?.trim()
+        if (!symbol || !reportDate) continue
+        const isNq = NQ_COMPONENTS.has(symbol)
+        const label = isNq ? `${symbol}*` : symbol  // star = NQ component
+        if (reportDate === todayDateStr) todayEarnings.push(label)
+        else if (reportDate === tomorrowDateStr) tomorrowEarnings.push(label)
+      }
+      if (todayEarnings.length) nqLines.push(`Earnings TODAY: ${todayEarnings.slice(0, 10).join(", ")} (* = NQ component)`)
+      if (tomorrowEarnings.length) nqLines.push(`Earnings TOMORROW: ${tomorrowEarnings.slice(0, 10).join(", ")}`)
+    } catch { /* skip */ }
+  }
+
+  if (nqLines.length) {
+    nqContext = `\n\nNQ MARKET DATA:\n${nqLines.join("\n")}`
   }
 
   // Generate AI briefing
   const aiResponse = await anthropic.messages.create({
     model: "claude-haiku-4-5",
-    max_tokens: 1200,
+    max_tokens: 1400,
     system: `You are a concise personal finance assistant writing a morning market briefing email.
-Today is ${today}. Be tight, actionable, and friendly. Structure your response in these 6 sections:
+Today is ${today}. Be tight, actionable, and direct. Structure your response in these 6 sections:
 
-1. WEATHER & DAY AHEAD — One line on today's weather (if provided), then 1-2 sentences previewing the day based on their tasks and calendar events. Keep it energizing.
-2. MARKET PULSE — 2-3 sentences on general market sentiment and key macro factors today (Nasdaq direction, rates, major economic events). Be specific.
-3. YOUR INVESTMENTS — The user actively trades Apple (AAPL) and NQ1/NQ futures (Nasdaq-100 e-mini). Call out specific news, pre-market moves, technical levels, or catalysts for AAPL and Nasdaq today. Be direct and specific — price levels, percent moves, key support/resistance if relevant.
-4. STOCKS & MARKETS TO WATCH — Based on live news, call out 3-5 specific things to watch today: could be stocks with earnings, macro events (oil, bonds), sector rotations, or high-buzz names. For each: what it is, why it matters today, what to look for. Include macro instruments (oil, gold, bonds) if they're moving.
-5. YOUR TASKS TODAY — List their tasks due today (if any) in a clean bullet list. If none, skip this section.
-6. QUICK TIP — One sharp, actionable trading or personal finance insight relevant to today.
+1. WEATHER & DAY AHEAD — One line on today's weather (if provided), then 1-2 sentences previewing the day based on their tasks and calendar events.
+2. NQ OUTLOOK — This is the most important section. The user day-trades NQ1/NQ futures (Nasdaq-100 e-mini). Using the QQQ pre-market data and VIX provided, interpret what it means for NQ futures today. Give concrete directional bias (bullish/bearish/choppy), key levels to watch (round numbers, yesterday's high/low if inferable), and whether the VIX suggests a trending or mean-reverting day. Call out any NQ component earnings happening today or tomorrow and how they could move the index. Be specific — a trader is reading this before the open.
+3. YOUR INVESTMENTS — The user also holds Apple (AAPL) stock long-term. Summarize any AAPL-specific news or pre-market moves. Note if AAPL earnings are today/tomorrow.
+4. MARKET INTEL — Based on the live news provided, call out 3-4 other notable things to watch: sector moves, macro events, other big movers. For each: one line on why it matters today.
+5. YOUR TASKS TODAY — List their tasks due today (if any). If none, skip this section.
+6. QUICK TIP — One sharp, actionable NQ trading or finance insight relevant to today's market conditions.
 
-Use plain text, no markdown. Separate sections with a blank line and a clear label in ALL CAPS.
+Use plain text, no markdown. Separate sections with a blank line and label in ALL CAPS.
 Start with a one-line greeting. Sign off as "JDpro AI — Your Morning Briefing".`,
     messages: [{
       role: "user",
-      content: `My portfolio:\n${portfolioContext}${weatherContext}${tasksContext}${eventsContext}${newsContext}\n\nWrite my morning briefing for ${today}.`,
+      content: `My portfolio:\n${portfolioContext}${weatherContext}${nqContext}${tasksContext}${eventsContext}${newsContext}\n\nWrite my morning briefing for ${today}.`,
     }],
   })
 
