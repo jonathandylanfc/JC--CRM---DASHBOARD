@@ -413,16 +413,32 @@ export function CalendarContent() {
         icsId: s.id,
       }))
 
+      // Deduplicate: prefer Google > iCloud > ICS > local — same title + date = duplicate
+      function dedup(all: CalEvent[]): CalEvent[] {
+        const sourcePriority = (e: CalEvent) => e.source === "google" ? 0 : e.source === "ics" ? 2 : 3
+        const seen = new Map<string, CalEvent>()
+        // iCloud/caldav events have no source set — treat as priority 1
+        const withPriority = all.map((e) => ({ e, p: e.source === "google" ? 0 : e.source === "local" ? 3 : e.source === "ics" ? 2 : 1 }))
+        for (const { e, p } of withPriority) {
+          const key = `${(e.title ?? "").toLowerCase().trim()}|${(e.start ?? "").slice(0, 10)}`
+          const existing = seen.get(key)
+          if (!existing) { seen.set(key, e); continue }
+          const ep = existing.source === "google" ? 0 : existing.source === "local" ? 3 : existing.source === "ics" ? 2 : 1
+          if (p < ep) seen.set(key, e)
+        }
+        return Array.from(seen.values())
+      }
+
       if (gData.error === "not_connected") {
         setConnected(false)
         setCalendarSources([...icsCalSources])
-        setEvents([...icsEvents, ...caldavEvents, ...localEvents])
+        setEvents(dedup([...icsEvents, ...caldavEvents, ...localEvents]))
       } else if (gData.events) {
         setConnected(true)
         setGoogleEmail(gData.googleEmail ?? null)
         const googleSources = (gData.calendarSources ?? []) as CalendarSource[]
         setCalendarSources([...googleSources, ...icsCalSources])
-        setEvents([...gData.events, ...icsEvents, ...caldavEvents, ...localEvents])
+        setEvents(dedup([...gData.events, ...icsEvents, ...caldavEvents, ...localEvents]))
       }
     } finally {
       setLoading(false)
@@ -985,7 +1001,8 @@ export function CalendarContent() {
             </div>
             {(() => {
               const dayStr = format(selectedDay, "yyyy-MM-dd")
-              const isPayday = showPayday && paydayEvents.some((p) => p.date === dayStr)
+              const paydayAlreadyInEvents = dayEvents.some((e) => e.title?.toLowerCase().includes("payday"))
+              const isPayday = showPayday && paydayEvents.some((p) => p.date === dayStr) && !paydayAlreadyInEvents
               const hasExtra = isPayday
               if (dayEvents.length === 0 && !hasExtra) return (
                 <div className="flex flex-col items-center justify-center text-center gap-2 py-8">

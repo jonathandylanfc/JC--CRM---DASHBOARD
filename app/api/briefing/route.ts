@@ -83,8 +83,8 @@ export async function POST(req: NextRequest) {
   // Fetch weather from Open-Meteo (free, no key)
   let weatherContext = ""
   try {
-    const lat = process.env.WEATHER_LAT ?? "34.0522"
-    const lon = process.env.WEATHER_LON ?? "-118.2437"
+    const lat = process.env.WEATHER_LAT ?? "38.0194"
+    const lon = process.env.WEATHER_LON ?? "-122.1341"
     const wRes = await fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&current_weather=true&temperature_unit=fahrenheit&timezone=America%2FLos_Angeles&forecast_days=1`,
       { signal: AbortSignal.timeout(5000) }
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       const hi = daily?.temperature_2m_max?.[0]?.toFixed(0)
       const lo = daily?.temperature_2m_min?.[0]?.toFixed(0)
       const rain = daily?.precipitation_probability_max?.[0]
-      weatherContext = `\n\nWEATHER TODAY (Los Angeles area): ${desc}, ${cur?.temperature?.toFixed(0)}°F now, High ${hi}°F / Low ${lo}°F${rain > 20 ? `, ${rain}% chance of rain` : ""}`
+      weatherContext = `\n\nWEATHER TODAY (Martinez, CA): ${desc}, ${cur?.temperature?.toFixed(0)}°F now, High ${hi}°F / Low ${lo}°F${rain > 20 ? `, ${rain}% chance of rain` : ""}`
     }
   } catch {
     // Weather fetch failed — continue without it
@@ -115,15 +115,24 @@ export async function POST(req: NextRequest) {
   if (userId) {
     const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
     const tomorrowStr = new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
-    const [{ data: todayTasks }, { data: calEvents }] = await Promise.all([
-      supabase.from("tasks").select("title, due_date, priority").eq("user_id", userId)
+    const [{ data: todayTasks }, { data: noDueTasks }, { data: calEvents }] = await Promise.all([
+      supabase.from("tasks").select("title, priority").eq("user_id", userId)
         .eq("due_date", todayStr).neq("status", "done").order("priority"),
+      supabase.from("tasks").select("title, priority").eq("user_id", userId)
+        .is("due_date", null).neq("status", "done").order("priority").limit(10),
       supabase.from("local_calendar_events").select("title, start_at, all_day").eq("user_id", userId)
         .gte("start_at", `${todayStr}T00:00:00`).lte("start_at", `${tomorrowStr}T00:00:00`)
         .order("start_at"),
     ])
+    const taskLines: string[] = []
     if (todayTasks?.length) {
-      tasksContext = `\n\nTASKS DUE TODAY:\n${todayTasks.map((t) => `• ${t.title} [${t.priority}]`).join("\n")}`
+      taskLines.push(...todayTasks.map((t) => `• ${t.title} [due today, ${t.priority}]`))
+    }
+    if (noDueTasks?.length) {
+      taskLines.push(...noDueTasks.map((t) => `• ${t.title} [no due date, ${t.priority}]`))
+    }
+    if (taskLines.length) {
+      tasksContext = `\n\nTASKS TO DO:\n${taskLines.join("\n")}`
     }
     if (calEvents?.length) {
       eventsContext = `\n\nCALENDAR EVENTS TODAY:\n${calEvents.map((e) => {
