@@ -77,11 +77,12 @@ export default async function DashboardPage() {
               savingsGoals={savingsGoals}
               weeklyRecap={weeklyRecap}
             />
+
+            <DashboardEditButton />
           </div>
         </main>
 
         <DashboardVisibilityPanel />
-        <DashboardEditButton />
       </div>
     </DashboardLayoutProvider>
   )

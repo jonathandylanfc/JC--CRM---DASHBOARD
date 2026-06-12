@@ -126,12 +126,12 @@ export function DashboardEditButton() {
   const { editMode, setEditMode } = useDashboardLayout()
 
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 lg:bottom-6">
+    <div className="flex justify-center pt-2 pb-4">
       <Button
         onClick={() => setEditMode(!editMode)}
         size="sm"
         variant={editMode ? "default" : "outline"}
-        className={`gap-2 shadow-lg px-5 rounded-full transition-all ${
+        className={`gap-2 px-5 rounded-full transition-all ${
           editMode
             ? "bg-primary text-primary-foreground"
             : "bg-card border-border text-muted-foreground hover:text-foreground"
