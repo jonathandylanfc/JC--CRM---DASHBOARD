@@ -332,7 +332,7 @@ Start with a one-line greeting. Sign off as "JDpro AI — Your Morning Briefing"
       <!-- Header -->
       <div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:24px;text-align:center;">
         <p style="color:#c7d2fe;font-size:12px;margin:0 0 4px;">Morning Briefing</p>
-        <h1 style="color:#fff;font-size:22px;margin:0;font-weight:700;">Good Morning ☀️</h1>
+        <h1 style="color:#fff;font-size:22px;margin:0;font-weight:700;">Good Morning, Jonathan ☀️</h1>
         <p style="color:#c7d2fe;font-size:13px;margin:8px 0 0;">${today}</p>
       </div>
 
