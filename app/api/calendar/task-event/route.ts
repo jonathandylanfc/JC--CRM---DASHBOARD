@@ -15,16 +15,17 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
   const body = await req.json() as {
+    task_id?: string
     title: string
     due_date: string
     description?: string
     priority?: string
-    start_time?: string
-    end_time?: string
-    reminder?: string  // minutes as string, e.g. "0", "15", "60"
+    startUtc?: string
+    endUtc?: string
+    reminder?: string
   }
 
-  const { title, due_date, description, priority, start_time, end_time, reminder } = body
+  const { task_id, title, due_date, description, priority, startUtc, endUtc, reminder } = body
   if (!title || !due_date) {
     return NextResponse.json({ error: "title and due_date are required" }, { status: 400 })
   }
@@ -67,19 +68,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Build start/end — timed event if times provided, all-day otherwise
-    let startObj: { date?: string; dateTime?: string; timeZone?: string }
-    let endObj: { date?: string; dateTime?: string; timeZone?: string }
+    // Build start/end — use UTC ISO strings if provided, otherwise all-day
+    let startObj: { date?: string; dateTime?: string }
+    let endObj: { date?: string; dateTime?: string }
 
-    if (start_time) {
-      startObj = { dateTime: `${due_date}T${start_time}:00`, timeZone: "America/New_York" }
-      // If no end_time, default to 1 hour after start
-      const endT = end_time ?? (() => {
-        const [h, m] = start_time.split(":").map(Number)
-        const endH = String(h + 1).padStart(2, "0")
-        return `${endH}:${String(m).padStart(2, "0")}`
-      })()
-      endObj = { dateTime: `${due_date}T${endT}:00`, timeZone: "America/New_York" }
+    if (startUtc) {
+      startObj = { dateTime: startUtc }
+      endObj = { dateTime: endUtc ?? new Date(new Date(startUtc).getTime() + 3600000).toISOString() }
     } else {
       startObj = { date: due_date }
       endObj = { date: due_date }
@@ -101,9 +96,19 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    const eventId = result.data.id ?? null
+
+    // Save the event ID back to the task so we can delete it later
+    if (task_id && eventId) {
+      await supabase.from("tasks")
+        .update({ calendar_event_id: eventId, calendar_id: "primary" })
+        .eq("id", task_id)
+        .eq("user_id", user.id)
+    }
+
     return NextResponse.json({
       success: true,
-      eventId: result.data.id,
+      eventId,
       htmlLink: result.data.htmlLink,
     })
   } catch (err: unknown) {

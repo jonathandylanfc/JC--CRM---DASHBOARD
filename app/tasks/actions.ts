@@ -3,6 +3,14 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { addDays, addWeeks, addMonths, format } from "date-fns"
+import { google } from "googleapis"
+
+function getOAuthClient() {
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+  )
+}
 
 export async function createTask(formData: FormData) {
   const supabase = await createClient()
@@ -111,6 +119,42 @@ export async function deleteTask(id: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Not authenticated" }
+
+  // Fetch calendar link before deleting
+  const { data: task } = await supabase
+    .from("tasks")
+    .select("calendar_event_id, calendar_id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single()
+
+  // Delete from Google Calendar if linked
+  if (task?.calendar_event_id) {
+    try {
+      const { data: tokenRow } = await supabase
+        .from("calendar_tokens")
+        .select("access_token, refresh_token, expiry_date")
+        .eq("user_id", user.id)
+        .single()
+
+      if (tokenRow) {
+        const oauth2Client = getOAuthClient()
+        oauth2Client.setCredentials({
+          access_token: tokenRow.access_token,
+          refresh_token: tokenRow.refresh_token,
+          expiry_date: tokenRow.expiry_date,
+        })
+        const calendar = google.calendar({ version: "v3", auth: oauth2Client })
+        await calendar.events.delete({
+          calendarId: task.calendar_id ?? "primary",
+          eventId: task.calendar_event_id,
+        })
+      }
+    } catch {
+      // Calendar deletion failed — still delete the task
+    }
+  }
+
   const { error } = await supabase.from("tasks").delete().eq("id", id).eq("user_id", user.id)
   if (error) return { error: error.message }
   revalidatePath("/tasks")

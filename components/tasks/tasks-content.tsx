@@ -34,6 +34,8 @@ interface Task {
   completed_at: string | null
   recurrence: string
   task_category: string | null
+  calendar_event_id: string | null
+  calendar_id: string | null
 }
 
 interface TasksContentProps {
@@ -219,16 +221,22 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     if (!task.due_date) return
     setCalendarPending(task.id)
     try {
+      const dateStr = task.due_date.slice(0, 10)
+      const startUtc = task.start_time
+        ? new Date(`${dateStr}T${task.start_time}:00`).toISOString() : undefined
+      const endUtc = task.end_time
+        ? new Date(`${dateStr}T${task.end_time}:00`).toISOString() : undefined
       const res = await fetch("/api/calendar/task-event", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          task_id: task.id,
           title: task.title,
-          due_date: task.due_date,
+          due_date: dateStr,
           description: task.description ?? undefined,
           priority: task.priority,
-          start_time: task.start_time ?? undefined,
-          end_time: task.end_time ?? undefined,
+          startUtc,
+          endUtc,
         }),
       })
       if (!res.ok) {
@@ -238,6 +246,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
         else toast.error("Could not add to Google Calendar — check Settings")
       } else {
         toast.success("Added to Google Calendar")
+        router.refresh()
       }
     } catch {
       toast.error("Failed to add to Google Calendar")
