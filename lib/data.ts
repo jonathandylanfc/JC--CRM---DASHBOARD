@@ -139,11 +139,14 @@ export async function getUpcomingAssignments() {
 export async function getRecentTasks() {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return []
+  const today = new Date().toLocaleDateString("en-CA")
   const { data } = await supabase
     .from("tasks")
     .select("id, title, due_date, status, priority")
     .eq("user_id", userId)
-    .order("created_at", { ascending: false })
+    .neq("status", "done")
+    .or(`due_date.is.null,due_date.gte.${today}`)
+    .order("due_date", { ascending: true, nullsFirst: false })
     .limit(5)
   return data ?? []
 }
