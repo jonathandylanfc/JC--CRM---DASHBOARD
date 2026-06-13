@@ -614,7 +614,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                     {task.due_date && (
                       <span className="flex items-center gap-1">
                         <CalendarDays className="w-3.5 h-3.5" />
-                        {format(new Date(task.due_date + "T12:00:00"), "MMM d, yyyy")}
+                        {format(new Date(task.due_date.slice(0, 10) + "T12:00:00"), "MMM d, yyyy")}
                         {task.start_time && (
                           <span className="ml-1 font-medium text-foreground">
                             {new Date(`2000-01-01T${task.start_time}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}

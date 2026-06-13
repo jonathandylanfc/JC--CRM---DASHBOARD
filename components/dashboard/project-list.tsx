@@ -66,7 +66,7 @@ export function ProjectList({ tasks }: ProjectListProps) {
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-foreground text-sm truncate">{task.title}</p>
                 <p className="text-xs text-muted-foreground">
-                  {task.due_date ? `Due ${format(new Date(task.due_date + "T12:00:00"), "MMM d, yyyy")}` : "No due date"}
+                  {task.due_date ? `Due ${format(new Date(task.due_date.slice(0, 10) + "T12:00:00"), "MMM d, yyyy")}` : "No due date"}
                 </p>
               </div>
             </div>
