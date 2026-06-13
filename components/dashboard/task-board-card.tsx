@@ -30,8 +30,9 @@ const priorityDotColors: Record<string, string> = {
 
 function formatDue(dateStr: string | null | undefined) {
   if (!dateStr) return null
-  const d = new Date(dateStr + "T00:00:00")
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  const [year, month, day] = dateStr.slice(0, 10).split("-").map(Number)
+  if (!year || !month || !day) return null
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
 export function TaskBoardCard({ tasks }: TaskBoardCardProps) {
