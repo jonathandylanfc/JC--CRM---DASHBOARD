@@ -300,7 +300,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
           const res = await fetch("/api/calendar/task-event", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, due_date: dateStr, description: description ?? undefined, priority, startUtc, endUtc, reminder: reminder !== "none" ? reminder : undefined }),
+            body: JSON.stringify({ task_id: result.taskId, title, due_date: dateStr, description: description ?? undefined, priority, startUtc, endUtc, reminder: reminder !== "none" ? reminder : undefined }),
           })
           const data = await res.json()
           if (data.error === "not_connected") toast.info("Connect Google Calendar in Settings to auto-add tasks")
@@ -818,7 +818,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="edit-due-date">Due Date</Label>
-                  <Input id="edit-due-date" name="due_date" type="date" defaultValue={editingTask.due_date ?? ""} />
+                  <Input id="edit-due-date" name="due_date" type="date" defaultValue={editingTask.due_date?.slice(0, 10) ?? ""} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="edit-priority">Priority</Label>

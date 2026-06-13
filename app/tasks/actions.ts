@@ -23,7 +23,7 @@ export async function createTask(formData: FormData) {
   const due_date = formData.get("due_date") as string
   const start_time = (formData.get("start_time") as string) || null
   const end_time = (formData.get("end_time") as string) || null
-  const { error } = await supabase.from("tasks").insert({
+  const { data: inserted, error } = await supabase.from("tasks").insert({
     user_id: user.id,
     title: title.trim(),
     description: (formData.get("description") as string) || null,
@@ -34,12 +34,12 @@ export async function createTask(formData: FormData) {
     status: "todo",
     recurrence: (formData.get("recurrence") as string) || "none",
     task_category: (formData.get("task_category") as string) || null,
-  })
+  }).select("id").single()
 
   if (error) return { error: error.message }
   revalidatePath("/tasks")
   revalidatePath("/")
-  return { success: true }
+  return { success: true, taskId: inserted.id as string }
 }
 
 export async function toggleTaskStatus(id: string, currentStatus: string) {
