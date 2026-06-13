@@ -280,6 +280,8 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
       completed_at: null,
       recurrence: (fd.get("recurrence") as string) || "none",
       task_category: (fd.get("task_category") as string) || null,
+      calendar_event_id: null,
+      calendar_id: null,
     }
 
     setOpen(false)
@@ -292,10 +294,13 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
       // Auto-add to Google Calendar if enabled and due date exists
       if (addToCalendar && due_date) {
         try {
+          const dateStr = due_date.slice(0, 10)
+          const startUtc = start_time ? new Date(`${dateStr}T${start_time}:00`).toISOString() : undefined
+          const endUtc = end_time ? new Date(`${dateStr}T${end_time}:00`).toISOString() : undefined
           const res = await fetch("/api/calendar/task-event", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, due_date, description: description ?? undefined, priority, start_time: start_time ?? undefined, end_time: end_time ?? undefined, reminder: reminder !== "none" ? reminder : undefined }),
+            body: JSON.stringify({ title, due_date: dateStr, description: description ?? undefined, priority, startUtc, endUtc, reminder: reminder !== "none" ? reminder : undefined }),
           })
           const data = await res.json()
           if (data.error === "not_connected") toast.info("Connect Google Calendar in Settings to auto-add tasks")
