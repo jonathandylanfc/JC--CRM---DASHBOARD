@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Search, Plus, Trash2, CalendarDays, ClipboardList, Calendar, RefreshCw, Tag, Pencil, ChevronDown, ChevronRight, CheckCircle2 } from "lucide-react"
+import { Search, Plus, Trash2, CalendarDays, ClipboardList, Calendar, RefreshCw, Tag, Pencil, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle } from "lucide-react"
 import { format, startOfDay } from "date-fns"
 import { toast } from "sonner"
 import { createTask, updateTask, toggleTaskStatus, deleteTask } from "@/app/tasks/actions"
@@ -76,6 +76,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
   const [addToCalendar, setAddToCalendar] = useState(true)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
+  const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState<string | null>(null)
   const [expandCompletedOpen, setExpandCompletedOpen] = useState(false)
   const [expandPreviousOpen, setExpandPreviousOpen] = useState(false)
 
@@ -227,12 +228,17 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
           const dateStr = due_date.slice(0, 10)
           const startUtc = start_time ? new Date(`${dateStr}T${start_time}:00`).toISOString() : undefined
           const endUtc = end_time ? new Date(`${dateStr}T${end_time}:00`).toISOString() : undefined
-          await fetch("/api/calendar/task-event", {
+          const res = await fetch("/api/calendar/task-event", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ eventId: calEventId, calendarId: calId, title, due_date: dateStr, startUtc, endUtc }),
           })
-        } catch { /* silent — calendar sync is best-effort */ }
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            if (data.error === "reconnect_required") toast.warning("Reconnect Google Calendar in Settings")
+            else toast.warning("Task saved but calendar event could not be updated")
+          }
+        } catch { toast.warning("Task saved but calendar sync failed") }
       }
 
       toast.success("Task updated")
@@ -636,7 +642,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                         variant="ghost"
                         size="icon"
                         className="w-8 h-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => handleDelete(task.id)}
+                        onClick={() => setConfirmDeleteTaskId(task.id)}
                         title="Delete task"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -723,7 +729,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                             variant="ghost"
                             size="icon"
                             className="w-7 h-7 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => handleDelete(task.id)}
+                            onClick={() => setConfirmDeleteTaskId(task.id)}
                             title="Delete task"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -794,7 +800,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                             variant="ghost"
                             size="icon"
                             className="w-7 h-7 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => handleDelete(task.id)}
+                            onClick={() => setConfirmDeleteTaskId(task.id)}
                             title="Delete task"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -809,6 +815,34 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
           )}
         </div>
       )}
+
+      {/* Delete Task Confirmation */}
+      <Dialog open={!!confirmDeleteTaskId} onOpenChange={(o) => { if (!o) setConfirmDeleteTaskId(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Delete task?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <p className="text-sm text-muted-foreground">This will permanently delete the task. If it&apos;s linked to Google Calendar, the event will also be removed.</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setConfirmDeleteTaskId(null)}>Cancel</Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={() => {
+                  if (confirmDeleteTaskId) handleDelete(confirmDeleteTaskId)
+                  setConfirmDeleteTaskId(null)
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Task Dialog */}
       <Dialog open={!!editingTask} onOpenChange={(v) => { if (!v) setEditingTask(null) }}>
