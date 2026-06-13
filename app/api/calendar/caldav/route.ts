@@ -123,8 +123,7 @@ export async function POST(req: NextRequest) {
 
   // Add event flow
   if (body.action === "add-event") {
-    const { calendarUrl, title, date, startTime, endTime, notes, timezone } = body
-    const tz: string = timezone || "America/Los_Angeles"
+    const { calendarUrl, title, date, startUtc, endUtc, notes } = body
     if (!calendarUrl || !title || !date) return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
 
     const { data: creds } = await supabase
@@ -135,17 +134,20 @@ export async function POST(req: NextRequest) {
 
     if (!creds) return NextResponse.json({ error: "iCloud not connected" }, { status: 400 })
 
+    // Convert ISO UTC string to ICS UTC format: 20260618T200000Z
+    const toIcsUtc = (iso: string) => iso.replace(/[-:]/g, "").replace(/\.\d{3}/, "").slice(0, 15) + "Z"
+
     try {
       const client = await getDAVClient(creds.apple_id, creds.app_password)
       const uid = crypto.randomUUID()
       const now = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z"
 
       let icsContent: string
-      if (startTime) {
-        const start = `${date}T${startTime}:00`.replace(/[-:]/g, "").slice(0, 15)
-        const end = endTime
-          ? `${date}T${endTime}:00`.replace(/[-:]/g, "").slice(0, 15)
-          : `${date}T${String(parseInt(startTime.split(":")[0]) + 1).padStart(2, "0")}${startTime.split(":")[1]}00`.replace(/[-:]/g, "").slice(0, 15)
+      if (startUtc) {
+        const start = toIcsUtc(startUtc)
+        const end = endUtc
+          ? toIcsUtc(endUtc)
+          : toIcsUtc(new Date(new Date(startUtc).getTime() + 3600000).toISOString()) // +1 hr default
 
         icsContent = [
           "BEGIN:VCALENDAR",
@@ -154,8 +156,8 @@ export async function POST(req: NextRequest) {
           "BEGIN:VEVENT",
           `UID:${uid}`,
           `DTSTAMP:${now}`,
-          `DTSTART;TZID=${tz}:${start}`,
-          `DTEND;TZID=${tz}:${end}`,
+          `DTSTART:${start}`,
+          `DTEND:${end}`,
           `SUMMARY:${title}`,
           notes ? `DESCRIPTION:${notes}` : "",
           "END:VEVENT",

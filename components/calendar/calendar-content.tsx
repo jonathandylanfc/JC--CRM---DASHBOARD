@@ -335,7 +335,7 @@ export function CalendarContent() {
     toast.success("iCloud Calendar disconnected")
   }
 
-  async function handleAddToIcloud(calendarUrl: string, shift: { title: string; date: string; start_time?: string; end_time?: string; notes?: string; timezone?: string }) {
+  async function handleAddToIcloud(calendarUrl: string, shift: { title: string; date: string; startUtc?: string; endUtc?: string; notes?: string }) {
     const res = await fetch("/api/calendar/caldav", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -344,10 +344,9 @@ export function CalendarContent() {
         calendarUrl,
         title: shift.title,
         date: shift.date,
-        startTime: shift.start_time,
-        endTime: shift.end_time,
+        startUtc: shift.startUtc,
+        endUtc: shift.endUtc,
         notes: shift.notes,
-        timezone: shift.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       }),
     })
     const data = await res.json()
@@ -499,24 +498,26 @@ export function CalendarContent() {
         await handleAddToIcloud(calendarUrl, {
           title: evTitle.trim(),
           date: evDate,
-          start_time: evAllDay ? undefined : evStartTime || undefined,
-          end_time: evAllDay ? undefined : evEndTime || undefined,
+          startUtc: (!evAllDay && evStartTime) ? new Date(`${evDate}T${evStartTime}:00`).toISOString() : undefined,
+          endUtc: (!evAllDay && evEndTime) ? new Date(`${evDate}T${evEndTime}:00`).toISOString() : undefined,
           notes: evNotes.trim() || undefined,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         })
         const calName = icloudCalendars.find((c) => c.url === calendarUrl)?.displayName ?? "iCloud"
         toast.success(`"${evTitle}" added to ${calName}!`)
       } else if (evCalendarId !== "local") {
+        // Convert local times to UTC on the client so the server never needs to guess the timezone
+        const startUtc = (!evAllDay && evStartTime)
+          ? new Date(`${evDate}T${evStartTime}:00`).toISOString() : undefined
+        const endUtc = (!evAllDay && evEndTime)
+          ? new Date(`${evDate}T${evEndTime}:00`).toISOString() : undefined
         const res = await fetch("/api/calendar/add-shifts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             calendarId: evCalendarId,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             shifts: [{
               title: evTitle.trim(), date: evDate,
-              start_time: evAllDay ? undefined : evStartTime || undefined,
-              end_time: evAllDay ? undefined : evEndTime || undefined,
+              startUtc, endUtc,
               notes: evNotes.trim() || undefined,
             }],
           }),
