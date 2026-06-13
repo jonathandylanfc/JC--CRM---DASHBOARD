@@ -39,6 +39,7 @@ import {
   Search,
   Download,
   ArrowLeftRight,
+  ArrowUpDown,
 } from "lucide-react"
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns"
 import { toast } from "sonner"
@@ -292,6 +293,7 @@ export function FinanceContent({
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [chartPage, setChartPage] = useState(0) // 0 = most recent window
+  const [sortBy, setSortBy] = useState<"date_desc" | "date_asc" | "amount_desc" | "amount_asc">("date_desc")
 
   function changeRange(r: DateRange) {
     setDateRange(r)
@@ -520,8 +522,15 @@ export function FinanceContent({
       const q = searchQuery.trim().toLowerCase()
       list = list.filter((tx) => tx.title.toLowerCase().includes(q))
     }
+    list = [...list].sort((a, b) => {
+      if (sortBy === "date_desc") return b.date.localeCompare(a.date)
+      if (sortBy === "date_asc") return a.date.localeCompare(b.date)
+      if (sortBy === "amount_desc") return Number(b.amount) - Number(a.amount)
+      if (sortBy === "amount_asc") return Number(a.amount) - Number(b.amount)
+      return 0
+    })
     return list
-  }, [accountTransactions, savedTx, dateRange, monthOffset, selectedCategory, searchQuery])
+  }, [accountTransactions, savedTx, dateRange, monthOffset, selectedCategory, searchQuery, sortBy])
 
   function exitSelectMode() {
     setSelectMode(false)
@@ -902,11 +911,25 @@ export function FinanceContent({
         const monthEndStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(monthEnd.getDate()).padStart(2, "0")}`
 
         const catTotals: Record<string, number> = {}
+        // If budget categories exist, group transactions by budget category so Finance
+        // and Budget show the same breakdown. Transactions not matching any named
+        // budget category go into the catch-all bucket.
+        const catchallCat = budgetCategories.find((c) => c.is_catchall)
+        const namedBudgetCats = budgetCategories.filter((c) => !c.is_catchall)
+        const hasBudgetCats = budgetCategories.length > 0
+
         for (const tx of optimisticTransactions) {
           if (tx.type !== "expense") continue
           if (tx.date < monthStart || tx.date > monthEndStr) continue
-          const cat = tx.category
-          catTotals[cat] = (catTotals[cat] ?? 0) + Number(tx.amount)
+          let bucket: string
+          if (hasBudgetCats) {
+            const txCatLower = tx.category.toLowerCase()
+            const matched = namedBudgetCats.find((c) => c.name.toLowerCase() === txCatLower)
+            bucket = matched ? matched.name : (catchallCat?.name ?? tx.category)
+          } else {
+            bucket = tx.category
+          }
+          catTotals[bucket] = (catTotals[bucket] ?? 0) + Number(tx.amount)
         }
 
         const pieData = Object.entries(catTotals)
@@ -1177,6 +1200,20 @@ export function FinanceContent({
                   {allCategories.map((cat) => (
                     <SelectItem key={cat} value={cat} className="capitalize">{cat}</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+
+              {/* Sort control */}
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+                <SelectTrigger size="sm" className="w-auto gap-1.5 bg-transparent text-xs">
+                  <ArrowUpDown className="w-3.5 h-3.5 shrink-0" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="date_desc">Date (Newest)</SelectItem>
+                  <SelectItem value="date_asc">Date (Oldest)</SelectItem>
+                  <SelectItem value="amount_desc">Amount (High → Low)</SelectItem>
+                  <SelectItem value="amount_asc">Amount (Low → High)</SelectItem>
                 </SelectContent>
               </Select>
 
