@@ -208,9 +208,33 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
     if (!editingTask) return
     setEditError(null)
     const fd = new FormData(e.currentTarget)
+
+    // Read form values now (before startTransition) so we can convert to UTC in the browser
+    const due_date = (fd.get("due_date") as string) || null
+    const start_time = (fd.get("start_time") as string) || null
+    const end_time = (fd.get("end_time") as string) || null
+    const title = (fd.get("title") as string) || editingTask.title
+    const calEventId = editingTask.calendar_event_id
+    const calId = editingTask.calendar_id ?? "primary"
+
     startTransition(async () => {
       const result = await updateTask(editingTask.id, fd)
       if (result?.error) { setEditError(result.error); return }
+
+      // Sync to Google Calendar if the task has a linked event
+      if (calEventId && due_date) {
+        try {
+          const dateStr = due_date.slice(0, 10)
+          const startUtc = start_time ? new Date(`${dateStr}T${start_time}:00`).toISOString() : undefined
+          const endUtc = end_time ? new Date(`${dateStr}T${end_time}:00`).toISOString() : undefined
+          await fetch("/api/calendar/task-event", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ eventId: calEventId, calendarId: calId, title, due_date: dateStr, startUtc, endUtc }),
+          })
+        } catch { /* silent — calendar sync is best-effort */ }
+      }
+
       toast.success("Task updated")
       setEditingTask(null)
       router.refresh()
