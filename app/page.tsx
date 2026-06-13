@@ -20,11 +20,16 @@ import {
 } from "@/lib/data"
 
 export default async function DashboardPage() {
+  const now = new Date()
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const lastMonthStr = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`
+
   const [
     taskStats,
     recentTasks,
     user,
     financeSummary,
+    lastMonthSummary,
     expensesByCategory,
     categories,
     recentTransactions,
@@ -38,6 +43,7 @@ export default async function DashboardPage() {
     getRecentTasks(),
     getUserProfile(),
     getMonthlyFinanceSummary(),
+    getMonthlyFinanceSummary(lastMonthStr),
     getMonthlyExpensesByCategory(),
     getBudgetCategories(),
     getRecentTransactions(5),
@@ -70,6 +76,7 @@ export default async function DashboardPage() {
               taskStats={taskStats}
               recentTasks={recentTasks}
               financeSummary={financeSummary}
+              lastMonthSummary={lastMonthSummary}
               expensesByCategory={expensesByCategory}
               categories={categories}
               recentTransactions={recentTransactions}

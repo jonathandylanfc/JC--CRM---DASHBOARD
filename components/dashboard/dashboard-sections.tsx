@@ -16,6 +16,7 @@ interface Props {
   taskStats: { total: number; done: number; inProgress: number; todo: number }
   recentTasks: Array<{ id: string; title: string; due_date: string | null; status: string; priority: string }>
   financeSummary: { income: number; expenses: number }
+  lastMonthSummary: { income: number; expenses: number }
   expensesByCategory: Record<string, number>
   categories: Array<{ id: string; name: string; type: "percentage" | "fixed"; value: number; sort_order: number; rollover: boolean; is_catchall: boolean; linked_account: string | null }>
   recentTransactions: Array<{ id: string; title: string; amount: number; type: string; category: string; date: string; account_name: string | null }>
@@ -34,6 +35,8 @@ function WidgetContent({ id, props }: { id: WidgetId; props: Props }) {
           tasksDueToday={props.taskStats.dueToday ?? 0}
           monthlyIncome={props.financeSummary.income}
           monthlyExpenses={props.financeSummary.expenses}
+          lastMonthIncome={props.lastMonthSummary.income}
+          lastMonthExpenses={props.lastMonthSummary.expenses}
         />
       )
     case "tasks":
