@@ -123,7 +123,8 @@ export async function POST(req: NextRequest) {
 
   // Add event flow
   if (body.action === "add-event") {
-    const { calendarUrl, title, date, startTime, endTime, notes } = body
+    const { calendarUrl, title, date, startTime, endTime, notes, timezone } = body
+    const tz: string = timezone || "America/Los_Angeles"
     if (!calendarUrl || !title || !date) return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
 
     const { data: creds } = await supabase
@@ -153,8 +154,8 @@ export async function POST(req: NextRequest) {
           "BEGIN:VEVENT",
           `UID:${uid}`,
           `DTSTAMP:${now}`,
-          `DTSTART:${start}`,
-          `DTEND:${end}`,
+          `DTSTART;TZID=${tz}:${start}`,
+          `DTEND;TZID=${tz}:${end}`,
           `SUMMARY:${title}`,
           notes ? `DESCRIPTION:${notes}` : "",
           "END:VEVENT",

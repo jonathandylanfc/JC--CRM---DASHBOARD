@@ -335,7 +335,7 @@ export function CalendarContent() {
     toast.success("iCloud Calendar disconnected")
   }
 
-  async function handleAddToIcloud(calendarUrl: string, shift: { title: string; date: string; start_time?: string; end_time?: string; notes?: string }) {
+  async function handleAddToIcloud(calendarUrl: string, shift: { title: string; date: string; start_time?: string; end_time?: string; notes?: string; timezone?: string }) {
     const res = await fetch("/api/calendar/caldav", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -347,6 +347,7 @@ export function CalendarContent() {
         startTime: shift.start_time,
         endTime: shift.end_time,
         notes: shift.notes,
+        timezone: shift.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       }),
     })
     const data = await res.json()
@@ -501,6 +502,7 @@ export function CalendarContent() {
           start_time: evAllDay ? undefined : evStartTime || undefined,
           end_time: evAllDay ? undefined : evEndTime || undefined,
           notes: evNotes.trim() || undefined,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         })
         const calName = icloudCalendars.find((c) => c.url === calendarUrl)?.displayName ?? "iCloud"
         toast.success(`"${evTitle}" added to ${calName}!`)
