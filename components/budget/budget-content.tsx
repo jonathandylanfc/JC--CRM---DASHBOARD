@@ -610,7 +610,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                           {monthlyStatus === "green" ? "✓ this mo" : monthlyStatus === "amber" ? "partial" : "needs contribution"}
                         </span>
                       )}
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-foreground" onClick={() => openEditGoal(goal)}>
                           <Pencil className="w-3 h-3" />
                         </Button>
@@ -1026,7 +1026,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <Button
                           variant="ghost" size="icon"
                           className={`w-7 h-7 ${cat.rollover ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
@@ -1105,7 +1105,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                             <button
                               title="Move to another category"
                               onClick={() => { setMoveTx(tx); setMoveSearch("") }}
-                              className="opacity-0 group-hover/tx:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                              className="opacity-100 sm:opacity-0 sm:group-hover/tx:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
                             >
                               <MoveRight className="w-3 h-3" />
                             </button>
