@@ -79,7 +79,7 @@ Extract ALL games/matches visible in this image. Return ONLY valid JSON in this 
 Rules:
 - title: "Team A vs Team B" exactly as shown. If teams are TBD use the match label (e.g. "Group A - Match 1")
 - date: Resolve relative labels — "Today" = ${today}, "Tomorrow" = ${format(addDays(new Date(), 1), "yyyy-MM-dd")}. For named dates like "Fri, Jun 19" assume year 2026 if not shown. Output YYYY-MM-DD
-- start_time: Kick-off time in 24-hour HH:MM. Check for a timezone label (ET, PT, CT, MT, BST, GMT, etc.) anywhere in the image — it often appears in a column header rather than next to each game. If you see ET (Eastern Time), convert to ${userTimezone} (e.g. ET 9:00 AM → subtract 3 hours for PT = 06:00). If you see PT times and the user is in ${userTimezone} = America/Los_Angeles, keep as-is. If no timezone is identifiable, keep times exactly as shown
+- start_time: Kick-off time in 24-hour HH:MM exactly as shown in the image. Convert 12-hour to 24-hour format (e.g. "9:00 AM" → "09:00", "3:00 PM" → "15:00"). Do NOT convert between timezones — keep times exactly as printed in the schedule
 - Do NOT include end_time — omit that field entirely
 - notes: Include group name (e.g. "Group A"), round/stage, venue, or stadium if visible. Format: "Group A · Venue Name, City"
 - Include EVERY game visible — do not skip any match
