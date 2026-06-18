@@ -178,15 +178,17 @@ export function CalendarContent() {
         const calendarUrl = selectedCalendarId.replace("icloud:", "")
         const calName = icloudCalendars.find((c) => c.url === calendarUrl)?.displayName ?? "iCloud Calendar"
         let successCount = 0
+        const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone
         for (const shift of toAdd) {
           try {
-            const startUtc = shift.start_time ? new Date(`${shift.date}T${shift.start_time}:00`).toISOString() : undefined
-            const endUtc = shift.end_time
-              ? new Date(`${shift.date}T${shift.end_time}:00`).toISOString()
-              : startUtc
-                ? new Date(new Date(startUtc).getTime() + 2 * 3600000).toISOString()
+            const toLocalDt = (t: string) => `${shift.date.replace(/-/g, "")}T${t.replace(":", "")}00`
+            const startLocal = shift.start_time ? toLocalDt(shift.start_time) : undefined
+            const endLocal = shift.end_time
+              ? toLocalDt(shift.end_time)
+              : shift.start_time
+                ? toLocalDt(`${String(parseInt(shift.start_time.split(":")[0]) + 2).padStart(2, "0")}:${shift.start_time.split(":")[1]}`)
                 : undefined
-            await handleAddToIcloud(calendarUrl, { ...shift, startUtc, endUtc })
+            await handleAddToIcloud(calendarUrl, { ...shift, startLocal, endLocal, timezone: userTz })
             successCount++
           } catch (err) {
             toast.error(`Failed to add "${shift.title}" to iCloud: ${err instanceof Error ? err.message : "Unknown error"}`)
@@ -331,7 +333,7 @@ export function CalendarContent() {
     toast.success("iCloud Calendar disconnected")
   }
 
-  async function handleAddToIcloud(calendarUrl: string, shift: { title: string; date: string; startUtc?: string; endUtc?: string; notes?: string }) {
+  async function handleAddToIcloud(calendarUrl: string, shift: { title: string; date: string; startUtc?: string; endUtc?: string; startLocal?: string; endLocal?: string; timezone?: string; notes?: string }) {
     const res = await fetch("/api/calendar/caldav", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -342,6 +344,9 @@ export function CalendarContent() {
         date: shift.date,
         startUtc: shift.startUtc,
         endUtc: shift.endUtc,
+        startLocal: shift.startLocal,
+        endLocal: shift.endLocal,
+        timezone: shift.timezone,
         notes: shift.notes,
       }),
     })

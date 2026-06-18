@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
 
   // Add event flow
   if (body.action === "add-event") {
-    const { calendarUrl, title, date, startUtc, endUtc, notes } = body
+    const { calendarUrl, title, date, startUtc, endUtc, startLocal, endLocal, timezone, notes } = body
     if (!calendarUrl || !title || !date) return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
 
     const { data: creds } = await supabase
@@ -143,11 +143,31 @@ export async function POST(req: NextRequest) {
       const now = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z"
 
       let icsContent: string
-      if (startUtc) {
+      if (startLocal && timezone) {
+        // Preferred: TZID format — renders as local time, no "(GMT)" label on iPhone
+        const endDt = endLocal ?? (() => {
+          const h = parseInt(startLocal.slice(9, 11)) + 2
+          return startLocal.slice(0, 9) + String(h).padStart(2, "0") + startLocal.slice(11)
+        })()
+        icsContent = [
+          "BEGIN:VCALENDAR",
+          "VERSION:2.0",
+          "PRODID:-//JDpro//EN",
+          "BEGIN:VEVENT",
+          `UID:${uid}`,
+          `DTSTAMP:${now}`,
+          `DTSTART;TZID=${timezone}:${startLocal}`,
+          `DTEND;TZID=${timezone}:${endDt}`,
+          `SUMMARY:${title}`,
+          notes ? `DESCRIPTION:${notes}` : "",
+          "END:VEVENT",
+          "END:VCALENDAR",
+        ].filter(Boolean).join("\r\n")
+      } else if (startUtc) {
         const start = toIcsUtc(startUtc)
         const end = endUtc
           ? toIcsUtc(endUtc)
-          : toIcsUtc(new Date(new Date(startUtc).getTime() + 3600000).toISOString()) // +1 hr default
+          : toIcsUtc(new Date(new Date(startUtc).getTime() + 3600000).toISOString())
 
         icsContent = [
           "BEGIN:VCALENDAR",
