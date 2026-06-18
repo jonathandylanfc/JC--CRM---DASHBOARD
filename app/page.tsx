@@ -4,6 +4,7 @@ import { DashboardLayoutProvider, DashboardEditButton, DashboardVisibilityPanel 
 import { DashboardSections } from "@/components/dashboard/dashboard-sections"
 import { MorningBriefingCard } from "@/components/dashboard/morning-briefing-card"
 import { UpcomingEventsCard } from "@/components/dashboard/upcoming-events-card"
+import { NasaApodCard } from "@/components/dashboard/nasa-apod-card"
 import {
   getTaskStats,
   getRecentTasks,
@@ -18,6 +19,15 @@ import {
   getLatestBriefing,
   getUpcomingCalendarEvents,
 } from "@/lib/data"
+
+async function fetchNasaApod() {
+  try {
+    const key = process.env.NASA_API_KEY ?? "DEMO_KEY"
+    const res = await fetch(`https://api.nasa.gov/planetary/apod?api_key=${key}`, { next: { revalidate: 3600 } })
+    if (!res.ok) return null
+    return await res.json()
+  } catch { return null }
+}
 
 export default async function DashboardPage() {
   const now = new Date()
@@ -38,6 +48,7 @@ export default async function DashboardPage() {
     weeklyRecap,
     latestBriefing,
     upcomingEvents,
+    apod,
   ] = await Promise.all([
     getTaskStats(),
     getRecentTasks(),
@@ -52,6 +63,7 @@ export default async function DashboardPage() {
     getWeeklySpendingSummary(),
     getLatestBriefing(),
     getUpcomingCalendarEvents(),
+    fetchNasaApod(),
   ])
 
   return (
@@ -71,6 +83,8 @@ export default async function DashboardPage() {
           <div className="mt-4 space-y-4">
             <MorningBriefingCard briefing={latestBriefing} />
             <UpcomingEventsCard events={upcomingEvents} />
+
+            <NasaApodCard apod={apod} />
 
             <DashboardSections
               taskStats={taskStats}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import Anthropic from "@anthropic-ai/sdk"
 import { Resend } from "resend"
+import { google } from "googleapis"
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -109,13 +110,13 @@ export async function POST(req: NextRequest) {
     // Weather fetch failed — continue without it
   }
 
-  // Fetch today's tasks and local calendar events from Supabase
+  // Fetch today's tasks + local + Google calendar events
   let tasksContext = ""
   let eventsContext = ""
   if (userId) {
     const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
     const tomorrowStr = new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
-    const [{ data: todayTasks }, { data: noDueTasks }, { data: calEvents }] = await Promise.all([
+    const [{ data: todayTasks }, { data: noDueTasks }, { data: localEvents }, { data: tokenRow }] = await Promise.all([
       supabase.from("tasks").select("title, priority").eq("user_id", userId)
         .eq("due_date", todayStr).neq("status", "done").order("priority"),
       supabase.from("tasks").select("title, priority").eq("user_id", userId)
@@ -123,22 +124,55 @@ export async function POST(req: NextRequest) {
       supabase.from("local_calendar_events").select("title, start_at, all_day").eq("user_id", userId)
         .gte("start_at", `${todayStr}T00:00:00`).lte("start_at", `${tomorrowStr}T00:00:00`)
         .order("start_at"),
+      supabase.from("calendar_tokens").select("access_token, refresh_token, expiry_date")
+        .eq("user_id", userId).single(),
     ])
+
     const taskLines: string[] = []
-    if (todayTasks?.length) {
-      taskLines.push(...todayTasks.map((t) => `• ${t.title} [due today, ${t.priority}]`))
-    }
-    if (noDueTasks?.length) {
-      taskLines.push(...noDueTasks.map((t) => `• ${t.title} [no due date, ${t.priority}]`))
-    }
-    if (taskLines.length) {
-      tasksContext = `\n\nTASKS TO DO:\n${taskLines.join("\n")}`
-    }
-    if (calEvents?.length) {
-      eventsContext = `\n\nCALENDAR EVENTS TODAY:\n${calEvents.map((e) => {
+    if (todayTasks?.length) taskLines.push(...todayTasks.map((t) => `• ${t.title} [due today, ${t.priority}]`))
+    if (noDueTasks?.length) taskLines.push(...noDueTasks.map((t) => `• ${t.title} [no due date, ${t.priority}]`))
+    if (taskLines.length) tasksContext = `\n\nTASKS TO DO:\n${taskLines.join("\n")}`
+
+    // Combine local + Google calendar events
+    const allEventLines: string[] = []
+
+    if (localEvents?.length) {
+      for (const e of localEvents) {
         const time = e.all_day ? "All day" : new Date(e.start_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" })
-        return `• ${e.title} at ${time}`
-      }).join("\n")}`
+        allEventLines.push(`• ${e.title} at ${time}`)
+      }
+    }
+
+    // Fetch Google Calendar events if connected
+    if (tokenRow) {
+      try {
+        const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET)
+        oauth2Client.setCredentials({ access_token: tokenRow.access_token, refresh_token: tokenRow.refresh_token, expiry_date: tokenRow.expiry_date })
+        const calendar = google.calendar({ version: "v3", auth: oauth2Client })
+        const { data: calList } = await calendar.calendarList.list({ minAccessRole: "reader" })
+        const timeMin = new Date(`${todayStr}T00:00:00-07:00`).toISOString()
+        const timeMax = new Date(`${todayStr}T23:59:59-07:00`).toISOString()
+        const googleEvents = await Promise.all(
+          (calList.items ?? []).map(async (cal) => {
+            try {
+              const { data } = await calendar.events.list({ calendarId: cal.id!, timeMin, timeMax, singleEvents: true, orderBy: "startTime", maxResults: 20 })
+              return data.items ?? []
+            } catch { return [] }
+          })
+        )
+        const seen = new Set<string>()
+        for (const e of googleEvents.flat()) {
+          if (!e.summary || seen.has(e.id ?? e.summary)) continue
+          seen.add(e.id ?? e.summary)
+          const isAllDay = !e.start?.dateTime
+          const time = isAllDay ? "All day" : new Date(e.start!.dateTime!).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" })
+          allEventLines.push(`• ${e.summary} at ${time}`)
+        }
+      } catch { /* Google fetch failed — continue without */ }
+    }
+
+    if (allEventLines.length) {
+      eventsContext = `\n\nCALENDAR EVENTS TODAY:\n${allEventLines.join("\n")}`
     }
   }
 
