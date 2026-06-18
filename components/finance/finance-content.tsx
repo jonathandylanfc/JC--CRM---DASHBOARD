@@ -295,6 +295,10 @@ export function FinanceContent({
   const [chartPage, setChartPage] = useState(0) // 0 = most recent window
   const [sortBy, setSortBy] = useState<"date_desc" | "date_asc" | "amount_desc" | "amount_asc">("date_desc")
 
+  // Month comparison
+  const [compareMode, setCompareMode] = useState(false)
+  const [compareOffset, setCompareOffset] = useState(-1) // default: previous month
+
   function changeRange(r: DateRange) {
     setDateRange(r)
     setMonthOffset(0)
@@ -339,6 +343,17 @@ export function FinanceContent({
       .reduce((s, tx) => s + Number(tx.amount), 0)
     return { filteredIncome: income, filteredExpenses: expenses, filteredNet: income - expenses }
   }, [accountTransactions, dateRange, monthOffset, selectedCategory])
+
+  const compareInfo = useMemo(() => getMonthBounds(compareOffset), [compareOffset])
+
+  const compareStats = useMemo(() => {
+    if (!compareMode || dateRange !== "this_month") return null
+    const { start, end } = getMonthBounds(compareOffset)
+    const filtered = accountTransactions.filter((tx) => tx.date >= start && tx.date <= end)
+    const income = filtered.filter((tx) => tx.type === "income").reduce((s, tx) => s + Number(tx.amount), 0)
+    const expenses = filtered.filter((tx) => tx.type === "expense").reduce((s, tx) => s + Number(tx.amount), 0)
+    return { income, expenses, net: income - expenses }
+  }, [compareMode, compareOffset, dateRange, accountTransactions])
 
   // Computes anchor balance + post-anchor net for a given set of transactions.
   function anchorBalance(txs: Transaction[]): number | null {
@@ -788,11 +803,132 @@ export function FinanceContent({
                   Next →
                 </button>
               )}
+              <button
+                onClick={() => {
+                  setCompareMode((v) => !v)
+                  setCompareOffset(monthOffset - 1)
+                }}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors border ${
+                  compareMode
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 border-border"
+                }`}
+              >
+                <ArrowLeftRight className="w-3 h-3" /> Compare
+              </button>
             </div>
           )}
         </div>
       </div>
       </div>
+
+      {/* Compare month picker */}
+      {compareMode && dateRange === "this_month" && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground font-medium">Compare to:</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCompareOffset((o) => o - 1)}
+              className="px-2.5 py-1 rounded-md bg-muted text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors border border-border"
+            >
+              ← Prev
+            </button>
+            <span className="px-3 py-1 rounded-md bg-muted/50 border border-border text-xs font-medium min-w-[110px] text-center">
+              {compareInfo.label}
+            </span>
+            <button
+              onClick={() => setCompareOffset((o) => Math.min(monthOffset - 1, o + 1))}
+              disabled={compareOffset >= monthOffset - 1}
+              className="px-2.5 py-1 rounded-md bg-muted text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors border border-border disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Month comparison card */}
+      {compareMode && compareStats && dateRange === "this_month" && (
+        <Card className="p-5">
+          <p className="text-sm font-semibold mb-4">Month Comparison</p>
+          <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-x-3 gap-y-3 items-center text-sm">
+            {/* Header row */}
+            <p className="font-medium text-center">{monthInfo.label}</p>
+            <div />
+            <p className="font-medium text-center text-muted-foreground">{compareInfo.label}</p>
+            <p className="font-medium text-center text-muted-foreground">Change</p>
+
+            {/* Income */}
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-0.5">Income</p>
+              <p className="font-semibold text-emerald-600 dark:text-emerald-400">{currency(filteredIncome)}</p>
+            </div>
+            <span className="text-muted-foreground text-xs text-center">vs</span>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-0.5">Income</p>
+              <p className="font-semibold text-muted-foreground">{currency(compareStats.income)}</p>
+            </div>
+            <div className="text-center">
+              {(() => {
+                const delta = filteredIncome - compareStats.income
+                const pct = compareStats.income !== 0 ? (delta / compareStats.income) * 100 : null
+                return (
+                  <p className={`text-xs font-medium ${delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                    {delta >= 0 ? "+" : ""}{currency(delta)}
+                    {pct !== null && <span className="block opacity-70">{delta >= 0 ? "+" : ""}{pct.toFixed(1)}%</span>}
+                  </p>
+                )
+              })()}
+            </div>
+
+            {/* Expenses */}
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-0.5">Expenses</p>
+              <p className="font-semibold text-rose-600 dark:text-rose-400">{currency(filteredExpenses)}</p>
+            </div>
+            <span className="text-muted-foreground text-xs text-center">vs</span>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-0.5">Expenses</p>
+              <p className="font-semibold text-muted-foreground">{currency(compareStats.expenses)}</p>
+            </div>
+            <div className="text-center">
+              {(() => {
+                const delta = filteredExpenses - compareStats.expenses
+                const pct = compareStats.expenses !== 0 ? (delta / compareStats.expenses) * 100 : null
+                return (
+                  <p className={`text-xs font-medium ${delta <= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                    {delta >= 0 ? "+" : ""}{currency(delta)}
+                    {pct !== null && <span className="block opacity-70">{delta >= 0 ? "+" : ""}{pct.toFixed(1)}%</span>}
+                  </p>
+                )
+              })()}
+            </div>
+
+            {/* Net */}
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-0.5">Net</p>
+              <p className={`font-semibold ${filteredNet >= 0 ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400"}`}>{currency(filteredNet)}</p>
+            </div>
+            <span className="text-muted-foreground text-xs text-center">vs</span>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-0.5">Net</p>
+              <p className="font-semibold text-muted-foreground">{currency(compareStats.net)}</p>
+            </div>
+            <div className="text-center">
+              {(() => {
+                const delta = filteredNet - compareStats.net
+                const pct = compareStats.net !== 0 ? (delta / Math.abs(compareStats.net)) * 100 : null
+                return (
+                  <p className={`text-xs font-medium ${delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                    {delta >= 0 ? "+" : ""}{currency(delta)}
+                    {pct !== null && <span className="block opacity-70">{delta >= 0 ? "+" : ""}{pct.toFixed(1)}%</span>}
+                  </p>
+                )
+              })()}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
