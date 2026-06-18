@@ -180,7 +180,13 @@ export function CalendarContent() {
         let successCount = 0
         for (const shift of toAdd) {
           try {
-            await handleAddToIcloud(calendarUrl, shift)
+            const startUtc = shift.start_time ? new Date(`${shift.date}T${shift.start_time}:00`).toISOString() : undefined
+            const endUtc = shift.end_time
+              ? new Date(`${shift.date}T${shift.end_time}:00`).toISOString()
+              : startUtc
+                ? new Date(new Date(startUtc).getTime() + 2 * 3600000).toISOString()
+                : undefined
+            await handleAddToIcloud(calendarUrl, { ...shift, startUtc, endUtc })
             successCount++
           } catch (err) {
             toast.error(`Failed to add "${shift.title}" to iCloud: ${err instanceof Error ? err.message : "Unknown error"}`)
