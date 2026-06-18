@@ -8,13 +8,16 @@ export async function GET(req: NextRequest) {
 
   const { data: investments } = await supabase
     .from("investments")
-    .select("symbol, shares, avg_cost, current_price")
+    .select("symbol, shares, avg_cost, current_price, asset_type")
     .eq("user_id", user.id)
 
   if (!investments?.length) return NextResponse.json({ history: [] })
 
   const rangeParam = req.nextUrl.searchParams.get("range") ?? "1w"
-  const symbols = investments.map((i) => i.symbol.toUpperCase())
+  // Exclude mutual funds from market data lookups — use current_price/avg_cost directly
+  const symbols = investments
+    .filter((i) => i.asset_type !== "mutual fund")
+    .map((i) => i.symbol.toUpperCase())
 
   // ── 1D: intraday snapshots only ─────────────────────────────────────────────
   if (rangeParam === "1d") {

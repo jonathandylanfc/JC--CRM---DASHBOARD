@@ -104,13 +104,16 @@ export async function refreshPrices() {
 
   const { data: investments } = await supabase
     .from("investments")
-    .select("id, symbol")
+    .select("id, symbol, asset_type")
     .eq("user_id", user.id)
 
   if (!investments?.length) return { updated: 0 }
 
+  // Skip mutual funds — their NAV isn't reliably available via market data APIs
+  const refreshable = investments.filter((i) => i.asset_type !== "mutual fund")
+
   // Batch all symbols into a single Yahoo Finance request
-  const symbols = investments.map((i) => i.symbol).join(",")
+  const symbols = refreshable.map((i) => i.symbol).join(",")
   const priceMap = new Map<string, number>()
 
   try {
@@ -141,7 +144,7 @@ export async function refreshPrices() {
   }
 
   // If batch failed, fall back to individual fetches for missing symbols
-  const missing = investments.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
+  const missing = refreshable.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
   await Promise.allSettled(
     missing.map(async (inv) => {
       try {
@@ -164,7 +167,7 @@ export async function refreshPrices() {
   )
 
   // If still missing prices, try Stooq as final fallback
-  const stillMissing = investments.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
+  const stillMissing = refreshable.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
   await Promise.allSettled(
     stillMissing.map(async (inv) => {
       try {
@@ -186,7 +189,7 @@ export async function refreshPrices() {
   const snapshotRows: { user_id: string; symbol: string; price: number; snapshot_date: string }[] = []
 
   await Promise.allSettled(
-    investments.map(async (inv) => {
+    refreshable.map(async (inv) => {
       const price = priceMap.get(inv.symbol.toUpperCase())
       if (!price) return
       const { error } = await supabase

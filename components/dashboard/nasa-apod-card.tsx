@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Card } from "@/components/ui/card"
-import { ExternalLink, ChevronDown, ChevronUp } from "lucide-react"
+import { ExternalLink, ChevronDown, ChevronUp, X } from "lucide-react"
 
 interface ApodData {
   title: string
@@ -16,8 +16,9 @@ interface ApodData {
 
 export function NasaApodCard({ apod }: { apod: ApodData | null }) {
   const [expanded, setExpanded] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
 
-  if (!apod) return null
+  if (!apod || dismissed) return null
 
   const shortExplanation = apod.explanation.slice(0, 300)
   const isLong = apod.explanation.length > 300
@@ -46,17 +47,26 @@ export function NasaApodCard({ apod }: { apod: ApodData | null }) {
               <p className="text-xs text-muted-foreground mt-0.5">© {apod.copyright.trim()}</p>
             )}
           </div>
-          {apod.media_type === "image" && (
-            <a
-              href={apod.hdurl ?? apod.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-muted-foreground hover:text-foreground transition-colors shrink-0 mt-1"
-              title="View full resolution"
+          <div className="flex items-center gap-2 shrink-0 mt-1">
+            {apod.media_type === "image" && (
+              <a
+                href={apod.hdurl ?? apod.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                title="View full resolution"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            )}
+            <button
+              onClick={() => setDismissed(true)}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Dismiss"
             >
-              <ExternalLink className="w-4 h-4" />
-            </a>
-          )}
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
           {expanded ? apod.explanation : shortExplanation}

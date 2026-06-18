@@ -5,16 +5,16 @@ import { TrendingUp, TrendingDown, Minus, RefreshCw } from "lucide-react"
 
 interface Quote {
   symbol: string
-  shortName: string
-  regularMarketPrice: number
-  regularMarketChange: number
-  regularMarketChangePercent: number
-  preMarketPrice?: number
-  preMarketChange?: number
-  preMarketChangePercent?: number
-  postMarketPrice?: number
-  postMarketChange?: number
-  postMarketChangePercent?: number
+  shortName?: string
+  regularMarketPrice?: number | null
+  regularMarketChange?: number | null
+  regularMarketChangePercent?: number | null
+  preMarketPrice?: number | null
+  preMarketChange?: number | null
+  preMarketChangePercent?: number | null
+  postMarketPrice?: number | null
+  postMarketChange?: number | null
+  postMarketChangePercent?: number | null
   marketState?: string
 }
 
@@ -27,16 +27,19 @@ const INDEX_LABELS: Record<string, string> = {
   "BTC-USD": "Bitcoin",
 }
 
-function fmt(n: number, isBig: boolean) {
-  if (isBig) return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n)
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function fmt(n: number | null | undefined, isBig: boolean) {
+  const val = n ?? 0
+  if (isBig) return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(val)
+  return val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function fmtPct(n: number) {
+function fmtPct(n: number | null | undefined) {
+  if (n == null || isNaN(n)) return "0.00%"
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`
 }
 
-function fmtChange(n: number) {
+function fmtChange(n: number | null | undefined) {
+  if (n == null || isNaN(n)) return "0.00"
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}`
 }
 
@@ -72,7 +75,10 @@ export function MarketPulse({ holdingSymbols = [] }: Props) {
 
   const indexSymbols = ["^GSPC", "^DJI", "^IXIC", "^RUT", "^VIX", "BTC-USD"]
   const indices = quotes.filter((q) => indexSymbols.includes(q.symbol))
-  const holdings = quotes.filter((q) => !indexSymbols.includes(q.symbol))
+  const holdings = quotes.filter(
+    (q) => !indexSymbols.includes(q.symbol) &&
+      q.regularMarketPrice != null && !isNaN(q.regularMarketPrice) && q.regularMarketPrice > 0
+  )
 
   if (loading) {
     return (
@@ -113,7 +119,7 @@ export function MarketPulse({ holdingSymbols = [] }: Props) {
       {/* Major indices */}
       <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
         {indices.map((q) => {
-          const pct = q.regularMarketChangePercent
+          const pct = q.regularMarketChangePercent ?? 0
           const isUp = pct >= 0
           const isFlat = Math.abs(pct) < 0.05
           const isBig = q.symbol === "BTC-USD"
@@ -160,14 +166,14 @@ export function MarketPulse({ holdingSymbols = [] }: Props) {
         <div className="overflow-x-auto">
           <div className="flex gap-2 pb-1">
             {holdings.map((q) => {
-              const pct = q.regularMarketChangePercent
+              const pct = q.regularMarketChangePercent ?? 0
               const isUp = pct >= 0
               const color = isUp ? "text-emerald-500" : "text-rose-500"
               return (
                 <div key={q.symbol} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shrink-0">
                   <div>
                     <p className="text-xs font-semibold text-foreground">{q.symbol}</p>
-                    <p className="text-[10px] text-muted-foreground">${q.regularMarketPrice.toFixed(2)}</p>
+                    <p className="text-[10px] text-muted-foreground">${(q.regularMarketPrice ?? 0).toFixed(2)}</p>
                   </div>
                   <span className={`text-xs font-semibold tabular-nums ${color}`}>{fmtPct(pct)}</span>
                 </div>
