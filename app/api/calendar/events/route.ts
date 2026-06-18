@@ -39,11 +39,13 @@ export async function GET() {
 
     oauth2Client.on("tokens", async (newTokens) => {
       if (newTokens.access_token) {
-        await supabase.from("calendar_tokens").update({
+        const updates: Record<string, unknown> = {
           access_token: newTokens.access_token,
           expiry_date: newTokens.expiry_date ?? Date.now() + 3600 * 1000,
           updated_at: new Date().toISOString(),
-        }).eq("user_id", user.id)
+        }
+        if (newTokens.refresh_token) updates.refresh_token = newTokens.refresh_token
+        await supabase.from("calendar_tokens").update(updates).eq("user_id", user.id)
       }
     })
 
