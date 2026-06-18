@@ -51,13 +51,42 @@ export async function POST(req: NextRequest) {
   const formData = await req.formData()
   const file = formData.get("image") as File | null
   if (!file) return NextResponse.json({ error: "No image provided" }, { status: 400 })
+  const scheduleType = (formData.get("type") as string) || "work"
+  const userTimezone = (formData.get("timezone") as string) || "America/Los_Angeles"
 
   const bytes = await file.arrayBuffer()
   const base64 = Buffer.from(bytes).toString("base64")
   const mediaType = (file.type || "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp"
 
   const today = format(new Date(), "yyyy-MM-dd")
-  const prompt = `You are parsing a work schedule screenshot. Today is ${today}.
+
+  const prompt = scheduleType === "sports"
+    ? `You are parsing a sports game schedule screenshot (e.g. World Cup, soccer, football, basketball, etc.). Today is ${today}. The user is in timezone: ${userTimezone}.
+
+Extract ALL games/matches visible in this image. Return ONLY valid JSON in this exact format:
+
+{
+  "events": [
+    {
+      "title": "Team A vs Team B",
+      "date": "YYYY-MM-DD",
+      "start_time": "HH:MM",
+      "end_time": "HH:MM",
+      "notes": "Venue, City — Group/Round info if visible"
+    }
+  ]
+}
+
+Rules:
+- title: Use "Team A vs Team B" format exactly as shown. If teams aren't named yet (e.g. "TBD"), use the group/match label like "Group A - Match 1"
+- date: Use the exact date shown. If the year is not shown and this looks like a 2026 World Cup schedule, assume year 2026. Convert to YYYY-MM-DD
+- start_time: Kick-off / game start time in 24-hour HH:MM. If a timezone abbreviation is shown (ET, PT, CT, MT, GMT, etc.), convert to the user's timezone (${userTimezone}) before outputting. If no timezone shown, use the time as-is
+- end_time: Omit end_time (soccer/football games don't have fixed end times)
+- notes: Include stadium/venue, city, group name, match number, or any other context visible in the image
+- Include EVERY game visible — do not skip any
+- Return empty events array if no games found
+- Do not include any text outside the JSON`
+    : `You are parsing a work schedule screenshot. Today is ${today}.
 
 Extract all work shifts from this schedule image. Return ONLY valid JSON in this exact format:
 
@@ -86,7 +115,7 @@ Rules:
   try {
     const message = await anthropic.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 1024,
+      max_tokens: scheduleType === "sports" ? 2048 : 1024,
       messages: [
         {
           role: "user",

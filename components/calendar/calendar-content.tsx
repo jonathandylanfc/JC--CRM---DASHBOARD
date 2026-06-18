@@ -136,6 +136,7 @@ export function CalendarContent() {
 
   // Schedule upload
   const [scheduleUploadOpen, setScheduleUploadOpen] = useState(false)
+  const [scheduleType, setScheduleType] = useState<"work" | "sports">("work")
   const [scheduleImage, setScheduleImage] = useState<File | null>(null)
   const [schedulePreview, setSchedulePreview] = useState<string | null>(null)
   const [parsedShifts, setParsedShifts] = useState<Array<{
@@ -152,7 +153,7 @@ export function CalendarContent() {
     setSchedulePreview(URL.createObjectURL(file))
     setParsedShifts([])
     setParseError(null)
-    setShiftEventTitle("Work")
+    if (scheduleType === "work") setShiftEventTitle("Work")
   }
 
   async function handleParseSchedule() {
@@ -162,10 +163,12 @@ export function CalendarContent() {
     try {
       const fd = new FormData()
       fd.append("image", scheduleImage)
+      fd.append("type", scheduleType)
+      fd.append("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone)
       const res = await fetch("/api/calendar/parse-schedule", { method: "POST", body: fd })
       const data = await res.json()
       if (data.error) { setParseError(data.error); return }
-      if (!data.events?.length) { setParseError("No shifts found in this image. Try a clearer screenshot."); return }
+      if (!data.events?.length) { setParseError(scheduleType === "sports" ? "No games found in this image. Try a clearer screenshot." : "No shifts found in this image. Try a clearer screenshot."); return }
       setParsedShifts(data.events.map((e: { title: string; date: string; start_time?: string; end_time?: string; notes?: string }) => ({ ...e, selected: true })))
       // Auto-select primary Google Calendar if connected
       const primary = calendarSources.find((c) => c.source === "google" && c.name === "JC")
@@ -741,7 +744,7 @@ export function CalendarContent() {
           <Button size="sm" className="gap-1.5 text-xs h-8" onClick={() => { setEvDate(format(selectedDay, "yyyy-MM-dd")); setAddEventOpen(true) }}>
             <Plus className="w-3.5 h-3.5" /> Add Event
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" onClick={() => { setScheduleUploadOpen(true); setScheduleImage(null); setSchedulePreview(null); setParsedShifts([]); setParseError(null) }}>
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" onClick={() => { setScheduleUploadOpen(true); setScheduleType("work"); setScheduleImage(null); setSchedulePreview(null); setParsedShifts([]); setParseError(null) }}>
             <Upload className="w-3.5 h-3.5" /> Upload Schedule
           </Button>
           <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" onClick={() => setAddCalOpen(true)}>
@@ -1265,10 +1268,26 @@ export function CalendarContent() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Upload className="w-4 h-4" /> Import Work Schedule
+              <Upload className="w-4 h-4" />
+              {scheduleType === "sports" ? "Import Game Schedule" : "Import Work Schedule"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-1">
+            {/* Type toggle */}
+            <div className="flex gap-1 p-1 bg-muted rounded-lg">
+              <button
+                onClick={() => { setScheduleType("work"); setParsedShifts([]); setParseError(null); setShiftEventTitle("Work") }}
+                className={`flex-1 text-sm py-1.5 rounded-md transition-all ${scheduleType === "work" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                💼 Work Schedule
+              </button>
+              <button
+                onClick={() => { setScheduleType("sports"); setParsedShifts([]); setParseError(null); setShiftEventTitle("") }}
+                className={`flex-1 text-sm py-1.5 rounded-md transition-all ${scheduleType === "sports" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                ⚽ Sports / Games
+              </button>
+            </div>
             {/* Drop zone */}
             {!schedulePreview ? (
               <label
@@ -1278,7 +1297,9 @@ export function CalendarContent() {
               >
                 <Upload className="w-8 h-8 text-muted-foreground/50" />
                 <div className="text-center">
-                  <p className="text-sm font-medium">Drop your schedule screenshot here</p>
+                  <p className="text-sm font-medium">
+                    {scheduleType === "sports" ? "Drop your game schedule screenshot here" : "Drop your schedule screenshot here"}
+                  </p>
                   <p className="text-xs text-muted-foreground mt-1">or click to browse · PNG, JPG, HEIC</p>
                 </div>
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleScheduleFile(f) }} />
@@ -1298,14 +1319,15 @@ export function CalendarContent() {
 
                 {parsedShifts.length === 0 && !parsing && (
                   <Button className="w-full gap-2" onClick={handleParseSchedule}>
-                    <Upload className="w-4 h-4" /> Parse Schedule with AI
+                    <Upload className="w-4 h-4" />
+                    {scheduleType === "sports" ? "Parse Games with AI" : "Parse Schedule with AI"}
                   </Button>
                 )}
 
                 {parsing && (
                   <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Reading your schedule…
+                    {scheduleType === "sports" ? "Reading game schedule…" : "Reading your schedule…"}
                   </div>
                 )}
 
@@ -1315,18 +1337,22 @@ export function CalendarContent() {
 
                 {parsedShifts.length > 0 && (
                   <div className="space-y-2">
-                    {/* Event title override */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-muted-foreground">Event title</label>
-                      <Input
-                        value={shiftEventTitle}
-                        onChange={(e) => setShiftEventTitle(e.target.value)}
-                        placeholder="e.g. Work, Shift, Apple Store…"
-                        className="h-8 text-sm"
-                      />
-                    </div>
+                    {/* Event title override — hidden for sports since each game has its own title */}
+                    {scheduleType === "work" && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-muted-foreground">Event title</label>
+                        <Input
+                          value={shiftEventTitle}
+                          onChange={(e) => setShiftEventTitle(e.target.value)}
+                          placeholder="e.g. Work, Shift, Apple Store…"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium">Found {parsedShifts.length} shift{parsedShifts.length !== 1 ? "s" : ""}</p>
+                      <p className="text-sm font-medium">
+                        Found {parsedShifts.length} {scheduleType === "sports" ? `game${parsedShifts.length !== 1 ? "s" : ""}` : `shift${parsedShifts.length !== 1 ? "s" : ""}`}
+                      </p>
                       <button
                         onClick={() => setParsedShifts((prev) => prev.map((s) => ({ ...s, selected: !prev.every((x) => x.selected) })))}
                         className="text-xs text-primary underline underline-offset-2"
@@ -1412,7 +1438,11 @@ export function CalendarContent() {
                       disabled={addingShifts || parsedShifts.every((s) => !s.selected)}
                     >
                       {addingShifts ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                      {addingShifts ? "Adding…" : `Add ${parsedShifts.filter((s) => s.selected).length} Shift${parsedShifts.filter((s) => s.selected).length !== 1 ? "s" : ""} to Calendar`}
+                      {addingShifts
+                        ? "Adding…"
+                        : scheduleType === "sports"
+                          ? `Add ${parsedShifts.filter((s) => s.selected).length} Game${parsedShifts.filter((s) => s.selected).length !== 1 ? "s" : ""} to Calendar`
+                          : `Add ${parsedShifts.filter((s) => s.selected).length} Shift${parsedShifts.filter((s) => s.selected).length !== 1 ? "s" : ""} to Calendar`}
                     </Button>
                   </div>
                 )}
