@@ -20,6 +20,17 @@ import {
   getUpcomingCalendarEvents,
 } from "@/lib/data"
 
+async function getShowNasaApod() {
+  try {
+    const { createClient } = await import("@/lib/supabase/server")
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return true
+    const { data } = await supabase.from("profiles").select("show_nasa_apod").eq("id", user.id).single()
+    return data?.show_nasa_apod ?? true
+  } catch { return true }
+}
+
 async function fetchNasaApod() {
   try {
     const key = process.env.NASA_API_KEY ?? "DEMO_KEY"
@@ -49,6 +60,7 @@ export default async function DashboardPage() {
     latestBriefing,
     upcomingEvents,
     apod,
+    showNasaApod,
   ] = await Promise.all([
     getTaskStats(),
     getRecentTasks(),
@@ -64,6 +76,7 @@ export default async function DashboardPage() {
     getLatestBriefing(),
     getUpcomingCalendarEvents(),
     fetchNasaApod(),
+    getShowNasaApod(),
   ])
 
   return (
@@ -84,7 +97,7 @@ export default async function DashboardPage() {
             <MorningBriefingCard briefing={latestBriefing} />
             <UpcomingEventsCard events={upcomingEvents} />
 
-            <NasaApodCard apod={apod} />
+            {showNasaApod && <NasaApodCard apod={apod} />}
 
             <DashboardSections
               taskStats={taskStats}

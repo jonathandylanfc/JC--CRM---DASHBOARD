@@ -4,16 +4,19 @@ import { SettingsContent } from "@/components/settings/settings-content"
 import { getUserProfile } from "@/lib/data"
 import { createClient } from "@/lib/supabase/server"
 
-async function getShowInvestments() {
+async function getProfileToggles() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return true
-  const { data } = await supabase.from("profiles").select("show_investments").eq("id", user.id).single()
-  return data?.show_investments ?? true
+  if (!user) return { showInvestments: true, showNasaApod: true }
+  const { data } = await supabase.from("profiles").select("show_investments, show_nasa_apod").eq("id", user.id).single()
+  return {
+    showInvestments: data?.show_investments ?? true,
+    showNasaApod: data?.show_nasa_apod ?? true,
+  }
 }
 
 export default async function SettingsPage() {
-  const [user, showInvestments] = await Promise.all([getUserProfile(), getShowInvestments()])
+  const [user, toggles] = await Promise.all([getUserProfile(), getProfileToggles()])
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -29,7 +32,8 @@ export default async function SettingsPage() {
             initialName={user?.name ?? ""}
             initialEmail={user?.email ?? ""}
             initialAvatarUrl={user?.avatar_url ?? null}
-            initialShowInvestments={showInvestments}
+            initialShowInvestments={toggles.showInvestments}
+            initialShowNasaApod={toggles.showNasaApod}
           />
         </div>
       </main>
