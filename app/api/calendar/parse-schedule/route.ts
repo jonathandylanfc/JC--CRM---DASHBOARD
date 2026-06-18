@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
   const today = format(new Date(), "yyyy-MM-dd")
 
   const prompt = scheduleType === "sports"
-    ? `You are parsing a sports game schedule screenshot (e.g. World Cup, soccer, football, basketball, etc.). Today is ${today}. The user is in timezone: ${userTimezone}.
+    ? `You are parsing a sports game schedule screenshot (e.g. World Cup, soccer, football, basketball, etc.). Today is ${today}. Tomorrow is ${format(addDays(new Date(), 1), "yyyy-MM-dd")}. The user's local timezone is: ${userTimezone}.
 
 Extract ALL games/matches visible in this image. Return ONLY valid JSON in this exact format:
 
@@ -71,21 +71,20 @@ Extract ALL games/matches visible in this image. Return ONLY valid JSON in this 
       "title": "Team A vs Team B",
       "date": "YYYY-MM-DD",
       "start_time": "HH:MM",
-      "end_time": "HH:MM",
-      "notes": "Venue, City — Group/Round info if visible"
+      "notes": "Group A · Venue, City"
     }
   ]
 }
 
 Rules:
-- title: Use "Team A vs Team B" format exactly as shown. If teams aren't named yet (e.g. "TBD"), use the group/match label like "Group A - Match 1"
-- date: Use the exact date shown. If the year is not shown and this looks like a 2026 World Cup schedule, assume year 2026. Convert to YYYY-MM-DD
-- start_time: Kick-off / game start time in 24-hour HH:MM. If a timezone abbreviation is shown (ET, PT, CT, MT, GMT, etc.), convert to the user's timezone (${userTimezone}) before outputting. If no timezone shown, use the time as-is
-- end_time: Omit end_time (soccer/football games don't have fixed end times)
-- notes: Include stadium/venue, city, group name, match number, or any other context visible in the image
-- Include EVERY game visible — do not skip any
+- title: "Team A vs Team B" exactly as shown. If teams are TBD use the match label (e.g. "Group A - Match 1")
+- date: Resolve relative labels — "Today" = ${today}, "Tomorrow" = ${format(addDays(new Date(), 1), "yyyy-MM-dd")}. For named dates like "Fri, Jun 19" assume year 2026 if not shown. Output YYYY-MM-DD
+- start_time: Kick-off time in 24-hour HH:MM. Check for a timezone label (ET, PT, CT, MT, BST, GMT, etc.) anywhere in the image — it often appears in a column header rather than next to each game. If you see ET (Eastern Time), convert to ${userTimezone} (e.g. ET 9:00 AM → subtract 3 hours for PT = 06:00). If you see PT times and the user is in ${userTimezone} = America/Los_Angeles, keep as-is. If no timezone is identifiable, keep times exactly as shown
+- Do NOT include end_time — omit that field entirely
+- notes: Include group name (e.g. "Group A"), round/stage, venue, or stadium if visible. Format: "Group A · Venue Name, City"
+- Include EVERY game visible — do not skip any match
 - Return empty events array if no games found
-- Do not include any text outside the JSON`
+- Return ONLY the JSON object, no other text`
     : `You are parsing a work schedule screenshot. Today is ${today}.
 
 Extract all work shifts from this schedule image. Return ONLY valid JSON in this exact format:
