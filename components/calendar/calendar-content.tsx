@@ -23,7 +23,6 @@ import {
   Loader2,
   Plus,
   Trash2,
-  DollarSign,
   Settings,
   Upload,
   Check,
@@ -121,18 +120,6 @@ export function CalendarContent() {
   const [connectingIcloud, setConnectingIcloud] = useState(false)
   const [icloudError, setIcloudError] = useState<string | null>(null)
 
-  // Finance events (payday)
-  const [paydayDay, setPaydayDay] = useState<number | null>(null)
-  const [paydayType, setPaydayType] = useState<"monthly" | "biweekly">("monthly")
-  const [paydayStartDate, setPaydayStartDate] = useState<string | null>(null)
-  const [paydayEvents, setPaydayEvents] = useState<Array<{ date: string }>>([])
-  const [showPayday, setShowPayday] = useState(true)
-  const [paydayDialogOpen, setPaydayDialogOpen] = useState(false)
-  const [paydayInput, setPaydayInput] = useState("")
-  const [paydayTypeInput, setPaydayTypeInput] = useState<"monthly" | "biweekly">("monthly")
-  const [paydayStartInput, setPaydayStartInput] = useState("")
-  const [paydayCalendarId, setPaydayCalendarId] = useState<string>("none")
-  const [savingPayday, setSavingPayday] = useState(false)
 
   // Schedule upload
   const [scheduleUploadOpen, setScheduleUploadOpen] = useState(false)
@@ -379,12 +366,6 @@ export function CalendarContent() {
       setIcloudCalendars(caldavData.calendars ?? [])
       const caldavEvents: CalEvent[] = caldavData.events ?? []
 
-      // Finance events
-      setPaydayDay(finData.paydayDay ?? null)
-      setPaydayType(finData.paydayType ?? "monthly")
-      setPaydayStartDate(finData.paydayStartDate ?? null)
-      setPaydayEvents(finData.paydayEvents ?? [])
-
       // Always load local + ICS events regardless of Google connection
       const icsEvents: CalEvent[] = icsData.events ?? []
       const icsSubsList: IcsSub[] = icsData.subscriptions ?? []
@@ -610,82 +591,7 @@ export function CalendarContent() {
     const dayStr = format(day, "yyyy-MM-dd")
     const dayEvts = visibleEvents.filter((e) => e.start && isSameDay(parseISO(e.start), day))
     const colors = [...new Set(dayEvts.map((e) => e.color ?? "#4285f4"))]
-    if (showPayday && paydayEvents.some((p) => p.date === dayStr)) colors.push("#10b981")
     return colors.slice(0, 4)
-  }
-
-  async function handleSavePayday() {
-    if (paydayTypeInput === "monthly") {
-      if (!paydayInput) return
-      const day = parseInt(paydayInput)
-      if (isNaN(day) || day < 1 || day > 31) return
-    } else {
-      if (!paydayStartInput) return
-    }
-    setSavingPayday(true)
-    try {
-      await fetch("/api/calendar/finance-events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          payday_type: paydayTypeInput,
-          payday_day: paydayTypeInput === "monthly" ? parseInt(paydayInput) : null,
-          payday_start_date: paydayTypeInput === "biweekly" ? paydayStartInput : null,
-        }),
-      })
-
-      // Push payday events to chosen external calendar
-      if (paydayCalendarId !== "none") {
-        // Build upcoming payday dates (next 3 months)
-        const upcoming: string[] = []
-        const today = new Date(); today.setHours(0,0,0,0)
-        if (paydayTypeInput === "biweekly" && paydayStartInput) {
-          let cursor = new Date(paydayStartInput + "T12:00:00")
-          while (cursor > today) cursor = new Date(cursor.getTime() - 14 * 86400000)
-          const end = new Date(today); end.setMonth(end.getMonth() + 3)
-          while (cursor <= end) {
-            if (cursor >= today) upcoming.push(cursor.toISOString().slice(0, 10))
-            cursor = new Date(cursor.getTime() + 14 * 86400000)
-          }
-        } else if (paydayTypeInput === "monthly" && paydayInput) {
-          const day = parseInt(paydayInput)
-          for (let i = 0; i < 3; i++) {
-            const d = new Date(today.getFullYear(), today.getMonth() + i, Math.min(day, new Date(today.getFullYear(), today.getMonth() + i + 1, 0).getDate()))
-            upcoming.push(d.toISOString().slice(0, 10))
-          }
-        }
-
-        const shifts = upcoming.map((date) => ({ title: "💵 Payday", date, notes: "Added by JDpro" }))
-
-        if (paydayCalendarId.startsWith("icloud:")) {
-          const calendarUrl = paydayCalendarId.replace("icloud:", "")
-          for (const shift of shifts) {
-            await fetch("/api/calendar/caldav", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "add-event", calendarUrl, title: shift.title, date: shift.date, notes: shift.notes }),
-            })
-          }
-          toast.success(`Payday saved & ${shifts.length} dates added to iCloud!`)
-        } else {
-          const res = await fetch("/api/calendar/add-shifts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ shifts, calendarId: paydayCalendarId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
-          })
-          const data = await res.json()
-          const count = data.created?.length ?? 0
-          toast.success(`Payday saved & ${count} dates added to Google Calendar!`)
-        }
-      } else {
-        toast.success("Payday saved!")
-      }
-
-      setPaydayDialogOpen(false)
-      fetchAll(true)
-    } finally {
-      setSavingPayday(false)
-    }
   }
 
   const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -833,129 +739,6 @@ export function CalendarContent() {
         </div>
       )}
 
-      {/* Finance calendar toggles */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-muted-foreground mr-1">Finance:</span>
-        <button
-          onClick={() => setShowPayday((v) => !v)}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all ${
-            showPayday ? "border-emerald-400/60 bg-emerald-400/10 text-foreground" : "border-border text-muted-foreground opacity-50"
-          }`}
-        >
-          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" style={{ opacity: showPayday ? 1 : 0.4 }} />
-          <span className={showPayday ? "" : "line-through"}>Payday</span>
-        </button>
-        <button
-          onClick={() => {
-            setPaydayTypeInput(paydayType)
-            setPaydayInput(paydayDay ? String(paydayDay) : "")
-            setPaydayStartInput(paydayStartDate ?? "")
-            setPaydayCalendarId("none")
-            setPaydayDialogOpen(true)
-          }}
-          className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all"
-        >
-          <Settings className="w-3 h-3" />
-          {paydayType === "biweekly" && paydayStartDate
-            ? "Payday: Every 2 weeks"
-            : paydayDay
-            ? `Payday: ${paydayDay}${["st","nd","rd"][((paydayDay % 10)-1)] ?? "th"}`
-            : "Set Payday"}
-        </button>
-      </div>
-
-      {/* Payday dialog */}
-      <Dialog open={paydayDialogOpen} onOpenChange={(o) => { if (!o) setPaydayDialogOpen(false) }}>
-        <DialogContent className="sm:max-w-xs">
-          <DialogHeader>
-            <DialogTitle>Set Payday</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            {/* Frequency toggle */}
-            <div className="flex gap-1 p-1 bg-muted rounded-lg">
-              <button
-                onClick={() => setPaydayTypeInput("monthly")}
-                className={`flex-1 text-sm py-1.5 rounded-md transition-all ${paydayTypeInput === "monthly" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setPaydayTypeInput("biweekly")}
-                className={`flex-1 text-sm py-1.5 rounded-md transition-all ${paydayTypeInput === "biweekly" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                Every 2 weeks
-              </button>
-            </div>
-
-            {paydayTypeInput === "monthly" ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="payday-day">Day of month (1–31)</Label>
-                <Input id="payday-day" type="number" min="1" max="31" placeholder="e.g. 15" value={paydayInput} onChange={(e) => setPaydayInput(e.target.value)} autoFocus />
-                <p className="text-xs text-muted-foreground">Payday appears on this day every month.</p>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <Label htmlFor="payday-start">Most recent payday date</Label>
-                <Input id="payday-start" type="date" value={paydayStartInput} onChange={(e) => setPaydayStartInput(e.target.value)} />
-                <p className="text-xs text-muted-foreground">Pick your last payday — the app will calculate every 2 weeks from there.</p>
-              </div>
-            )}
-
-            {/* Calendar destination */}
-            {(calendarSources.some((c) => c.source === "google") || icloudCalendars.length > 0) && (
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Also add to calendar (optional)</Label>
-                <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
-                  <button
-                    onClick={() => setPaydayCalendarId("none")}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm text-left transition-all ${paydayCalendarId === "none" ? "border-primary bg-primary/5 font-medium" : "border-border hover:border-primary/40"}`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-muted-foreground shrink-0" />
-                    <span className="flex-1">Don&apos;t add to external calendar</span>
-                    {paydayCalendarId === "none" && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-                  </button>
-                  {calendarSources.filter((c) => c.source === "google").map((cal) => (
-                    <button
-                      key={cal.id}
-                      onClick={() => setPaydayCalendarId(cal.id ?? "primary")}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm text-left transition-all ${paydayCalendarId === cal.id ? "border-primary bg-primary/5 font-medium" : "border-border hover:border-primary/40"}`}
-                    >
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cal.color }} />
-                      <span className="flex-1 truncate">{cal.name}</span>
-                      <span className="text-[10px] text-muted-foreground">Google</span>
-                      {paydayCalendarId === cal.id && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-                    </button>
-                  ))}
-                  {icloudCalendars.map((cal) => (
-                    <button
-                      key={cal.url}
-                      onClick={() => setPaydayCalendarId(`icloud:${cal.url}`)}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm text-left transition-all ${paydayCalendarId === `icloud:${cal.url}` ? "border-primary bg-primary/5 font-medium" : "border-border hover:border-primary/40"}`}
-                    >
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cal.color }} />
-                      <span className="flex-1 truncate">{cal.displayName}</span>
-                      <span className="text-[10px] text-muted-foreground">iCloud</span>
-                      {paydayCalendarId === `icloud:${cal.url}` && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setPaydayDialogOpen(false)}>Cancel</Button>
-              <Button
-                className="flex-1"
-                onClick={handleSavePayday}
-                disabled={savingPayday || (paydayTypeInput === "monthly" ? !paydayInput : !paydayStartInput)}
-              >
-                {savingPayday ? "Saving…" : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Main grid + day panel */}
       <div className="space-y-6">
           {/* Calendar grid */}
@@ -1007,10 +790,7 @@ export function CalendarContent() {
             </div>
             {(() => {
               const dayStr = format(selectedDay, "yyyy-MM-dd")
-              const paydayAlreadyInEvents = dayEvents.some((e) => e.title?.toLowerCase().includes("payday"))
-              const isPayday = showPayday && paydayEvents.some((p) => p.date === dayStr) && !paydayAlreadyInEvents
-              const hasExtra = isPayday
-              if (dayEvents.length === 0 && !hasExtra) return (
+              if (dayEvents.length === 0) return (
                 <div className="flex flex-col items-center justify-center text-center gap-2 py-8">
                   <CalendarDays className="w-8 h-8 text-muted-foreground/40" />
                   <p className="text-sm text-muted-foreground">No events this day</p>
@@ -1018,12 +798,6 @@ export function CalendarContent() {
               )
               return (
                 <div className="space-y-2">
-                  {isPayday && (
-                    <div className="flex gap-3 items-center p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
-                      <DollarSign className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">💵 Payday!</p>
-                    </div>
-                  )}
                   {dayEvents.map((e, i) => (
                     <div key={e.id ?? i} className="flex gap-3 items-start p-3 rounded-lg border border-border hover:border-primary/30 transition-colors">
                       <div className="w-1 rounded-full self-stretch shrink-0 mt-0.5" style={{ backgroundColor: e.color ?? "#4285f4" }} />
@@ -1082,12 +856,7 @@ export function CalendarContent() {
           .filter((e) => e.start && parseISO(e.start) >= now)
           .map((e) => ({ type: "event" as const, title: e.title, date: e.start!, color: e.color ?? "#4285f4", allDay: e.allDay }))
 
-        const paydayUpcoming = showPayday ? paydayEvents
-          .filter((p) => p.date >= format(now, "yyyy-MM-dd"))
-          .map((p) => ({ type: "payday" as const, title: "💵 Payday", date: p.date + "T12:00:00", color: "#10b981", allDay: true }))
-          : []
-
-        const all = [...calUpcoming, ...paydayUpcoming]
+        const all = [...calUpcoming]
           .sort((a, b) => a.date.localeCompare(b.date))
           .slice(0, 8)
 
