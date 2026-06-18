@@ -166,7 +166,8 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setGoalContribEnabled(!!g.monthly_contribution_type)
     setGoalContribType(g.monthly_contribution_type ?? "fixed")
     setGoalContribValue(g.monthly_contribution_value != null ? String(g.monthly_contribution_value) : "")
-    setGoalLinkedCategories(new Set(g.linked_category?.split(",").filter(Boolean) ?? []))
+    const existingCatNames = new Set(categories.map((c) => c.name))
+    setGoalLinkedCategories(new Set((g.linked_category?.split(",").filter(Boolean) ?? []).filter((n) => existingCatNames.has(n))))
     setGoalLinkedAccount(g.linked_account ?? "")
     setGoalDialogOpen(true)
   }
