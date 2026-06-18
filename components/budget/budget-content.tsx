@@ -51,6 +51,7 @@ interface SavingsGoal {
   monthly_contribution_value: number | null
   linked_category: string | null
   linked_account: string | null
+  tracking_start_date: string | null
 }
 
 interface MonthlyTransaction {
@@ -71,7 +72,7 @@ interface BudgetContentProps {
   accountGrowth: Record<string, number>
   connectedBankNames: string[]
   monthlyGoalContributions: Record<string, number>
-  allTimeCategoryTotals: Record<string, number>
+  allTimeCategoryTotals: Array<{ category: string; amount: number; date: string }>
   allTimeAccountGrowth: Record<string, number>
   currentMonth: string // "yyyy-MM"
 }
@@ -148,6 +149,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const [goalContribEnabled, setGoalContribEnabled] = useState(false)
   const [goalLinkedCategories, setGoalLinkedCategories] = useState<Set<string>>(new Set())
   const [goalLinkedAccount, setGoalLinkedAccount] = useState("")
+  const [goalTrackingStart, setGoalTrackingStart] = useState("")
   const [isSavingGoal, startSavingGoal] = useTransition()
   const [deleteGoalId, setDeleteGoalId] = useState<string | null>(null)
 
@@ -157,6 +159,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setGoalContribEnabled(false); setGoalContribType("fixed"); setGoalContribValue("")
     setGoalLinkedCategories(new Set())
     setGoalLinkedAccount("")
+    setGoalTrackingStart(new Date().toISOString().slice(0, 10))
     setGoalDialogOpen(true)
   }
   function openEditGoal(g: SavingsGoal) {
@@ -169,6 +172,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     const existingCatNames = new Set(categories.map((c) => c.name))
     setGoalLinkedCategories(new Set((g.linked_category?.split(",").filter(Boolean) ?? []).filter((n) => existingCatNames.has(n))))
     setGoalLinkedAccount(g.linked_account ?? "")
+    setGoalTrackingStart(g.tracking_start_date ?? new Date().toISOString().slice(0, 10))
     setGoalDialogOpen(true)
   }
   function handleGoalSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -184,6 +188,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     }
     fd.set("linked_category", [...goalLinkedCategories].join(","))
     fd.set("linked_account", goalLinkedAccount)
+    fd.set("tracking_start_date", goalTrackingStart || "")
     startSavingGoal(async () => {
       if (editingGoal) {
         await updateSavingsGoal(editingGoal.id, fd)
@@ -548,7 +553,14 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               const effectiveCurrent = goal.linked_account
                 ? Math.max(0, allTimeAccountGrowth[goal.linked_account] ?? 0)
                 : linkedCats.length > 0
-                ? linkedCats.reduce((sum, cat) => sum + (allTimeCategoryTotals[cat.toLowerCase()] ?? 0), 0)
+                ? (() => {
+                    const since = goal.tracking_start_date ?? null
+                    const txs = since
+                      ? allTimeCategoryTotals.filter((tx) => tx.date >= since)
+                      : allTimeCategoryTotals
+                    const catSet = new Set(linkedCats.map((c) => c.toLowerCase()))
+                    return txs.filter((tx) => catSet.has(tx.category)).reduce((sum, tx) => sum + tx.amount, 0)
+                  })()
                 : goal.current_amount
               const pct = goal.target_amount > 0 ? Math.min((effectiveCurrent / goal.target_amount) * 100, 100) : 0
               const remaining = goal.target_amount - effectiveCurrent
@@ -808,6 +820,17 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 </div>
                 {goalLinkedCategories.size > 0 && (
                   <p className="text-xs text-primary font-medium">{goalLinkedCategories.size} categor{goalLinkedCategories.size === 1 ? "y" : "ies"} selected</p>
+                )}
+                {goalLinkedCategories.size > 0 && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Track spending from</Label>
+                    <Input
+                      type="date"
+                      value={goalTrackingStart}
+                      onChange={(e) => setGoalTrackingStart(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">Only transactions on or after this date count toward this goal.</p>
+                  </div>
                 )}
               </div>
             )}

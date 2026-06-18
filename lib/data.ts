@@ -304,7 +304,7 @@ export async function getSavingsGoals() {
   if (!userId) return []
   const { data } = await supabase
     .from("savings_goals")
-    .select("id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account")
+    .select("id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account, tracking_start_date")
     .eq("user_id", userId)
     .order("created_at", { ascending: true })
   return data ?? []
@@ -330,21 +330,16 @@ export async function getMonthlyGoalContributions(month?: string): Promise<Recor
   return result
 }
 
-export async function getAllTimeCategoryTotals(): Promise<Record<string, number>> {
+export async function getAllTimeCategoryTotals(): Promise<Array<{ category: string; amount: number; date: string }>> {
   const { supabase, userId } = await getAuthenticatedClient()
-  if (!userId) return {}
+  if (!userId) return []
   const { data } = await supabase
     .from("transactions")
-    .select("category, amount")
+    .select("category, amount, date")
     .eq("user_id", userId)
     .eq("type", "expense")
-  if (!data) return {}
-  const result: Record<string, number> = {}
-  for (const tx of data) {
-    const cat = tx.category.toLowerCase()
-    result[cat] = (result[cat] ?? 0) + Number(tx.amount)
-  }
-  return result
+  if (!data) return []
+  return data.map((tx) => ({ category: tx.category.toLowerCase(), amount: Number(tx.amount), date: tx.date }))
 }
 
 export async function getPaydayDay(): Promise<number | null> {
