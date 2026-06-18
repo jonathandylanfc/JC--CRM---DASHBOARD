@@ -1265,14 +1265,14 @@ export function CalendarContent() {
 
       {/* Upload Schedule dialog */}
       <Dialog open={scheduleUploadOpen} onOpenChange={(o) => { if (!o) setScheduleUploadOpen(false) }}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-4 h-4" />
               {scheduleType === "sports" ? "Import Game Schedule" : "Import Work Schedule"}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 mt-1">
+          <div className="space-y-4 mt-1 overflow-y-auto flex-1 pr-1">
             {/* Type toggle */}
             <div className="flex gap-1 p-1 bg-muted rounded-lg">
               <button
