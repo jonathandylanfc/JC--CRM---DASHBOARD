@@ -734,7 +734,7 @@ export function CalendarContent() {
                   style={{ backgroundColor: hidden ? undefined : cal.color + "22", borderColor: hidden ? undefined : cal.color + "66" }}
                 >
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cal.color, opacity: hidden ? 0.4 : 1 }} />
-                  <span className={hidden ? "line-through" : ""}>{cal.name}</span>
+                  <span className={hidden ? "line-through" : ""}>{cal.name === googleEmail ? "Primary" : cal.name}</span>
                 </button>
                 {cal.source === "ics" && cal.icsId && (
                   <button
