@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Trophy, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp } from "lucide-react"
+import { Trophy, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, CalendarPlus, X, CheckCircle2, Circle, CalendarCheck } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,17 @@ function StatusBadge({ status, date }: { status: MatchStatus; date: string }) {
   return <span className="text-[10px] font-semibold text-muted-foreground">{t}</span>
 }
 
-function MatchCard({ match }: { match: Match }) {
+function MatchCard({
+  match,
+  selectable = false,
+  selected = false,
+  onToggle,
+}: {
+  match: Match
+  selectable?: boolean
+  selected?: boolean
+  onToggle?: () => void
+}) {
   const isLive = match.status.state === "in"
   const isDone = match.status.state === "post"
   const homeScore = parseInt(match.homeTeam.score ?? "", 10)
@@ -75,7 +86,27 @@ function MatchCard({ match }: { match: Match }) {
   const awayWin = isDone && !isNaN(homeScore) && !isNaN(awayScore) && awayScore > homeScore
 
   return (
-    <div className={`rounded-xl border p-3 transition-all ${isLive ? "border-emerald-500/40 bg-emerald-500/5" : "border-border bg-card"}`}>
+    <div
+      onClick={selectable ? onToggle : undefined}
+      className={`rounded-xl border p-3 transition-all relative ${
+        selectable ? "cursor-pointer" : ""
+      } ${
+        selected
+          ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+          : isLive
+          ? "border-emerald-500/40 bg-emerald-500/5"
+          : "border-border bg-card"
+      }`}
+    >
+      {selectable && (
+        <div className="absolute top-2 right-2">
+          {selected ? (
+            <CheckCircle2 className="w-4 h-4 text-primary" />
+          ) : (
+            <Circle className="w-4 h-4 text-muted-foreground/40" />
+          )}
+        </div>
+      )}
       {match.group && (
         <p className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider mb-2">{match.group}</p>
       )}
@@ -116,6 +147,137 @@ function MatchCard({ match }: { match: Match }) {
   )
 }
 
+// ── Calendar Picker Modal ──────────────────────────────────────────────────────
+
+interface CalSource { id: string; name: string; color: string }
+
+function CalendarPickerModal({
+  matches,
+  onClose,
+}: {
+  matches: Match[]
+  onClose: () => void
+}) {
+  const [calendars, setCalendars] = useState<CalSource[]>([])
+  const [loadingCals, setLoadingCals] = useState(true)
+  const [notConnected, setNotConnected] = useState(false)
+  const [pickedId, setPickedId] = useState("")
+  const [adding, setAdding] = useState(false)
+  const [done, setDone] = useState<{ created: number; failed: number } | null>(null)
+
+  useEffect(() => {
+    fetch("/api/calendar/events")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error === "not_connected" || !d.calendarSources) { setNotConnected(true); return }
+        const cals: CalSource[] = (d.calendarSources as Array<{ id: string | null; name: string; color: string }>)
+          .filter((c) => c.id)
+          .map((c) => ({ id: c.id!, name: c.name, color: c.color }))
+        setCalendars(cals)
+        if (cals.length > 0) setPickedId(cals[0].id)
+      })
+      .catch(() => setNotConnected(true))
+      .finally(() => setLoadingCals(false))
+  }, [])
+
+  const handleAdd = async () => {
+    if (!pickedId) return
+    setAdding(true)
+    try {
+      const r = await fetch("/api/calendar/worldcup-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matches, calendarId: pickedId }),
+      })
+      const d = await r.json()
+      setDone({ created: d.created ?? 0, failed: d.errors?.length ?? 0 })
+    } catch {
+      setDone({ created: 0, failed: matches.length })
+    }
+    setAdding(false)
+  }
+
+  return (
+    <Dialog open onOpenChange={() => onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarPlus className="w-4 h-4" />
+            Add to Calendar
+          </DialogTitle>
+        </DialogHeader>
+
+        {done ? (
+          <div className="py-4 text-center space-y-2">
+            <CalendarCheck className="w-10 h-10 mx-auto text-emerald-500" />
+            <p className="font-semibold text-sm">
+              {done.created} {done.created === 1 ? "game" : "games"} added!
+            </p>
+            {done.failed > 0 && (
+              <p className="text-xs text-rose-500">{done.failed} failed to add</p>
+            )}
+            <button
+              onClick={onClose}
+              className="mt-2 text-xs text-muted-foreground hover:text-foreground underline"
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4 pt-1">
+            <p className="text-sm text-muted-foreground">
+              Adding <span className="font-semibold text-foreground">{matches.length}</span>{" "}
+              {matches.length === 1 ? "game" : "games"} to:
+            </p>
+
+            {loadingCals ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => <div key={i} className="h-10 rounded-lg bg-muted animate-pulse" />)}
+              </div>
+            ) : notConnected ? (
+              <div className="text-center py-4 text-sm text-muted-foreground">
+                <p className="font-medium mb-1">Google Calendar not connected</p>
+                <p className="text-xs">Connect it in Settings → Calendar</p>
+              </div>
+            ) : (
+              <div className="space-y-1 max-h-56 overflow-y-auto">
+                {calendars.map((cal) => (
+                  <button
+                    key={cal.id}
+                    onClick={() => setPickedId(cal.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left ${
+                      pickedId === cal.id
+                        ? "bg-primary/10 text-primary font-medium"
+                        : "hover:bg-muted/60 text-foreground"
+                    }`}
+                  >
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: cal.color }}
+                    />
+                    <span className="truncate">{cal.name}</span>
+                    {pickedId === cal.id && <CheckCircle2 className="w-4 h-4 ml-auto shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!notConnected && !loadingCals && (
+              <button
+                onClick={handleAdd}
+                disabled={adding || !pickedId}
+                className="w-full py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 transition-opacity hover:opacity-90"
+              >
+                {adding ? "Adding…" : `Add ${matches.length} ${matches.length === 1 ? "game" : "games"}`}
+              </button>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Scores Tab ─────────────────────────────────────────────────────────────────
 
 function localDateKey(isoDate: string) {
@@ -140,7 +302,21 @@ function formatDayHeader(dateStr: string) {
   return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
 }
 
-function DateSection({ date, matches, isToday }: { date: string; matches: Match[]; isToday: boolean }) {
+function DateSection({
+  date,
+  matches,
+  isToday,
+  selectable = false,
+  selectedIds,
+  onToggle,
+}: {
+  date: string
+  matches: Match[]
+  isToday: boolean
+  selectable?: boolean
+  selectedIds?: Set<string>
+  onToggle?: (id: string) => void
+}) {
   const label = formatDayHeader(date)
   const hasLive = matches.some((m) => m.status.state === "in")
   return (
@@ -156,7 +332,15 @@ function DateSection({ date, matches, isToday }: { date: string; matches: Match[
         <div className="flex-1 h-px bg-border" />
       </div>
       <div className="space-y-2">
-        {matches.map((m) => <MatchCard key={m.id} match={m} />)}
+        {matches.map((m) => (
+          <MatchCard
+            key={m.id}
+            match={m}
+            selectable={selectable && m.status.state === "pre"}
+            selected={selectedIds?.has(m.id) ?? false}
+            onToggle={() => onToggle?.(m.id)}
+          />
+        ))}
       </div>
     </div>
   )
@@ -167,6 +351,22 @@ function ScoresTab() {
   const [loading, setLoading] = useState(true)
   const [showHistory, setShowHistory] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [showCalModal, setShowCalModal] = useState(false)
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }, [])
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }
 
   const fetchScores = useCallback(async () => {
     try {
@@ -214,11 +414,36 @@ function ScoresTab() {
   const pastDates = sortedDates.filter((d) => d < today)
   const currentAndFutureDates = sortedDates.filter((d) => d >= today)
 
+  const selectedMatches = matches.filter((m) => selectedIds.has(m.id))
+
   return (
-    <div className="space-y-6">
-      {lastUpdated && (
-        <p className="text-[10px] text-muted-foreground text-right">
-          Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+    <div className="space-y-6 pb-24">
+      <div className="flex items-center justify-between">
+        {lastUpdated ? (
+          <p className="text-[10px] text-muted-foreground">
+            Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+          </p>
+        ) : <span />}
+        {selectMode ? (
+          <button
+            onClick={exitSelectMode}
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="w-3.5 h-3.5" /> Cancel
+          </button>
+        ) : (
+          <button
+            onClick={() => setSelectMode(true)}
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground border border-border rounded-lg px-2.5 py-1.5 transition-colors hover:bg-muted/40"
+          >
+            <CalendarPlus className="w-3.5 h-3.5" /> Add games to calendar
+          </button>
+        )}
+      </div>
+
+      {selectMode && (
+        <p className="text-xs text-muted-foreground -mt-2">
+          Tap upcoming games to select them, then add to any calendar.
         </p>
       )}
 
@@ -243,8 +468,42 @@ function ScoresTab() {
 
       {/* Today and upcoming */}
       {currentAndFutureDates.map((date) => (
-        <DateSection key={date} date={date} matches={byDate.get(date)!} isToday={date === today} />
+        <DateSection
+          key={date}
+          date={date}
+          matches={byDate.get(date)!}
+          isToday={date === today}
+          selectable={selectMode}
+          selectedIds={selectedIds}
+          onToggle={toggleSelect}
+        />
       ))}
+
+      {/* Sticky add bar */}
+      {selectMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+          <span className="text-sm font-semibold">
+            {selectedIds.size} {selectedIds.size === 1 ? "game" : "games"} selected
+          </span>
+          <button
+            onClick={() => setShowCalModal(true)}
+            className="flex items-center gap-1.5 text-sm font-bold bg-primary-foreground text-primary rounded-xl px-3 py-1.5 transition-opacity hover:opacity-80"
+          >
+            <CalendarPlus className="w-3.5 h-3.5" />
+            Add to Calendar
+          </button>
+        </div>
+      )}
+
+      {showCalModal && (
+        <CalendarPickerModal
+          matches={selectedMatches}
+          onClose={() => {
+            setShowCalModal(false)
+            exitSelectMode()
+          }}
+        />
+      )}
     </div>
   )
 }
