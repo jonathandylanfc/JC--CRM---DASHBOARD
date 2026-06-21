@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Trophy, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, CalendarPlus } from "lucide-react"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ function MatchCard({ match }: { match: Match }) {
   const awayWin = isDone && !isNaN(homeScore) && !isNaN(awayScore) && awayScore > homeScore
 
   return (
-    <div className={`rounded-xl border p-3 transition-all ${isLive ? "border-emerald-500/40 bg-emerald-500/5" : "border-border bg-card"}`}>
+    <div className={`rounded-xl border p-3 transition-all backdrop-blur-sm ${isLive ? "border-emerald-500/40 bg-emerald-500/5" : "border-border/60 bg-card/60"}`}>
       {match.group && (
         <p className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider mb-2">{match.group}</p>
       )}
@@ -145,7 +145,7 @@ function DateSection({ date, matches, isToday }: { date: string; matches: Match[
   const hasLive = matches.some((m) => m.status.state === "in")
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 sticky top-12 bg-background/95 backdrop-blur py-1.5 z-10">
+      <div className="flex items-center gap-2 sticky top-12 bg-background/40 backdrop-blur-md py-1.5 z-10">
         <h3 className={`text-sm font-bold ${isToday ? "text-foreground" : "text-muted-foreground"}`}>{label}</h3>
         {hasLive && (
           <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-500">
@@ -167,6 +167,7 @@ function ScoresTab() {
   const [loading, setLoading] = useState(true)
   const [showHistory, setShowHistory] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const mostRecentPastRef = useRef<HTMLDivElement>(null)
 
   const fetchScores = useCallback(async () => {
     try {
@@ -213,32 +214,53 @@ function ScoresTab() {
   const sortedDates = Array.from(byDate.keys()).sort()
   const pastDates = sortedDates.filter((d) => d < today)
   const currentAndFutureDates = sortedDates.filter((d) => d >= today)
+  const totalPastMatches = pastDates.reduce((n, d) => n + byDate.get(d)!.length, 0)
+
+  const handleShowHistory = () => {
+    setShowHistory(true)
+    // Scroll to the most recent past game (last in pastDates) after render
+    setTimeout(() => {
+      mostRecentPastRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 80)
+  }
 
   return (
     <div className="space-y-6">
+      {/* Floating pill to hide history while scrolling */}
+      {showHistory && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+          <button
+            onClick={() => setShowHistory(false)}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-card/90 backdrop-blur-md border border-border shadow-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ChevronUp className="w-3.5 h-3.5" />
+            Hide game history
+          </button>
+        </div>
+      )}
+
       {lastUpdated && (
         <p className="text-[10px] text-muted-foreground text-right">
           Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
         </p>
       )}
 
-      {/* History toggle */}
-      {pastDates.length > 0 && (
+      {/* History toggle button */}
+      {pastDates.length > 0 && !showHistory && (
         <button
-          onClick={() => setShowHistory((s) => !s)}
-          className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-muted-foreground hover:text-foreground border border-dashed border-border rounded-lg transition-colors"
+          onClick={handleShowHistory}
+          className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-muted-foreground hover:text-foreground border border-dashed border-border/60 rounded-lg transition-colors bg-card/30 backdrop-blur-sm"
         >
-          {showHistory ? (
-            <><ChevronUp className="w-3.5 h-3.5" /> Hide game history</>
-          ) : (
-            <><ChevronDown className="w-3.5 h-3.5" /> Load game history ({pastDates.reduce((n, d) => n + byDate.get(d)!.length, 0)} matches)</>
-          )}
+          <ChevronDown className="w-3.5 h-3.5" />
+          Load game history ({totalPastMatches} matches)
         </button>
       )}
 
-      {/* Past matches */}
-      {showHistory && pastDates.map((date) => (
-        <DateSection key={date} date={date} matches={byDate.get(date)!} isToday={false} />
+      {/* Past matches — most recent last so it appears closest to Today */}
+      {showHistory && pastDates.map((date, i) => (
+        <div key={date} ref={i === pastDates.length - 1 ? mostRecentPastRef : undefined}>
+          <DateSection date={date} matches={byDate.get(date)!} isToday={false} />
+        </div>
       ))}
 
       {/* Today and upcoming */}
@@ -483,7 +505,7 @@ export function WorldCupContent() {
       </div>
 
       {/* Sticky tabs */}
-      <div className="sticky top-0 z-20 bg-background border-b border-border -mx-4 px-4 lg:-mx-6 lg:px-6">
+      <div className="sticky top-0 z-20 bg-background/70 backdrop-blur-md border-b border-border/50 -mx-4 px-4 lg:-mx-6 lg:px-6">
         <div className="flex gap-1">
           {TABS.map((t) => (
             <button
