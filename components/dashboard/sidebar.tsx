@@ -8,6 +8,7 @@ import {
   PiggyBank,
   Settings,
   BarChart2,
+  Trophy,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
@@ -24,6 +25,8 @@ const BASE_MENU_ITEMS = [
   { icon: BarChart2, label: "Investments", href: "/investments", investmentsOnly: true },
   { icon: Settings, label: "Settings", href: "/settings" },
 ]
+
+const WORLD_CUP_ITEM = { icon: Trophy, label: "World Cup", href: "/worldcup" }
 
 export function Sidebar({ showInvestments = true }: { showInvestments?: boolean }) {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
@@ -70,6 +73,27 @@ export function Sidebar({ showInvestments = true }: { showInvestments?: boolean 
             )
           })}
         </nav>
+      </div>
+
+      {/* World Cup section */}
+      <div className="mt-4 pt-4 border-t border-border">
+        <p className="text-[10px] font-medium text-muted-foreground mb-2 uppercase tracking-wider">World Cup</p>
+        <Link
+          href={WORLD_CUP_ITEM.href}
+          onMouseEnter={() => setHoveredItem(WORLD_CUP_ITEM.label)}
+          onMouseLeave={() => setHoveredItem(null)}
+          className={cn(
+            "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-300",
+            pathname === WORLD_CUP_ITEM.href
+              ? "bg-yellow-500 text-white shadow-lg shadow-yellow-500/30"
+              : "text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/10",
+            hoveredItem === WORLD_CUP_ITEM.label && pathname !== WORLD_CUP_ITEM.href && "translate-x-1",
+          )}
+        >
+          <Trophy className="w-4 h-4" />
+          <span className="text-sm">World Cup</span>
+          <span className="ml-auto text-[9px] font-bold bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 px-1.5 py-0.5 rounded-full">LIVE</span>
+        </Link>
       </div>
     </aside>
   )
