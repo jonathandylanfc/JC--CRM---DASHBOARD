@@ -1,8 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
-import { Card } from "@/components/ui/card"
-import { Trophy, TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { useState, useEffect, useCallback } from "react"
+import { Trophy, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp } from "lucide-react"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -20,22 +19,23 @@ interface Ranking { rank: number; prevRank: number; name: string; short: string;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function TeamLogo({ logo, name, size = 24 }: { logo: string | null; name: string; size?: number }) {
+function TeamLogo({ logo, name, size = 24 }: { logo: string | null; name: string | null | undefined; size?: number }) {
   const [err, setErr] = useState(false)
+  const initials = (name ?? "?").slice(0, 3).toUpperCase()
   if (!logo || err) {
     return (
       <div
         className="rounded-full bg-muted flex items-center justify-center text-[9px] font-bold text-muted-foreground shrink-0"
         style={{ width: size, height: size }}
       >
-        {name.slice(0, 3).toUpperCase()}
+        {initials}
       </div>
     )
   }
   return (
     <img
       src={logo}
-      alt={name}
+      alt={name ?? ""}
       width={size}
       height={size}
       className="object-contain shrink-0"
@@ -62,7 +62,6 @@ function StatusBadge({ status, date }: { status: MatchStatus; date: string }) {
   if (status.state === "post") {
     return <span className="text-[10px] text-muted-foreground font-medium">FT</span>
   }
-  // Upcoming — show local kickoff time
   const t = kickoffTime(date)
   return <span className="text-[10px] font-semibold text-muted-foreground">{t}</span>
 }
@@ -70,10 +69,10 @@ function StatusBadge({ status, date }: { status: MatchStatus; date: string }) {
 function MatchCard({ match }: { match: Match }) {
   const isLive = match.status.state === "in"
   const isDone = match.status.state === "post"
-  const homeWin = isDone && match.homeTeam.score !== null && match.awayTeam.score !== null &&
-    parseInt(match.homeTeam.score) > parseInt(match.awayTeam.score)
-  const awayWin = isDone && match.homeTeam.score !== null && match.awayTeam.score !== null &&
-    parseInt(match.awayTeam.score) > parseInt(match.homeTeam.score)
+  const homeScore = parseInt(match.homeTeam.score ?? "", 10)
+  const awayScore = parseInt(match.awayTeam.score ?? "", 10)
+  const homeWin = isDone && !isNaN(homeScore) && !isNaN(awayScore) && homeScore > awayScore
+  const awayWin = isDone && !isNaN(homeScore) && !isNaN(awayScore) && awayScore > homeScore
 
   return (
     <div className={`rounded-xl border p-3 transition-all ${isLive ? "border-emerald-500/40 bg-emerald-500/5" : "border-border bg-card"}`}>
@@ -81,15 +80,12 @@ function MatchCard({ match }: { match: Match }) {
         <p className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider mb-2">{match.group}</p>
       )}
       <div className="flex items-center gap-2">
-        {/* Home */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <TeamLogo logo={match.homeTeam.logo} name={match.homeTeam.abbr} size={28} />
           <span className={`text-sm font-semibold truncate ${homeWin ? "text-foreground" : isDone ? "text-muted-foreground" : "text-foreground"}`}>
             {match.homeTeam.abbr}
           </span>
         </div>
-
-        {/* Score / Time */}
         <div className="flex flex-col items-center gap-0.5 px-2 shrink-0">
           {(isLive || isDone) && match.homeTeam.score !== null ? (
             <div className="flex items-center gap-1.5">
@@ -106,8 +102,6 @@ function MatchCard({ match }: { match: Match }) {
           )}
           <StatusBadge status={match.status} date={match.date} />
         </div>
-
-        {/* Away */}
         <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
           <span className={`text-sm font-semibold truncate text-right ${awayWin ? "text-foreground" : isDone ? "text-muted-foreground" : "text-foreground"}`}>
             {match.awayTeam.abbr}
@@ -124,26 +118,55 @@ function MatchCard({ match }: { match: Match }) {
 
 // ── Scores Tab ─────────────────────────────────────────────────────────────────
 
+function localDateKey(isoDate: string) {
+  return new Date(isoDate).toLocaleDateString("en-CA") // YYYY-MM-DD in local time
+}
+
+function todayLocalKey() {
+  return new Date().toLocaleDateString("en-CA")
+}
+
 function formatDayHeader(dateStr: string) {
-  const d = new Date(dateStr + "T12:00:00") // noon local to avoid DST edge
-  const today = new Date()
-  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
-  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1)
+  const d = new Date(dateStr + "T12:00:00")
+  const now = new Date()
   const isSameDay = (a: Date, b: Date) =>
     a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1)
+  const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1)
 
-  if (isSameDay(d, today)) return "Today"
+  if (isSameDay(d, now)) return "Today"
   if (isSameDay(d, yesterday)) return "Yesterday"
   if (isSameDay(d, tomorrow)) return "Tomorrow"
   return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
 }
 
+function DateSection({ date, matches, isToday }: { date: string; matches: Match[]; isToday: boolean }) {
+  const label = formatDayHeader(date)
+  const hasLive = matches.some((m) => m.status.state === "in")
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 sticky top-12 bg-background/95 backdrop-blur py-1.5 z-10">
+        <h3 className={`text-sm font-bold ${isToday ? "text-foreground" : "text-muted-foreground"}`}>{label}</h3>
+        {hasLive && (
+          <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-500">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            LIVE
+          </span>
+        )}
+        <div className="flex-1 h-px bg-border" />
+      </div>
+      <div className="space-y-2">
+        {matches.map((m) => <MatchCard key={m.id} match={m} />)}
+      </div>
+    </div>
+  )
+}
+
 function ScoresTab() {
   const [matches, setMatches] = useState<Match[]>([])
   const [loading, setLoading] = useState(true)
+  const [showHistory, setShowHistory] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
-  const todayRef = useRef<HTMLDivElement>(null)
-  const scrolledRef = useRef(false)
 
   const fetchScores = useCallback(async () => {
     try {
@@ -160,16 +183,6 @@ function ScoresTab() {
     const iv = setInterval(fetchScores, 60_000)
     return () => clearInterval(iv)
   }, [fetchScores])
-
-  // Scroll to today once data loads
-  useEffect(() => {
-    if (!loading && matches.length && !scrolledRef.current) {
-      scrolledRef.current = true
-      setTimeout(() => {
-        todayRef.current?.scrollIntoView({ behavior: "instant", block: "start" })
-      }, 50)
-    }
-  }, [loading, matches.length])
 
   if (loading) {
     return (
@@ -190,15 +203,16 @@ function ScoresTab() {
     )
   }
 
-  // Group matches by local date, sorted chronologically
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayLocalKey()
   const byDate = new Map<string, Match[]>()
   for (const m of [...matches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())) {
-    const key = new Date(m.date).toLocaleDateString("en-CA") // YYYY-MM-DD in local time
+    const key = localDateKey(m.date)
     if (!byDate.has(key)) byDate.set(key, [])
     byDate.get(key)!.push(m)
   }
   const sortedDates = Array.from(byDate.keys()).sort()
+  const pastDates = sortedDates.filter((d) => d < today)
+  const currentAndFutureDates = sortedDates.filter((d) => d >= today)
 
   return (
     <div className="space-y-6">
@@ -208,40 +222,29 @@ function ScoresTab() {
         </p>
       )}
 
-      {sortedDates.map((date) => {
-        const dayMatches = byDate.get(date)!
-        const isToday = date === today
-        const hasLive = dayMatches.some((m) => m.status.state === "in")
-        const label = formatDayHeader(date)
+      {/* History toggle */}
+      {pastDates.length > 0 && (
+        <button
+          onClick={() => setShowHistory((s) => !s)}
+          className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-muted-foreground hover:text-foreground border border-dashed border-border rounded-lg transition-colors"
+        >
+          {showHistory ? (
+            <><ChevronUp className="w-3.5 h-3.5" /> Hide game history</>
+          ) : (
+            <><ChevronDown className="w-3.5 h-3.5" /> Load game history ({pastDates.reduce((n, d) => n + byDate.get(d)!.length, 0)} matches)</>
+          )}
+        </button>
+      )}
 
-        return (
-          <div key={date} ref={isToday ? todayRef : undefined} className="space-y-2 scroll-mt-4">
-            {/* Date header */}
-            <div className="flex items-center gap-2 sticky top-0 bg-background/95 backdrop-blur py-1.5 z-10">
-              <h3 className={`text-sm font-bold ${isToday ? "text-foreground" : "text-muted-foreground"}`}>
-                {label}
-              </h3>
-              {isToday && (
-                <span className="text-[10px] font-bold text-primary border border-primary/30 px-1.5 py-0.5 rounded-full">
-                  TODAY
-                </span>
-              )}
-              {hasLive && (
-                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-500">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  LIVE
-                </span>
-              )}
-              <div className="flex-1 h-px bg-border" />
-            </div>
+      {/* Past matches */}
+      {showHistory && pastDates.map((date) => (
+        <DateSection key={date} date={date} matches={byDate.get(date)!} isToday={false} />
+      ))}
 
-            {/* Matches for this day */}
-            <div className="space-y-2">
-              {dayMatches.map((m) => <MatchCard key={m.id} match={m} />)}
-            </div>
-          </div>
-        )
-      })}
+      {/* Today and upcoming */}
+      {currentAndFutureDates.map((date) => (
+        <DateSection key={date} date={date} matches={byDate.get(date)!} isToday={date === today} />
+      ))}
     </div>
   )
 }
@@ -251,12 +254,20 @@ function ScoresTab() {
 function StandingsTab() {
   const [groups, setGroups] = useState<Group[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     fetch("/api/worldcup/standings")
-      .then((r) => r.json())
-      .then((d) => { setGroups(d.groups ?? []); setLoading(false) })
-      .catch(() => setLoading(false))
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then((d) => {
+        const grps = d.groups
+        if (Array.isArray(grps)) setGroups(grps)
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
   }, [])
 
   if (loading) {
@@ -269,7 +280,7 @@ function StandingsTab() {
     )
   }
 
-  if (!groups.length) {
+  if (error || !groups.length) {
     return (
       <div className="text-center py-16 text-muted-foreground">
         <Trophy className="w-10 h-10 mx-auto mb-3 opacity-30" />
@@ -295,32 +306,34 @@ function StandingsTab() {
                 <th className="text-center px-1 py-1.5 text-muted-foreground font-medium">D</th>
                 <th className="text-center px-1 py-1.5 text-muted-foreground font-medium">L</th>
                 <th className="text-center px-1 py-1.5 text-muted-foreground font-medium">GD</th>
-                <th className="text-center px-2 py-1.5 text-muted-foreground font-medium font-bold">Pts</th>
+                <th className="text-center px-2 py-1.5 text-muted-foreground font-bold">Pts</th>
               </tr>
             </thead>
             <tbody>
-              {group.entries.map((entry, idx) => {
-                const isQ = idx < 2 // top 2 advance (simplified — 2026 format has top 2 + best 3rd)
+              {(group.entries ?? []).map((entry, idx) => {
+                if (!entry?.team) return null
+                const isQ = idx < 2
+                const gd = entry.gd ?? 0
                 return (
                   <tr
-                    key={entry.team.abbr}
+                    key={entry.team.abbr ?? idx}
                     className={`border-b border-border/30 last:border-0 ${isQ ? "bg-emerald-500/5" : ""}`}
                   >
                     <td className="px-3 py-1.5 text-muted-foreground">{idx + 1}</td>
                     <td className="px-3 py-1.5">
                       <div className="flex items-center gap-1.5">
                         <TeamLogo logo={entry.team.logo} name={entry.team.abbr} size={16} />
-                        <span className="font-medium truncate max-w-[80px]">{entry.team.short}</span>
+                        <span className="font-medium truncate max-w-[80px]">{entry.team.short ?? entry.team.abbr}</span>
                       </div>
                     </td>
-                    <td className="text-center px-1 py-1.5 text-muted-foreground">{entry.gp}</td>
-                    <td className="text-center px-1 py-1.5">{entry.w}</td>
-                    <td className="text-center px-1 py-1.5">{entry.d}</td>
-                    <td className="text-center px-1 py-1.5">{entry.l}</td>
+                    <td className="text-center px-1 py-1.5 text-muted-foreground">{entry.gp ?? 0}</td>
+                    <td className="text-center px-1 py-1.5">{entry.w ?? 0}</td>
+                    <td className="text-center px-1 py-1.5">{entry.d ?? 0}</td>
+                    <td className="text-center px-1 py-1.5">{entry.l ?? 0}</td>
                     <td className="text-center px-1 py-1.5 text-muted-foreground">
-                      {entry.gd > 0 ? `+${entry.gd}` : entry.gd}
+                      {gd > 0 ? `+${gd}` : gd}
                     </td>
-                    <td className="text-center px-2 py-1.5 font-bold">{entry.pts}</td>
+                    <td className="text-center px-2 py-1.5 font-bold">{entry.pts ?? 0}</td>
                   </tr>
                 )
               })}
@@ -351,8 +364,9 @@ function RankingsTab() {
   useEffect(() => {
     fetch("/api/worldcup/rankings")
       .then((r) => r.json())
-      .then((d) => { setRankings(d.rankings ?? []); setSource(d.source ?? ""); setLoading(false) })
-      .catch(() => setLoading(false))
+      .then((d) => { setRankings(d.rankings ?? []); setSource(d.source ?? "") })
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
 
   if (loading) {
@@ -448,9 +462,9 @@ export function WorldCupContent() {
   const [tab, setTab] = useState<TabId>("scores")
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-0">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 pb-4">
         <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center shrink-0">
           <Trophy className="w-5 h-5 text-yellow-500" />
         </div>
@@ -460,25 +474,27 @@ export function WorldCupContent() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-border">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              tab === t.id
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Sticky tabs */}
+      <div className="sticky top-0 z-20 bg-background border-b border-border -mx-4 px-4 lg:-mx-6 lg:px-6">
+        <div className="flex gap-1">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                tab === t.id
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tab content */}
-      <div>
+      <div className="pt-4">
         {tab === "scores" && <ScoresTab />}
         {tab === "groups" && <StandingsTab />}
         {tab === "rankings" && <RankingsTab />}
