@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server"
 
-export const revalidate = 86400 // 24 hours
+export const revalidate = 3600 // 1 hour
 
 const FLAG = (code: string) =>
   `https://a.espncdn.com/i/teamlogos/countries/500/${code.toLowerCase()}.png`
 
-// FIFA Coca-Cola World Rankings — updated pre-tournament (April 2025)
+// Pre-tournament FIFA rankings (March 2026) — shown only if live fetch fails
 const STATIC_RANKINGS = [
   { rank: 1,  prevRank: 1,  name: "Argentina",         short: "ARG", flag: FLAG("arg"), confederation: "CONMEBOL", points: 1871 },
   { rank: 2,  prevRank: 2,  name: "France",             short: "FRA", flag: FLAG("fra"), confederation: "UEFA",     points: 1839 },
@@ -59,6 +59,59 @@ const STATIC_RANKINGS = [
   { rank: 50, prevRank: 50, name: "Haiti",              short: "HAI", flag: FLAG("hai"), confederation: "CONCACAF", points: 1387 },
 ]
 
+const CONF_MAP: Record<string, string> = {
+  UEFA: "UEFA", CONMEBOL: "CONMEBOL", CAF: "CAF",
+  AFC: "AFC", CONCACAF: "CONCACAF", OFC: "OFC",
+}
+
+function confFromGroupId(uid: string): string {
+  // ESPN group UIDs sometimes encode confederation — fall back to unknown
+  return CONF_MAP[uid] ?? ""
+}
+
+async function fetchLiveRankings() {
+  // Try ESPN's FIFA world rankings endpoint
+  const r = await fetch(
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/rankings",
+    { headers: { "User-Agent": "Mozilla/5.0" }, cache: "no-store" }
+  )
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  const data = await r.json()
+
+  type RawRank = {
+    current: number
+    previous?: number
+    team: {
+      displayName: string
+      shortDisplayName?: string
+      abbreviation: string
+      logos?: Array<{ href: string }>
+      flag?: string
+    }
+    points?: number
+    group?: { name: string }
+  }
+
+  const items: RawRank[] = data?.rankings ?? data?.items ?? []
+  if (!items.length) throw new Error("Empty rankings response")
+
+  return items.slice(0, 50).map((item, i) => ({
+    rank: item.current ?? i + 1,
+    prevRank: item.previous ?? item.current ?? i + 1,
+    name: item.team.displayName,
+    short: item.team.shortDisplayName ?? item.team.abbreviation,
+    flag: item.team.logos?.[0]?.href ?? item.team.flag ?? FLAG(item.team.abbreviation.toLowerCase()),
+    confederation: confFromGroupId(item.group?.name ?? ""),
+    points: item.points ?? 0,
+  }))
+}
+
 export async function GET() {
-  return NextResponse.json({ rankings: STATIC_RANKINGS, source: "static" })
+  try {
+    const rankings = await fetchLiveRankings()
+    return NextResponse.json({ rankings, source: "live" })
+  } catch {
+    // Live fetch failed — return pre-tournament rankings
+    return NextResponse.json({ rankings: STATIC_RANKINGS, source: "pre-tournament" })
+  }
 }

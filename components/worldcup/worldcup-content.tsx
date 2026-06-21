@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Trophy, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, CalendarPlus, X, CheckCircle2, Circle, CalendarCheck } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
@@ -357,6 +357,27 @@ function ScoresTab() {
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showCalModal, setShowCalModal] = useState(false)
+  const upcomingAnchorRef = useRef<HTMLDivElement>(null)
+
+  const handleHistoryToggle = useCallback(() => {
+    if (showHistory) {
+      // Capture anchor position before removing past sections from DOM
+      const anchor = upcomingAnchorRef.current
+      const prevTop = anchor?.getBoundingClientRect().top ?? 0
+      setShowHistory(false)
+      // After DOM updates, scroll so anchor stays in same viewport position
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (anchor) {
+            const newTop = anchor.getBoundingClientRect().top
+            window.scrollBy({ top: newTop - prevTop, behavior: "instant" })
+          }
+        })
+      })
+    } else {
+      setShowHistory(true)
+    }
+  }, [showHistory])
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -453,7 +474,7 @@ function ScoresTab() {
       {/* History toggle */}
       {pastDates.length > 0 && (
         <button
-          onClick={() => setShowHistory((s) => !s)}
+          onClick={handleHistoryToggle}
           className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-muted-foreground hover:text-foreground border border-dashed border-border rounded-lg transition-colors"
         >
           {showHistory ? (
@@ -469,7 +490,8 @@ function ScoresTab() {
         <DateSection key={date} date={date} matches={byDate.get(date)!} isToday={false} />
       ))}
 
-      {/* Today and upcoming */}
+      {/* Today and upcoming — anchor keeps viewport stable when history is hidden */}
+      <div ref={upcomingAnchorRef} />
       {currentAndFutureDates.map((date) => (
         <DateSection
           key={date}
@@ -655,7 +677,7 @@ function RankingsTab() {
     <div className="space-y-1">
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">FIFA Coca-Cola World Rankings</p>
-        {source === "static" && <span className="text-[10px] text-muted-foreground">Pre-tournament (Apr 2025)</span>}
+        {source !== "live" && <span className="text-[10px] text-muted-foreground">Pre-tournament rankings</span>}
       </div>
       {rankings.map((r) => {
         const moved = r.prevRank - r.rank
