@@ -10,7 +10,12 @@ import { SpendingInsightsCard } from "@/components/dashboard/spending-insights-c
 import { WeeklyGoalsCard } from "@/components/dashboard/weekly-goals-card"
 import { WeeklyRecapCard } from "@/components/dashboard/weekly-recap-card"
 import { PortfolioSnapshotCard } from "@/components/dashboard/portfolio-snapshot-card"
+import { NasaApodCard } from "@/components/dashboard/nasa-apod-card"
 import { useDashboardLayout, WidgetWrapper, type WidgetId } from "@/components/dashboard/dashboard-customizer"
+
+interface ApodData {
+  title: string; date: string; explanation: string; url: string; hdurl?: string; media_type: "image" | "video"; copyright?: string
+}
 
 interface Props {
   taskStats: { total: number; done: number; inProgress: number; todo: number }
@@ -23,10 +28,13 @@ interface Props {
   upcomingBills: Array<{ id: string; name: string; amount: number; billing_cycle: string; next_billing_date: string; category: string | null }>
   savingsGoals: Array<{ id: string; name: string; target_amount: number; current_amount: number; color: string; monthly_contribution_value: number | null; monthly_contribution_type: string | null }>
   weeklyRecap: { thisWeek: Record<string, number>; lastWeek: Record<string, number>; thisTotal: number; lastTotal: number }
+  apod?: ApodData | null
 }
 
 function WidgetContent({ id, props }: { id: WidgetId; props: Props }) {
   switch (id) {
+    case "nasa_apod":
+      return <NasaApodCard apod={props.apod ?? null} />
     case "stats":
       return (
         <StatsCards

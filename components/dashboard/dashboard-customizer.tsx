@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, createContext, useContext } from "rea
 
 export const WIDGET_DEFS = [
   { id: "stats",               label: "Stats Cards",           fixedFull: true  },
+  { id: "nasa_apod",           label: "NASA Image of the Day", fixedFull: false },
   { id: "tasks",               label: "Task Board",            fixedFull: false },
   { id: "budget_health",       label: "Budget Health",         fixedFull: false },
   { id: "recent_transactions", label: "Recent Transactions",   fixedFull: false },
@@ -28,14 +29,15 @@ export interface WidgetConfig {
 
 const DEFAULT_LAYOUT: WidgetConfig[] = [
   { id: "stats",               size: "full", visible: true,  order: 0 },
-  { id: "portfolio",           size: "half", visible: true,  order: 1 },
-  { id: "tasks",               size: "half", visible: true,  order: 2 },
-  { id: "budget_health",       size: "half", visible: true,  order: 3 },
-  { id: "recent_transactions", size: "full", visible: true,  order: 4 },
-  { id: "goals",               size: "half", visible: true,  order: 5 },
-  { id: "bill_reminders",      size: "half", visible: true,  order: 6 },
-  { id: "weekly_recap",        size: "half", visible: true,  order: 7 },
-  { id: "insights",            size: "half", visible: true,  order: 8 },
+  { id: "nasa_apod",           size: "full", visible: true,  order: 1 },
+  { id: "portfolio",           size: "half", visible: true,  order: 2 },
+  { id: "tasks",               size: "half", visible: true,  order: 3 },
+  { id: "budget_health",       size: "half", visible: true,  order: 4 },
+  { id: "recent_transactions", size: "full", visible: true,  order: 5 },
+  { id: "goals",               size: "half", visible: true,  order: 6 },
+  { id: "bill_reminders",      size: "half", visible: true,  order: 7 },
+  { id: "weekly_recap",        size: "half", visible: true,  order: 8 },
+  { id: "insights",            size: "half", visible: true,  order: 9 },
 ]
 
 const STORAGE_KEY = "dashboard_layout_v2"

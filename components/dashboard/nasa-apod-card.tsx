@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { ExternalLink, ChevronDown, ChevronUp, X } from "lucide-react"
 
@@ -14,9 +14,17 @@ interface ApodData {
   copyright?: string
 }
 
+const STORAGE_KEY = "nasa_apod_dismissed_date"
+
 export function NasaApodCard({ apod }: { apod: ApodData | null }) {
   const [expanded, setExpanded] = useState(false)
-  const [dismissed, setDismissed] = useState(false)
+  const [dismissed, setDismissed] = useState(true) // start hidden to avoid flash
+
+  useEffect(() => {
+    if (!apod) return
+    const dismissedDate = localStorage.getItem(STORAGE_KEY)
+    setDismissed(dismissedDate === apod.date)
+  }, [apod?.date])
 
   if (!apod || dismissed) return null
 
@@ -60,9 +68,9 @@ export function NasaApodCard({ apod }: { apod: ApodData | null }) {
               </a>
             )}
             <button
-              onClick={() => setDismissed(true)}
+              onClick={() => { localStorage.setItem(STORAGE_KEY, apod.date); setDismissed(true) }}
               className="text-muted-foreground hover:text-foreground transition-colors"
-              title="Dismiss"
+              title="Dismiss until tomorrow"
             >
               <X className="w-4 h-4" />
             </button>
