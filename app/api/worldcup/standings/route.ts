@@ -1,61 +1,116 @@
 import { NextResponse } from "next/server"
 
+export const revalidate = 60 // revalidate every minute during group stage
+
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world"
 
-export const revalidate = 0
+interface TeamStats {
+  name: string
+  short: string
+  abbr: string
+  logo: string | null
+  gp: number
+  w: number
+  d: number
+  l: number
+  gf: number
+  ga: number
+  gd: number
+  pts: number
+}
 
 export async function GET() {
   try {
-    const res = await fetch(`${ESPN_BASE}/standings`, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      cache: "no-store",
-    })
-    if (!res.ok) return NextResponse.json({ groups: [] })
-    const json = await res.json()
+    // Group stage: June 11 – June 26, 2026
+    const dates: string[] = []
+    for (let day = 11; day <= 26; day++) {
+      dates.push(`202606${String(day).padStart(2, "0")}`)
+    }
 
-    // ESPN returns standings grouped under children (one per group)
-    const children: unknown[] = json?.children ?? json?.standings?.children ?? []
+    const responses = await Promise.allSettled(
+      dates.map((date) =>
+        fetch(`${ESPN_BASE}/scoreboard?dates=${date}&limit=20`, {
+          headers: { "User-Agent": "Mozilla/5.0" },
+          cache: "no-store",
+        }).then((r) => r.json())
+      )
+    )
 
-    const groups = children.map((child: unknown) => {
-      const c = child as {
-        name: string
-        abbreviation?: string
-        standings: {
-          entries: Array<{
-            team: { id: string; abbreviation: string; displayName: string; shortDisplayName: string; logo?: string }
-            stats: Array<{ name: string; value: number; displayValue: string }>
-          }>
+    // Map: groupLetter -> teamAbbr -> stats
+    const groupMap = new Map<string, Map<string, TeamStats>>()
+
+    for (const res of responses) {
+      if (res.status !== "fulfilled" || !res.value?.events) continue
+
+      for (const event of res.value.events) {
+        const comp = event.competitions?.[0]
+        if (!comp) continue
+
+        // Parse group from altGameNote: "FIFA World Cup, Group A"
+        const note: string = comp.altGameNote ?? ""
+        const groupMatch = note.match(/Group\s+([A-L])/i)
+        if (!groupMatch) continue
+        const groupLetter = groupMatch[1].toUpperCase()
+
+        const state: string = comp.status?.type?.state ?? "pre"
+        const completed: boolean = comp.status?.type?.completed ?? false
+
+        // Only count completed matches for stats
+        if (!completed || state !== "post") continue
+
+        const home = comp.competitors?.find((c: { homeAway: string }) => c.homeAway === "home")
+        const away = comp.competitors?.find((c: { homeAway: string }) => c.homeAway === "away")
+        if (!home || !away) continue
+
+        const hs = parseInt(home.score ?? "0", 10) || 0
+        const as_ = parseInt(away.score ?? "0", 10) || 0
+
+        if (!groupMap.has(groupLetter)) groupMap.set(groupLetter, new Map())
+        const group = groupMap.get(groupLetter)!
+
+        const ensureTeam = (c: { team: { displayName: string; shortDisplayName: string; abbreviation: string; logo?: string } }) => {
+          const abbr = c.team.abbreviation
+          if (!group.has(abbr)) {
+            group.set(abbr, {
+              name: c.team.displayName,
+              short: c.team.shortDisplayName ?? c.team.abbreviation,
+              abbr,
+              logo: c.team.logo ?? null,
+              gp: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, gd: 0, pts: 0,
+            })
+          }
+          return group.get(abbr)!
+        }
+
+        const homeStats = ensureTeam(home)
+        const awayStats = ensureTeam(away)
+
+        homeStats.gp++; awayStats.gp++
+        homeStats.gf += hs; homeStats.ga += as_; homeStats.gd = homeStats.gf - homeStats.ga
+        awayStats.gf += as_; awayStats.ga += hs; awayStats.gd = awayStats.gf - awayStats.ga
+
+        if (hs > as_) {
+          homeStats.w++; homeStats.pts += 3
+          awayStats.l++
+        } else if (hs < as_) {
+          awayStats.w++; awayStats.pts += 3
+          homeStats.l++
+        } else {
+          homeStats.d++; homeStats.pts++
+          awayStats.d++; awayStats.pts++
         }
       }
+    }
 
-      const stat = (entry: typeof c.standings.entries[0], name: string) =>
-        entry.stats.find((s) => s.name === name)?.value ?? 0
-
-      const entries = (c.standings?.entries ?? []).map((entry) => ({
-        team: {
-          name: entry.team.displayName,
-          short: entry.team.shortDisplayName,
-          abbr: entry.team.abbreviation,
-          logo: entry.team.logo ?? null,
-        },
-        gp: stat(entry, "gamesPlayed"),
-        w: stat(entry, "wins"),
-        d: stat(entry, "ties"),
-        l: stat(entry, "losses"),
-        gf: stat(entry, "pointsFor"),
-        ga: stat(entry, "pointsAgainst"),
-        gd: stat(entry, "pointDifferential"),
-        pts: stat(entry, "points"),
-      }))
-
-      entries.sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf)
-
-      return {
-        name: c.name,
-        abbr: c.abbreviation ?? c.name,
-        entries,
-      }
-    })
+    // Sort groups alphabetically and entries by Pts, GD, GF
+    const groups = Array.from(groupMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([letter, teams]) => {
+        const entries = Array.from(teams.values()).sort(
+          (a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.name.localeCompare(b.name)
+        )
+        return { name: `Group ${letter}`, abbr: letter, entries }
+      })
 
     return NextResponse.json({ groups })
   } catch (e) {

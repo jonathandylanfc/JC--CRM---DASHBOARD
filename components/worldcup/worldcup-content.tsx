@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Card } from "@/components/ui/card"
-import { RefreshCw, Trophy, TrendingUp, TrendingDown, Minus, Clock, CheckCircle2, Circle } from "lucide-react"
+import { Trophy, TrendingUp, TrendingDown, Minus } from "lucide-react"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -44,7 +44,13 @@ function TeamLogo({ logo, name, size = 24 }: { logo: string | null; name: string
   )
 }
 
-function StatusBadge({ status }: { status: MatchStatus }) {
+function kickoffTime(isoDate: string) {
+  const d = new Date(isoDate)
+  if (isNaN(d.getTime())) return ""
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
+}
+
+function StatusBadge({ status, date }: { status: MatchStatus; date: string }) {
   if (status.state === "in") {
     return (
       <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-500 animate-pulse">
@@ -56,9 +62,9 @@ function StatusBadge({ status }: { status: MatchStatus }) {
   if (status.state === "post") {
     return <span className="text-[10px] text-muted-foreground font-medium">FT</span>
   }
-  const dt = new Date(status.detail.includes("T") ? status.detail : "")
-  const timeStr = status.shortDetail || new Date(status.detail).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-  return <span className="text-[10px] text-muted-foreground">{timeStr}</span>
+  // Upcoming — show local kickoff time
+  const t = kickoffTime(date)
+  return <span className="text-[10px] font-semibold text-muted-foreground">{t}</span>
 }
 
 function MatchCard({ match }: { match: Match }) {
@@ -98,7 +104,7 @@ function MatchCard({ match }: { match: Match }) {
           ) : (
             <span className="text-muted-foreground text-sm font-medium">vs</span>
           )}
-          <StatusBadge status={match.status} />
+          <StatusBadge status={match.status} date={match.date} />
         </div>
 
         {/* Away */}
@@ -118,10 +124,26 @@ function MatchCard({ match }: { match: Match }) {
 
 // ── Scores Tab ─────────────────────────────────────────────────────────────────
 
+function formatDayHeader(dateStr: string) {
+  const d = new Date(dateStr + "T12:00:00") // noon local to avoid DST edge
+  const today = new Date()
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1)
+  const isSameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+
+  if (isSameDay(d, today)) return "Today"
+  if (isSameDay(d, yesterday)) return "Yesterday"
+  if (isSameDay(d, tomorrow)) return "Tomorrow"
+  return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+}
+
 function ScoresTab() {
   const [matches, setMatches] = useState<Match[]>([])
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const todayRef = useRef<HTMLDivElement>(null)
+  const scrolledRef = useRef(false)
 
   const fetchScores = useCallback(async () => {
     try {
@@ -138,6 +160,16 @@ function ScoresTab() {
     const iv = setInterval(fetchScores, 60_000)
     return () => clearInterval(iv)
   }, [fetchScores])
+
+  // Scroll to today once data loads
+  useEffect(() => {
+    if (!loading && matches.length && !scrolledRef.current) {
+      scrolledRef.current = true
+      setTimeout(() => {
+        todayRef.current?.scrollIntoView({ behavior: "instant", block: "start" })
+      }, 50)
+    }
+  }, [loading, matches.length])
 
   if (loading) {
     return (
@@ -158,33 +190,58 @@ function ScoresTab() {
     )
   }
 
-  const live = matches.filter((m) => m.status.state === "in")
+  // Group matches by local date, sorted chronologically
   const today = new Date().toISOString().slice(0, 10)
-  const todayMatches = matches.filter((m) => m.date.slice(0, 10) === today && m.status.state !== "in")
-  const recent = matches.filter((m) => m.status.state === "post" && m.date.slice(0, 10) !== today).slice(0, 8)
-  const upcoming = matches.filter((m) => m.status.state === "pre" && m.date.slice(0, 10) !== today).slice(0, 8)
-
-  const Section = ({ title, items }: { title: string; items: Match[] }) =>
-    items.length === 0 ? null : (
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{title}</p>
-        <div className="space-y-2">
-          {items.map((m) => <MatchCard key={m.id} match={m} />)}
-        </div>
-      </div>
-    )
+  const byDate = new Map<string, Match[]>()
+  for (const m of [...matches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())) {
+    const key = new Date(m.date).toLocaleDateString("en-CA") // YYYY-MM-DD in local time
+    if (!byDate.has(key)) byDate.set(key, [])
+    byDate.get(key)!.push(m)
+  }
+  const sortedDates = Array.from(byDate.keys()).sort()
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {lastUpdated && (
         <p className="text-[10px] text-muted-foreground text-right">
           Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
         </p>
       )}
-      <Section title="🔴 Live" items={live} />
-      <Section title="Today" items={todayMatches} />
-      <Section title="Recent Results" items={recent} />
-      <Section title="Upcoming" items={upcoming} />
+
+      {sortedDates.map((date) => {
+        const dayMatches = byDate.get(date)!
+        const isToday = date === today
+        const hasLive = dayMatches.some((m) => m.status.state === "in")
+        const label = formatDayHeader(date)
+
+        return (
+          <div key={date} ref={isToday ? todayRef : undefined} className="space-y-2 scroll-mt-4">
+            {/* Date header */}
+            <div className="flex items-center gap-2 sticky top-0 bg-background/95 backdrop-blur py-1.5 z-10">
+              <h3 className={`text-sm font-bold ${isToday ? "text-foreground" : "text-muted-foreground"}`}>
+                {label}
+              </h3>
+              {isToday && (
+                <span className="text-[10px] font-bold text-primary border border-primary/30 px-1.5 py-0.5 rounded-full">
+                  TODAY
+                </span>
+              )}
+              {hasLive && (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  LIVE
+                </span>
+              )}
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            {/* Matches for this day */}
+            <div className="space-y-2">
+              {dayMatches.map((m) => <MatchCard key={m.id} match={m} />)}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -322,7 +379,7 @@ function RankingsTab() {
     <div className="space-y-1">
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">FIFA Coca-Cola World Rankings</p>
-        {source === "espn" && <span className="text-[10px] text-muted-foreground">via ESPN</span>}
+        {source === "static" && <span className="text-[10px] text-muted-foreground">Pre-tournament (Apr 2025)</span>}
       </div>
       {rankings.map((r) => {
         const moved = r.prevRank - r.rank

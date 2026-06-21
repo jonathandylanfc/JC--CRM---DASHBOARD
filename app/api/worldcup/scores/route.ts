@@ -9,7 +9,7 @@ export async function GET() {
     // Fetch today's scoreboard + a window around it
     const today = new Date()
     const dates: string[] = []
-    for (let i = -3; i <= 3; i++) {
+    for (let i = -7; i <= 7; i++) {
       const d = new Date(today)
       d.setDate(d.getDate() + i)
       dates.push(d.toISOString().slice(0, 10).replace(/-/g, ""))
@@ -66,6 +66,7 @@ export async function GET() {
           }>
           venue?: { fullName: string; address?: { city: string; country: string } }
           notes?: Array<{ type: string; headline: string }>
+          altGameNote?: string
         }>
       }
 
@@ -98,7 +99,7 @@ export async function GET() {
           period: status.period ?? null,
         },
         venue: comp.venue?.fullName ?? null,
-        group: comp.notes?.find((n) => n.type === "event")?.headline ?? null,
+        group: comp.altGameNote ?? comp.notes?.find((n) => n.type === "event")?.headline ?? null,
       }
     })
 
