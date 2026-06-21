@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Trophy, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp } from "lucide-react"
+import { Trophy, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, CalendarPlus } from "lucide-react"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -468,10 +468,18 @@ export function WorldCupContent() {
         <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center shrink-0">
           <Trophy className="w-5 h-5 text-yellow-500" />
         </div>
-        <div>
+        <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold">2026 FIFA World Cup</h1>
           <p className="text-xs text-muted-foreground">USA · Canada · Mexico — Jun 11 – Jul 19, 2026</p>
         </div>
+        <a
+          href="/api/worldcup/calendar"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors shrink-0"
+          title="Add all matches to your calendar"
+        >
+          <CalendarPlus className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Add to Calendar</span>
+        </a>
       </div>
 
       {/* Sticky tabs */}
