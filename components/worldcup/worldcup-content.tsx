@@ -61,7 +61,7 @@ function StatusBadge({ status, date }: { status: MatchStatus; date: string }) {
     )
   }
   if (status.state === "post") {
-    return <span className="text-[10px] text-muted-foreground font-medium">FT</span>
+    return null
   }
   const t = kickoffTime(date)
   return <span className="text-[10px] font-semibold text-muted-foreground">{t}</span>
@@ -118,6 +118,9 @@ function MatchCard({
           </span>
         </div>
         <div className="flex flex-col items-center gap-0.5 px-2 shrink-0">
+          {isDone && (
+            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Final</span>
+          )}
           {(isLive || isDone) && match.homeTeam.score !== null ? (
             <div className="flex items-center gap-1.5">
               <span className={`text-lg font-bold tabular-nums ${homeWin ? "text-foreground" : "text-muted-foreground"}`}>
