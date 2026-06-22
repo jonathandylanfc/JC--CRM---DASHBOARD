@@ -812,6 +812,8 @@ export function WorldCupContent() {
           </div>
           <a
             href="/api/worldcup/calendar"
+            target="_blank"
+            rel="noopener noreferrer"
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors shrink-0"
             title="Add all matches to your calendar"
           >
