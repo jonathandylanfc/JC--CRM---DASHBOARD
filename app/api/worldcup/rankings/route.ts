@@ -69,37 +69,54 @@ function confName(raw: string): string {
   return CONF_MAP[raw] ?? CONF_MAP[raw?.toUpperCase()] ?? ""
 }
 
+const FIFA_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+  "Accept": "application/json, text/plain, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Referer": "https://www.fifa.com/",
+  "Origin": "https://www.fifa.com",
+}
+
 // ── Attempt 1: FIFA's own unofficial JSON API ──────────────────────────────────
 async function fetchFromFIFA() {
-  const r = await fetch(
+  // Try multiple known FIFA API endpoint patterns
+  const urls = [
     "https://api.fifa.com/api/v3/ranking/FIFA?language=en&count=50",
-    { headers: { "User-Agent": "Mozilla/5.0", "Origin": "https://www.fifa.com" }, cache: "no-store" }
-  )
-  if (!r.ok) throw new Error(`FIFA API HTTP ${r.status}`)
-  const data = await r.json()
+    "https://api.fifa.com/api/v3/ranking/FIFA?language=en",
+    "https://api.fifa.com/api/v1/ranking/FIFA?language=en&count=50",
+  ]
 
-  type FIFAEntry = {
-    RankId: number
-    PreviousRankId?: number
-    TeamName: string
-    ShortClubName?: string
-    CountryCode: string
-    Points?: number
-    Confederation?: { Name?: string }
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: FIFA_HEADERS, cache: "no-store" })
+      if (!r.ok) continue
+      const data = await r.json()
+
+      // Handle multiple possible response shapes FIFA has used over the years
+      type FIFAEntry = Record<string, unknown>
+      const entries: FIFAEntry[] =
+        (data?.Rankings ?? data?.rankings ?? data?.items ?? data?.data ?? []) as FIFAEntry[]
+      if (!entries.length) continue
+
+      const mapped = entries.slice(0, 50).map((e, i) => {
+        const rank = Number(e.RankId ?? e.rankId ?? e.rank ?? i + 1)
+        const code = String(e.CountryCode ?? e.countryCode ?? e.code ?? "")
+        const conf = (e.Confederation as { Name?: string; name?: string } | undefined)
+        return {
+          rank,
+          prevRank: Number(e.PreviousRankId ?? e.previousRankId ?? rank),
+          name: String(e.TeamName ?? e.teamName ?? e.name ?? ""),
+          short: String(e.ShortClubName ?? e.shortName ?? code),
+          flag: FLAG(code.toLowerCase()),
+          confederation: confName(conf?.Name ?? conf?.name ?? String(e.confederation ?? "")),
+          points: Math.round(Number(e.Points ?? e.points ?? e.totalPoints ?? 0)),
+        }
+      }).filter((e) => e.name)
+
+      if (mapped.length) return mapped
+    } catch { /* try next url */ }
   }
-
-  const entries: FIFAEntry[] = data?.Rankings ?? []
-  if (!entries.length) throw new Error("Empty FIFA response")
-
-  return entries.map((e, i) => ({
-    rank: e.RankId ?? i + 1,
-    prevRank: e.PreviousRankId ?? e.RankId ?? i + 1,
-    name: e.TeamName,
-    short: e.ShortClubName ?? e.CountryCode,
-    flag: FLAG(e.CountryCode.toLowerCase()),
-    confederation: confName(e.Confederation?.Name ?? ""),
-    points: Math.round(e.Points ?? 0),
-  }))
+  throw new Error("All FIFA endpoints failed")
 }
 
 // ── Attempt 2: ESPN rankings endpoint (several URL shapes) ────────────────────

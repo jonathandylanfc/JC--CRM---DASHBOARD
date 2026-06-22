@@ -687,7 +687,7 @@ function RankingsTab() {
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">FIFA Coca-Cola World Rankings</p>
         <span className="text-[10px] text-muted-foreground">
-          {source === "live" ? "Live" : "Apr 4, 2026 · Pre-tournament"}
+          {source === "live" ? "Live" : "Pre-tournament · frozen during WC"}
         </span>
       </div>
       {rankings.map((r) => {
