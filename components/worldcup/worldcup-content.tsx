@@ -753,32 +753,64 @@ const TABS = [
 
 type TabId = typeof TABS[number]["id"]
 
+const TAB_IDS = TABS.map((t) => t.id) as TabId[]
+
 export function WorldCupContent() {
   const [tab, setTab] = useState<TabId>("scores")
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+
+  const goNext = useCallback(() => {
+    setTab((prev) => {
+      const i = TAB_IDS.indexOf(prev)
+      return i < TAB_IDS.length - 1 ? TAB_IDS[i + 1] : prev
+    })
+  }, [])
+
+  const goPrev = useCallback(() => {
+    setTab((prev) => {
+      const i = TAB_IDS.indexOf(prev)
+      return i > 0 ? TAB_IDS[i - 1] : prev
+    })
+  }, [])
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+  }, [])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    const start = touchStartRef.current
+    if (!start) return
+    const dx = e.changedTouches[0].clientX - start.x
+    const dy = e.changedTouches[0].clientY - start.y
+    // Only fire if swipe is more horizontal than vertical and at least 60px
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
+      if (dx < 0) goNext(); else goPrev()
+    }
+    touchStartRef.current = null
+  }, [goNext, goPrev])
 
   return (
     <div className="space-y-0">
-      {/* Header */}
-      <div className="flex items-center gap-3 pb-4">
-        <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center shrink-0">
-          <Trophy className="w-5 h-5 text-yellow-500" />
+      {/* Sticky header + tabs */}
+      <div className="sticky top-0 z-20 bg-background/90 backdrop-blur-md -mx-4 px-4 lg:-mx-6 lg:px-6 border-b border-border/50 pb-0">
+        <div className="flex items-center gap-3 pt-3 pb-2">
+          <div className="w-8 h-8 rounded-full bg-yellow-500/10 flex items-center justify-center shrink-0">
+            <Trophy className="w-4 h-4 text-yellow-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-bold leading-tight">2026 FIFA World Cup</h1>
+            <p className="text-[10px] text-muted-foreground">USA · Canada · Mexico — Jun 11 – Jul 19</p>
+          </div>
+          <a
+            href="/api/worldcup/calendar"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors shrink-0"
+            title="Add all matches to your calendar"
+          >
+            <CalendarPlus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Calendar</span>
+          </a>
         </div>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold">2026 FIFA World Cup</h1>
-          <p className="text-xs text-muted-foreground">USA · Canada · Mexico — Jun 11 – Jul 19, 2026</p>
-        </div>
-        <a
-          href="/api/worldcup/calendar"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors shrink-0"
-          title="Add all matches to your calendar"
-        >
-          <CalendarPlus className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Add to Calendar</span>
-        </a>
-      </div>
 
-      {/* Sticky tabs */}
-      <div className="sticky top-0 z-20 bg-background/70 backdrop-blur-md border-b border-border/50 -mx-4 px-4 lg:-mx-6 lg:px-6">
         <div className="flex gap-1">
           {TABS.map((t) => (
             <button
@@ -796,8 +828,12 @@ export function WorldCupContent() {
         </div>
       </div>
 
-      {/* Tab content */}
-      <div className="pt-4">
+      {/* Tab content — swipe left/right to change tabs */}
+      <div
+        className="pt-4"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         {tab === "scores" && <ScoresTab />}
         {tab === "groups" && <StandingsTab />}
         {tab === "rankings" && <RankingsTab />}
