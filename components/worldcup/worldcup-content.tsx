@@ -385,6 +385,15 @@ function ScoresTab() {
     })
   }, [])
 
+  const enterSelectMode = useCallback(() => {
+    // Pre-select every upcoming (not yet started) match
+    const futureIds = new Set(
+      matches.filter((m) => m.status.state === "pre").map((m) => m.id)
+    )
+    setSelectedIds(futureIds)
+    setSelectMode(true)
+  }, [matches])
+
   const exitSelectMode = () => {
     setSelectMode(false)
     setSelectedIds(new Set())
@@ -469,7 +478,7 @@ function ScoresTab() {
           </button>
         ) : (
           <button
-            onClick={() => setSelectMode(true)}
+            onClick={enterSelectMode}
             className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground border border-border rounded-lg px-2.5 py-1.5 transition-colors hover:bg-muted/40"
           >
             <CalendarPlus className="w-3.5 h-3.5" /> Add games to calendar
@@ -479,7 +488,7 @@ function ScoresTab() {
 
       {selectMode && (
         <p className="text-xs text-muted-foreground -mt-2">
-          Tap upcoming games to select them, then add to any calendar.
+          All upcoming games are selected — tap any to remove it.
         </p>
       )}
 
