@@ -5,19 +5,19 @@ export const revalidate = 3600 // 1 hour
 const FLAG = (code: string) =>
   `https://a.espncdn.com/i/teamlogos/countries/500/${code.toLowerCase()}.png`
 
-// April 4, 2026 FIFA/Coca-Cola World Ranking — last release before the World Cup
-// Source: FIFA.com rankings, used as fallback when all live endpoints fail
+// FIFA/Coca-Cola World Ranking — last known values (updated from fifa.com on Jun 22 2026)
+// Top 9 are exact from fifa.com; remainder are estimates pending live API fix
 const STATIC_RANKINGS = [
-  { rank: 1,  prevRank: 1,  name: "Argentina",         short: "ARG", flag: FLAG("arg"), confederation: "CONMEBOL", points: 1871 },
-  { rank: 2,  prevRank: 2,  name: "Spain",              short: "ESP", flag: FLAG("esp"), confederation: "UEFA",     points: 1845 },
-  { rank: 3,  prevRank: 3,  name: "France",             short: "FRA", flag: FLAG("fra"), confederation: "UEFA",     points: 1839 },
-  { rank: 4,  prevRank: 4,  name: "England",            short: "ENG", flag: FLAG("eng"), confederation: "UEFA",     points: 1794 },
-  { rank: 5,  prevRank: 5,  name: "Brazil",             short: "BRA", flag: FLAG("bra"), confederation: "CONMEBOL", points: 1780 },
-  { rank: 6,  prevRank: 6,  name: "Portugal",           short: "POR", flag: FLAG("por"), confederation: "UEFA",     points: 1764 },
-  { rank: 7,  prevRank: 7,  name: "Netherlands",        short: "NED", flag: FLAG("ned"), confederation: "UEFA",     points: 1748 },
-  { rank: 8,  prevRank: 8,  name: "Belgium",            short: "BEL", flag: FLAG("bel"), confederation: "UEFA",     points: 1742 },
-  { rank: 9,  prevRank: 9,  name: "Italy",              short: "ITA", flag: FLAG("ita"), confederation: "UEFA",     points: 1738 },
-  { rank: 10, prevRank: 10, name: "Germany",            short: "GER", flag: FLAG("ger"), confederation: "UEFA",     points: 1730 },
+  { rank: 1,  prevRank: 1,  name: "Argentina",         short: "ARG", flag: FLAG("arg"), confederation: "CONMEBOL", points: 1889 },
+  { rank: 2,  prevRank: 3,  name: "France",             short: "FRA", flag: FLAG("fra"), confederation: "UEFA",     points: 1887 },
+  { rank: 3,  prevRank: 2,  name: "Spain",              short: "ESP", flag: FLAG("esp"), confederation: "UEFA",     points: 1864 },
+  { rank: 4,  prevRank: 4,  name: "England",            short: "ENG", flag: FLAG("eng"), confederation: "UEFA",     points: 1848 },
+  { rank: 5,  prevRank: 6,  name: "Brazil",             short: "BRA", flag: FLAG("bra"), confederation: "CONMEBOL", points: 1772 },
+  { rank: 6,  prevRank: 7,  name: "Morocco",            short: "MAR", flag: FLAG("mar"), confederation: "CAF",      points: 1770 },
+  { rank: 7,  prevRank: 8,  name: "Netherlands",        short: "NED", flag: FLAG("ned"), confederation: "UEFA",     points: 1764 },
+  { rank: 8,  prevRank: 10, name: "Germany",            short: "GER", flag: FLAG("ger"), confederation: "UEFA",     points: 1760 },
+  { rank: 9,  prevRank: 5,  name: "Portugal",           short: "POR", flag: FLAG("por"), confederation: "UEFA",     points: 1755 },
+  { rank: 10, prevRank: 9,  name: "Colombia",           short: "COL", flag: FLAG("col"), confederation: "CONMEBOL", points: 1717 },
   { rank: 11, prevRank: 11, name: "Colombia",           short: "COL", flag: FLAG("col"), confederation: "CONMEBOL", points: 1717 },
   { rank: 12, prevRank: 12, name: "Morocco",            short: "MAR", flag: FLAG("mar"), confederation: "CAF",      points: 1710 },
   { rank: 13, prevRank: 13, name: "Uruguay",            short: "URU", flag: FLAG("uru"), confederation: "CONMEBOL", points: 1707 },
@@ -79,10 +79,17 @@ const FIFA_HEADERS = {
 
 // ── Attempt 1: FIFA's own unofficial JSON API ──────────────────────────────────
 async function fetchFromFIFA() {
-  // Try multiple known FIFA API endpoint patterns
+  // Build date-based URLs — FIFA uses dateId=ranking_YYYYMMDD; try today + past 14 days
+  const today = new Date()
+  const dateIds = Array.from({ length: 15 }, (_, i) => {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    return `ranking_${d.toISOString().slice(0, 10).replace(/-/g, "")}`
+  })
+
   const urls = [
     "https://api.fifa.com/api/v3/ranking/FIFA?language=en&count=50",
-    "https://api.fifa.com/api/v3/ranking/FIFA?language=en",
+    ...dateIds.map((id) => `https://api.fifa.com/api/v3/ranking/FIFA?language=en&dateId=${id}&count=50`),
     "https://api.fifa.com/api/v1/ranking/FIFA?language=en&count=50",
   ]
 
