@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-export const revalidate = 3600 // 1 hour
+export const revalidate = 0 // always fresh
 
 const FLAG = (code: string) =>
   `https://a.espncdn.com/i/teamlogos/countries/500/${code.toLowerCase()}.png`
@@ -169,7 +169,7 @@ async function fetchFromFIFA() {
         }
       }).filter((e) => e.name)
 
-      if (mapped.length) return mapped
+      if (mapped.length >= 20) return mapped
     } catch { /* try next url */ }
   }
   throw new Error("All FIFA endpoints failed")
@@ -218,7 +218,7 @@ async function fetchFromESPN() {
         points: item.points ?? 0,
       })).filter((e) => e.name)
 
-      if (mapped.length) return mapped
+      if (mapped.length >= 20) return mapped
     } catch { /* try next */ }
   }
   throw new Error("All ESPN ranking endpoints failed")
