@@ -6,12 +6,13 @@ import { LayoutDashboard, CheckSquare, DollarSign, PiggyBank, Settings, BarChart
 import { cn } from "@/lib/utils"
 
 const ALL_TABS = [
-  { icon: LayoutDashboard, label: "Home", href: "/", investmentsOnly: false },
-  { icon: CheckSquare, label: "Tasks", href: "/tasks", investmentsOnly: false },
-  { icon: Trophy, label: "WC", href: "/worldcup", investmentsOnly: false, highlight: true },
-  { icon: DollarSign, label: "Finance", href: "/finance", investmentsOnly: false },
-  { icon: BarChart2, label: "Invest", href: "/investments", investmentsOnly: true },
-  { icon: Settings, label: "Settings", href: "/settings", investmentsOnly: false },
+  { icon: LayoutDashboard, label: "Home",    href: "/",            investmentsOnly: false },
+  { icon: CheckSquare,     label: "Tasks",   href: "/tasks",       investmentsOnly: false },
+  { icon: PiggyBank,       label: "Budget",  href: "/budget",      investmentsOnly: false },
+  { icon: Trophy,          label: "WC",      href: "/worldcup",    investmentsOnly: false, highlight: true },
+  { icon: DollarSign,      label: "Finance", href: "/finance",     investmentsOnly: false },
+  { icon: BarChart2,       label: "Invest",  href: "/investments", investmentsOnly: true  },
+  { icon: Settings,        label: "Settings",href: "/settings",    investmentsOnly: false },
 ]
 
 export function BottomNav({ showInvestments = true }: { showInvestments?: boolean }) {
