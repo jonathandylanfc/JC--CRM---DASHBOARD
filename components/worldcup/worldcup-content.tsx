@@ -437,14 +437,6 @@ function ScoresTab() {
   const currentAndFutureDates = sortedDates.filter((d) => d >= today)
   const totalPastMatches = pastDates.reduce((n, d) => n + byDate.get(d)!.length, 0)
 
-  const handleShowHistory = () => {
-    setShowHistory(true)
-    // Scroll to the most recent past game (last in pastDates) after render
-    setTimeout(() => {
-      mostRecentPastRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-    }, 80)
-  }
-
   const selectedMatches = matches.filter((m) => selectedIds.has(m.id))
 
   return (

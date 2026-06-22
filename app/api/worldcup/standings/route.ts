@@ -10,6 +10,14 @@ interface TeamStats {
   gp: number; w: number; d: number; l: number; gf: number; ga: number; gd: number; pts: number
 }
 
+// Transform flat TeamStats into the nested shape the frontend StandingEntry interface expects
+function toEntry(t: TeamStats) {
+  return {
+    team: { name: t.name, short: t.short, abbr: t.abbr, logo: t.logo },
+    gp: t.gp, w: t.w, d: t.d, l: t.l, gf: t.gf, ga: t.ga, gd: t.gd, pts: t.pts,
+  }
+}
+
 function statVal(stats: Array<{ name: string; value: number }>, name: string): number {
   return stats.find((s) => s.name === name)?.value ?? 0
 }
@@ -27,51 +35,64 @@ async function fetchFromStandingsAPI() {
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   const data = await r.json()
 
-  // ESPN returns groups as `children` or flat `entries` with a `group` field
   type RawEntry = {
     team: { displayName: string; shortDisplayName?: string; abbreviation: string; logos?: Array<{ href: string }> }
     stats: Array<{ name: string; value: number }>
     group?: { displayName: string }
   }
-  type RawChild = { name?: string; standings?: { entries: RawEntry[] }; entries?: RawEntry[] }
+  type RawChild = {
+    name?: string
+    standings?: { entries: RawEntry[] }
+    entries?: RawEntry[]
+    children?: RawChild[]
+  }
 
-  let entries: RawEntry[] = []
+  const groupMap = new Map<string, TeamStats[]>()
 
-  if (Array.isArray(data?.children)) {
-    // Group-per-child shape
-    const groupMap = new Map<string, TeamStats[]>()
-    for (const child of data.children as RawChild[]) {
-      const groupName: string = child.name ?? "Unknown"
+  // Recursively walk children to find groups that have entries
+  function walkChildren(children: RawChild[]) {
+    for (const child of children) {
       const rawEntries: RawEntry[] = child.standings?.entries ?? child.entries ?? []
-      if (!rawEntries.length) continue
-      const parsed: TeamStats[] = rawEntries.map((e) => ({
-        name: e.team.displayName,
-        short: e.team.shortDisplayName ?? e.team.abbreviation,
-        abbr: e.team.abbreviation,
-        logo: e.team.logos?.[0]?.href ?? null,
-        gp: statVal(e.stats, "gamesPlayed"),
-        w:  statVal(e.stats, "wins"),
-        d:  statVal(e.stats, "ties"),
-        l:  statVal(e.stats, "losses"),
-        gf: statVal(e.stats, "pointsFor"),
-        ga: statVal(e.stats, "pointsAgainst"),
-        gd: statVal(e.stats, "pointDifferential"),
-        pts: statVal(e.stats, "points"),
-      }))
-      groupMap.set(groupName, parsed)
-    }
-    if (groupMap.size > 0) {
-      return Array.from(groupMap.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([name, ents]) => ({ name, abbr: name.replace(/^Group\s+/i, ""), entries: sortEntries(ents) }))
+      if (rawEntries.length > 0 && child.name) {
+        const parsed: TeamStats[] = rawEntries.map((e) => ({
+          name: e.team.displayName,
+          short: e.team.shortDisplayName ?? e.team.abbreviation,
+          abbr: e.team.abbreviation,
+          logo: e.team.logos?.[0]?.href ?? null,
+          gp: statVal(e.stats, "gamesPlayed"),
+          w:  statVal(e.stats, "wins"),
+          d:  statVal(e.stats, "ties"),
+          l:  statVal(e.stats, "losses"),
+          gf: statVal(e.stats, "pointsFor"),
+          ga: statVal(e.stats, "pointsAgainst"),
+          gd: statVal(e.stats, "pointDifferential"),
+          pts: statVal(e.stats, "points"),
+        }))
+        groupMap.set(child.name, parsed)
+      }
+      if (child.children?.length) walkChildren(child.children)
     }
   }
 
+  if (Array.isArray(data?.children)) {
+    walkChildren(data.children as RawChild[])
+  }
+
+  if (groupMap.size > 0) {
+    return Array.from(groupMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, ents]) => ({
+        name,
+        abbr: name.replace(/^Group\s+/i, ""),
+        entries: sortEntries(ents).map(toEntry),
+      }))
+  }
+
   // Flat entries with group field
-  entries = data?.standings?.entries ?? []
-  if (entries.length > 0) {
-    const groupMap = new Map<string, TeamStats[]>()
-    for (const e of entries) {
+  const flatEntries: RawEntry[] = data?.standings?.entries ?? []
+  if (flatEntries.length > 0) {
+    const flatMap = new Map<string, TeamStats[]>()
+    for (const e of flatEntries) {
       const groupName = e.group?.displayName ?? "Unknown"
       const team: TeamStats = {
         name: e.team.displayName,
@@ -87,20 +108,24 @@ async function fetchFromStandingsAPI() {
         gd: statVal(e.stats, "pointDifferential"),
         pts: statVal(e.stats, "points"),
       }
-      if (!groupMap.has(groupName)) groupMap.set(groupName, [])
-      groupMap.get(groupName)!.push(team)
+      if (!flatMap.has(groupName)) flatMap.set(groupName, [])
+      flatMap.get(groupName)!.push(team)
     }
-    if (groupMap.size > 0) {
-      return Array.from(groupMap.entries())
+    if (flatMap.size > 0) {
+      return Array.from(flatMap.entries())
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([name, ents]) => ({ name, abbr: name.replace(/^Group\s+/i, ""), entries: sortEntries(ents) }))
+        .map(([name, ents]) => ({
+          name,
+          abbr: name.replace(/^Group\s+/i, ""),
+          entries: sortEntries(ents).map(toEntry),
+        }))
     }
   }
 
   throw new Error("No standings data in response")
 }
 
-// ── Strategy 2: compute from scoreboard (fixed to check notes field too) ───────
+// ── Strategy 2: compute from scoreboard ───────────────────────────────────────
 async function fetchFromScoreboard() {
   const dates: string[] = []
   for (let day = 11; day <= 26; day++) {
@@ -125,7 +150,6 @@ async function fetchFromScoreboard() {
       const comp = event.competitions?.[0]
       if (!comp) continue
 
-      // Use same field logic as scores route
       const note: string =
         comp.altGameNote ??
         comp.notes?.find((n: { type: string }) => n.type === "event")?.headline ??
@@ -185,12 +209,11 @@ async function fetchFromScoreboard() {
     .map(([letter, teams]) => ({
       name: `Group ${letter}`,
       abbr: letter,
-      entries: sortEntries(Array.from(teams.values())),
+      entries: sortEntries(Array.from(teams.values())).map(toEntry),
     }))
 }
 
 export async function GET() {
-  // Try dedicated standings API first, fall back to score computation
   try {
     const groups = await fetchFromStandingsAPI()
     if (groups.length > 0) return NextResponse.json({ groups })
