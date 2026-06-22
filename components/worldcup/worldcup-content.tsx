@@ -354,7 +354,6 @@ function ScoresTab() {
   const [loading, setLoading] = useState(true)
   const [showHistory, setShowHistory] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
-<<<<<<< HEAD
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showCalModal, setShowCalModal] = useState(false)
@@ -362,11 +361,9 @@ function ScoresTab() {
 
   const handleHistoryToggle = useCallback(() => {
     if (showHistory) {
-      // Capture anchor position before removing past sections from DOM
       const anchor = upcomingAnchorRef.current
       const prevTop = anchor?.getBoundingClientRect().top ?? 0
       setShowHistory(false)
-      // After DOM updates, scroll so anchor stays in same viewport position
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (anchor) {
@@ -392,9 +389,6 @@ function ScoresTab() {
     setSelectMode(false)
     setSelectedIds(new Set())
   }
-=======
-  const mostRecentPastRef = useRef<HTMLDivElement>(null)
->>>>>>> origin/main
 
   const fetchScores = useCallback(async () => {
     try {
@@ -454,8 +448,20 @@ function ScoresTab() {
   const selectedMatches = matches.filter((m) => selectedIds.has(m.id))
 
   return (
-<<<<<<< HEAD
     <div className="space-y-6 pb-24">
+      {/* Floating pill to hide history while scrolling */}
+      {showHistory && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+          <button
+            onClick={handleHistoryToggle}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-card/90 backdrop-blur-md border border-border shadow-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ChevronUp className="w-3.5 h-3.5" />
+            Hide game history
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         {lastUpdated ? (
           <p className="text-[10px] text-muted-foreground">
@@ -482,38 +488,14 @@ function ScoresTab() {
       {selectMode && (
         <p className="text-xs text-muted-foreground -mt-2">
           Tap upcoming games to select them, then add to any calendar.
-=======
-    <div className="space-y-6">
-      {/* Floating pill to hide history while scrolling */}
-      {showHistory && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-          <button
-            onClick={() => setShowHistory(false)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-card/90 backdrop-blur-md border border-border shadow-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronUp className="w-3.5 h-3.5" />
-            Hide game history
-          </button>
-        </div>
-      )}
-
-      {lastUpdated && (
-        <p className="text-[10px] text-muted-foreground text-right">
-          Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
->>>>>>> origin/main
         </p>
       )}
 
       {/* History toggle button */}
       {pastDates.length > 0 && !showHistory && (
         <button
-<<<<<<< HEAD
           onClick={handleHistoryToggle}
-          className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-muted-foreground hover:text-foreground border border-dashed border-border rounded-lg transition-colors"
-=======
-          onClick={handleShowHistory}
           className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-muted-foreground hover:text-foreground border border-dashed border-border/60 rounded-lg transition-colors bg-card/30 backdrop-blur-sm"
->>>>>>> origin/main
         >
           <ChevronDown className="w-3.5 h-3.5" />
           Load game history ({totalPastMatches} matches)
@@ -521,10 +503,8 @@ function ScoresTab() {
       )}
 
       {/* Past matches — most recent last so it appears closest to Today */}
-      {showHistory && pastDates.map((date, i) => (
-        <div key={date} ref={i === pastDates.length - 1 ? mostRecentPastRef : undefined}>
-          <DateSection date={date} matches={byDate.get(date)!} isToday={false} />
-        </div>
+      {showHistory && pastDates.map((date) => (
+        <DateSection key={date} date={date} matches={byDate.get(date)!} isToday={false} />
       ))}
 
       {/* Today and upcoming — anchor keeps viewport stable when history is hidden */}
