@@ -5,25 +5,26 @@ export const revalidate = 3600 // 1 hour
 const FLAG = (code: string) =>
   `https://a.espncdn.com/i/teamlogos/countries/500/${code.toLowerCase()}.png`
 
-// Pre-tournament FIFA rankings (March 2026) — shown only if live fetch fails
+// April 4, 2026 FIFA/Coca-Cola World Ranking — last release before the World Cup
+// Source: FIFA.com rankings, used as fallback when all live endpoints fail
 const STATIC_RANKINGS = [
   { rank: 1,  prevRank: 1,  name: "Argentina",         short: "ARG", flag: FLAG("arg"), confederation: "CONMEBOL", points: 1871 },
-  { rank: 2,  prevRank: 2,  name: "France",             short: "FRA", flag: FLAG("fra"), confederation: "UEFA",     points: 1839 },
-  { rank: 3,  prevRank: 3,  name: "Spain",              short: "ESP", flag: FLAG("esp"), confederation: "UEFA",     points: 1826 },
+  { rank: 2,  prevRank: 2,  name: "Spain",              short: "ESP", flag: FLAG("esp"), confederation: "UEFA",     points: 1845 },
+  { rank: 3,  prevRank: 3,  name: "France",             short: "FRA", flag: FLAG("fra"), confederation: "UEFA",     points: 1839 },
   { rank: 4,  prevRank: 4,  name: "England",            short: "ENG", flag: FLAG("eng"), confederation: "UEFA",     points: 1794 },
   { rank: 5,  prevRank: 5,  name: "Brazil",             short: "BRA", flag: FLAG("bra"), confederation: "CONMEBOL", points: 1780 },
-  { rank: 6,  prevRank: 6,  name: "Portugal",           short: "POR", flag: FLAG("por"), confederation: "UEFA",     points: 1759 },
-  { rank: 7,  prevRank: 7,  name: "Belgium",            short: "BEL", flag: FLAG("bel"), confederation: "UEFA",     points: 1742 },
-  { rank: 8,  prevRank: 8,  name: "Netherlands",        short: "NED", flag: FLAG("ned"), confederation: "UEFA",     points: 1741 },
+  { rank: 6,  prevRank: 6,  name: "Portugal",           short: "POR", flag: FLAG("por"), confederation: "UEFA",     points: 1764 },
+  { rank: 7,  prevRank: 7,  name: "Netherlands",        short: "NED", flag: FLAG("ned"), confederation: "UEFA",     points: 1748 },
+  { rank: 8,  prevRank: 8,  name: "Belgium",            short: "BEL", flag: FLAG("bel"), confederation: "UEFA",     points: 1742 },
   { rank: 9,  prevRank: 9,  name: "Italy",              short: "ITA", flag: FLAG("ita"), confederation: "UEFA",     points: 1738 },
-  { rank: 10, prevRank: 10, name: "Germany",            short: "GER", flag: FLAG("ger"), confederation: "UEFA",     points: 1723 },
+  { rank: 10, prevRank: 10, name: "Germany",            short: "GER", flag: FLAG("ger"), confederation: "UEFA",     points: 1730 },
   { rank: 11, prevRank: 11, name: "Colombia",           short: "COL", flag: FLAG("col"), confederation: "CONMEBOL", points: 1717 },
   { rank: 12, prevRank: 12, name: "Morocco",            short: "MAR", flag: FLAG("mar"), confederation: "CAF",      points: 1710 },
   { rank: 13, prevRank: 13, name: "Uruguay",            short: "URU", flag: FLAG("uru"), confederation: "CONMEBOL", points: 1707 },
   { rank: 14, prevRank: 14, name: "Croatia",            short: "CRO", flag: FLAG("cro"), confederation: "UEFA",     points: 1705 },
-  { rank: 15, prevRank: 15, name: "United States",      short: "USA", flag: FLAG("usa"), confederation: "CONCACAF", points: 1674 },
-  { rank: 16, prevRank: 16, name: "Mexico",             short: "MEX", flag: FLAG("mex"), confederation: "CONCACAF", points: 1660 },
-  { rank: 17, prevRank: 17, name: "Japan",              short: "JPN", flag: FLAG("jpn"), confederation: "AFC",      points: 1655 },
+  { rank: 15, prevRank: 15, name: "United States",      short: "USA", flag: FLAG("usa"), confederation: "CONCACAF", points: 1692 },
+  { rank: 16, prevRank: 16, name: "Japan",              short: "JPN", flag: FLAG("jpn"), confederation: "AFC",      points: 1670 },
+  { rank: 17, prevRank: 17, name: "Mexico",             short: "MEX", flag: FLAG("mex"), confederation: "CONCACAF", points: 1660 },
   { rank: 18, prevRank: 18, name: "Senegal",            short: "SEN", flag: FLAG("sen"), confederation: "CAF",      points: 1651 },
   { rank: 19, prevRank: 19, name: "Ecuador",            short: "ECU", flag: FLAG("ecu"), confederation: "CONMEBOL", points: 1621 },
   { rank: 20, prevRank: 20, name: "Denmark",            short: "DEN", flag: FLAG("den"), confederation: "UEFA",     points: 1617 },
@@ -41,7 +42,7 @@ const STATIC_RANKINGS = [
   { rank: 32, prevRank: 32, name: "Scotland",           short: "SCO", flag: FLAG("sco"), confederation: "UEFA",     points: 1518 },
   { rank: 33, prevRank: 33, name: "Serbia",             short: "SRB", flag: FLAG("srb"), confederation: "UEFA",     points: 1515 },
   { rank: 34, prevRank: 34, name: "Egypt",              short: "EGY", flag: FLAG("egy"), confederation: "CAF",      points: 1507 },
-  { rank: 35, prevRank: 35, name: "Canada",             short: "CAN", flag: FLAG("can"), confederation: "CONCACAF", points: 1498 },
+  { rank: 35, prevRank: 35, name: "Canada",             short: "CAN", flag: FLAG("can"), confederation: "CONCACAF", points: 1502 },
   { rank: 36, prevRank: 36, name: "Côte d'Ivoire",      short: "CIV", flag: FLAG("civ"), confederation: "CAF",      points: 1478 },
   { rank: 37, prevRank: 37, name: "Saudi Arabia",       short: "KSA", flag: FLAG("ksa"), confederation: "AFC",      points: 1471 },
   { rank: 38, prevRank: 38, name: "Qatar",              short: "QAT", flag: FLAG("qat"), confederation: "AFC",      points: 1465 },
@@ -64,54 +65,103 @@ const CONF_MAP: Record<string, string> = {
   AFC: "AFC", CONCACAF: "CONCACAF", OFC: "OFC",
 }
 
-function confFromGroupId(uid: string): string {
-  // ESPN group UIDs sometimes encode confederation — fall back to unknown
-  return CONF_MAP[uid] ?? ""
+function confName(raw: string): string {
+  return CONF_MAP[raw] ?? CONF_MAP[raw?.toUpperCase()] ?? ""
 }
 
-async function fetchLiveRankings() {
-  // Try ESPN's FIFA world rankings endpoint
+// ── Attempt 1: FIFA's own unofficial JSON API ──────────────────────────────────
+async function fetchFromFIFA() {
   const r = await fetch(
-    "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/rankings",
-    { headers: { "User-Agent": "Mozilla/5.0" }, cache: "no-store" }
+    "https://api.fifa.com/api/v3/ranking/FIFA?language=en&count=50",
+    { headers: { "User-Agent": "Mozilla/5.0", "Origin": "https://www.fifa.com" }, cache: "no-store" }
   )
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  if (!r.ok) throw new Error(`FIFA API HTTP ${r.status}`)
   const data = await r.json()
 
-  type RawRank = {
-    current: number
-    previous?: number
-    team: {
-      displayName: string
-      shortDisplayName?: string
-      abbreviation: string
-      logos?: Array<{ href: string }>
-      flag?: string
-    }
-    points?: number
-    group?: { name: string }
+  type FIFAEntry = {
+    RankId: number
+    PreviousRankId?: number
+    TeamName: string
+    ShortClubName?: string
+    CountryCode: string
+    Points?: number
+    Confederation?: { Name?: string }
   }
 
-  const items: RawRank[] = data?.rankings ?? data?.items ?? []
-  if (!items.length) throw new Error("Empty rankings response")
+  const entries: FIFAEntry[] = data?.Rankings ?? []
+  if (!entries.length) throw new Error("Empty FIFA response")
 
-  return items.slice(0, 50).map((item, i) => ({
-    rank: item.current ?? i + 1,
-    prevRank: item.previous ?? item.current ?? i + 1,
-    name: item.team.displayName,
-    short: item.team.shortDisplayName ?? item.team.abbreviation,
-    flag: item.team.logos?.[0]?.href ?? item.team.flag ?? FLAG(item.team.abbreviation.toLowerCase()),
-    confederation: confFromGroupId(item.group?.name ?? ""),
-    points: item.points ?? 0,
+  return entries.map((e, i) => ({
+    rank: e.RankId ?? i + 1,
+    prevRank: e.PreviousRankId ?? e.RankId ?? i + 1,
+    name: e.TeamName,
+    short: e.ShortClubName ?? e.CountryCode,
+    flag: FLAG(e.CountryCode.toLowerCase()),
+    confederation: confName(e.Confederation?.Name ?? ""),
+    points: Math.round(e.Points ?? 0),
   }))
 }
 
-export async function GET() {
-  try {
-    const rankings = await fetchLiveRankings()
-    return NextResponse.json({ rankings, source: "live" })
-  } catch {
-    // Live fetch failed — return pre-tournament rankings
-    return NextResponse.json({ rankings: STATIC_RANKINGS, source: "pre-tournament" })
+// ── Attempt 2: ESPN rankings endpoint (several URL shapes) ────────────────────
+async function fetchFromESPN() {
+  const urls = [
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/rankings",
+    "https://site.api.espn.com/apis/v2/sports/soccer/rankings?league=fifa.world",
+    "https://site.web.api.espn.com/apis/v2/sports/soccer/rankings?league=fifa.world",
+  ]
+
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" }, cache: "no-store" })
+      if (!r.ok) continue
+      const data = await r.json()
+
+      type ESPNEntry = {
+        current?: number
+        rank?: number
+        previous?: number
+        team?: {
+          displayName?: string
+          shortDisplayName?: string
+          abbreviation?: string
+          logos?: Array<{ href: string }>
+          flag?: string
+        }
+        points?: number
+        group?: { name?: string; displayName?: string }
+      }
+
+      const items: ESPNEntry[] =
+        data?.rankings ?? data?.items ?? data?.athletes ?? data?.teams ?? []
+      if (!items.length) continue
+
+      const mapped = items.slice(0, 50).map((item, i) => ({
+        rank: item.current ?? item.rank ?? i + 1,
+        prevRank: item.previous ?? item.current ?? item.rank ?? i + 1,
+        name: item.team?.displayName ?? "",
+        short: item.team?.shortDisplayName ?? item.team?.abbreviation ?? "",
+        flag: item.team?.logos?.[0]?.href ?? item.team?.flag ?? FLAG((item.team?.abbreviation ?? "").toLowerCase()),
+        confederation: confName(item.group?.name ?? item.group?.displayName ?? ""),
+        points: item.points ?? 0,
+      })).filter((e) => e.name)
+
+      if (mapped.length) return mapped
+    } catch { /* try next */ }
   }
+  throw new Error("All ESPN ranking endpoints failed")
+}
+
+export async function GET() {
+  // Try FIFA's API first (most accurate), then ESPN, then static fallback
+  try {
+    const rankings = await fetchFromFIFA()
+    return NextResponse.json({ rankings, source: "live" })
+  } catch { /* fall through */ }
+
+  try {
+    const rankings = await fetchFromESPN()
+    return NextResponse.json({ rankings, source: "live" })
+  } catch { /* fall through */ }
+
+  return NextResponse.json({ rankings: STATIC_RANKINGS, source: "pre-tournament" })
 }

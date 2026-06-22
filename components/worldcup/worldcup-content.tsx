@@ -686,7 +686,9 @@ function RankingsTab() {
     <div className="space-y-1">
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">FIFA Coca-Cola World Rankings</p>
-        {source !== "live" && <span className="text-[10px] text-muted-foreground">Pre-tournament rankings</span>}
+        <span className="text-[10px] text-muted-foreground">
+          {source === "live" ? "Live" : "Apr 4, 2026 · Pre-tournament"}
+        </span>
       </div>
       {rankings.map((r) => {
         const moved = r.prevRank - r.rank
