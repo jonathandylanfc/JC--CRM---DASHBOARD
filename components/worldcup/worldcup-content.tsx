@@ -166,7 +166,7 @@ function CalendarPickerModal({
   const [notConnected, setNotConnected] = useState(false)
   const [pickedId, setPickedId] = useState("")
   const [adding, setAdding] = useState(false)
-  const [done, setDone] = useState<{ created: number; failed: number } | null>(null)
+  const [done, setDone] = useState<{ created: number; updated: number; failed: number } | null>(null)
 
   useEffect(() => {
     fetch("/api/calendar/events")
@@ -193,9 +193,9 @@ function CalendarPickerModal({
         body: JSON.stringify({ matches, calendarId: pickedId }),
       })
       const d = await r.json()
-      setDone({ created: d.created ?? 0, failed: d.errors?.length ?? 0 })
+      setDone({ created: d.created ?? 0, updated: d.updated ?? 0, failed: d.errors?.length ?? 0 })
     } catch {
-      setDone({ created: 0, failed: matches.length })
+      setDone({ created: 0, updated: 0, failed: matches.length })
     }
     setAdding(false)
   }
@@ -213,11 +213,18 @@ function CalendarPickerModal({
         {done ? (
           <div className="py-4 text-center space-y-2">
             <CalendarCheck className="w-10 h-10 mx-auto text-emerald-500" />
-            <p className="font-semibold text-sm">
-              {done.created} {done.created === 1 ? "game" : "games"} added!
-            </p>
+            {done.created > 0 && (
+              <p className="font-semibold text-sm">
+                {done.created} {done.created === 1 ? "game" : "games"} added!
+              </p>
+            )}
+            {done.updated > 0 && (
+              <p className="font-semibold text-sm">
+                {done.updated} {done.updated === 1 ? "event" : "events"} updated with latest teams!
+              </p>
+            )}
             {done.failed > 0 && (
-              <p className="text-xs text-rose-500">{done.failed} failed to add</p>
+              <p className="text-xs text-rose-500">{done.failed} failed</p>
             )}
             <button
               onClick={onClose}

@@ -55,7 +55,20 @@ export async function POST(req: NextRequest) {
 
   const calendar = google.calendar({ version: "v3", auth: oauth2Client })
 
+  // Look up any events we've already created for these match IDs
+  const matchIds = matches.map((m) => m.id)
+  const { data: existingRows } = await supabase
+    .from("worldcup_calendar_events")
+    .select("match_id, event_id")
+    .eq("user_id", user.id)
+    .in("match_id", matchIds)
+
+  const existingMap = new Map<string, string>(
+    (existingRows ?? []).map((r) => [r.match_id, r.event_id])
+  )
+
   let created = 0
+  let updated = 0
   const errors: string[] = []
 
   for (const match of matches) {
@@ -68,20 +81,48 @@ export async function POST(req: NextRequest) {
       if (match.group) parts.push(`Group: ${match.group}`)
       if (match.venue) parts.push(`Venue: ${match.venue}`)
 
-      await calendar.events.insert({
-        calendarId,
-        requestBody: {
-          summary: title,
-          description: parts.join("\n"),
-          start: { dateTime: startTime.toISOString() },
-          end: { dateTime: endTime.toISOString() },
-          reminders: { useDefault: true },
-        },
-      })
-      created++
+      const eventBody = {
+        summary: title,
+        description: parts.join("\n"),
+        start: { dateTime: startTime.toISOString() },
+        end: { dateTime: endTime.toISOString() },
+        reminders: { useDefault: true },
+      }
+
+      const existingEventId = existingMap.get(match.id)
+
+      if (existingEventId) {
+        // Update the existing calendar event with the latest team names
+        try {
+          await calendar.events.update({
+            calendarId,
+            eventId: existingEventId,
+            requestBody: eventBody,
+          })
+          updated++
+        } catch {
+          // Event was deleted from calendar — re-create it
+          const res = await calendar.events.insert({ calendarId, requestBody: eventBody })
+          const newId = res.data.id!
+          await supabase.from("worldcup_calendar_events").upsert({
+            user_id: user.id, match_id: match.id, calendar_id: calendarId,
+            event_id: newId, updated_at: new Date().toISOString(),
+          }, { onConflict: "user_id,match_id" })
+          created++
+        }
+      } else {
+        // New event — insert and track the ID
+        const res = await calendar.events.insert({ calendarId, requestBody: eventBody })
+        const newId = res.data.id!
+        await supabase.from("worldcup_calendar_events").upsert({
+          user_id: user.id, match_id: match.id, calendar_id: calendarId,
+          event_id: newId, updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id,match_id" })
+        created++
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error("Failed to add World Cup match:", match.id, msg)
+      console.error("Failed to add/update World Cup match:", match.id, msg)
       const isAuthError =
         /insufficient/i.test(msg) || /forbidden/i.test(msg) ||
         /401|403/.test(msg) || /invalid_grant/i.test(msg)
@@ -90,7 +131,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (errors.some(e => e === "__auth_error__")) {
-    return NextResponse.json({ error: "reconnect_required", created, errors })
+    return NextResponse.json({ error: "reconnect_required", created, updated, errors })
   }
-  return NextResponse.json({ created, errors })
+  return NextResponse.json({ created, updated, errors })
 }
