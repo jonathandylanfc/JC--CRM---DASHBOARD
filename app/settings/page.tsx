@@ -7,11 +7,10 @@ import { createClient } from "@/lib/supabase/server"
 async function getProfileToggles() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { showInvestments: true, showNasaApod: true }
-  const { data } = await supabase.from("profiles").select("show_investments, show_nasa_apod").eq("id", user.id).single()
+  if (!user) return { showInvestments: true }
+  const { data } = await supabase.from("profiles").select("show_investments").eq("id", user.id).single()
   return {
     showInvestments: data?.show_investments ?? true,
-    showNasaApod: data?.show_nasa_apod ?? true,
   }
 }
 
@@ -33,7 +32,6 @@ export default async function SettingsPage() {
             initialEmail={user?.email ?? ""}
             initialAvatarUrl={user?.avatar_url ?? null}
             initialShowInvestments={toggles.showInvestments}
-            initialShowNasaApod={toggles.showNasaApod}
           />
         </div>
       </main>

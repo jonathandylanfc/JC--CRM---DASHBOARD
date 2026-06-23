@@ -18,10 +18,9 @@ interface SettingsContentProps {
   initialEmail: string
   initialAvatarUrl: string | null
   initialShowInvestments?: boolean
-  initialShowNasaApod?: boolean
 }
 
-export function SettingsContent({ initialName, initialEmail, initialAvatarUrl, initialShowInvestments = true, initialShowNasaApod = true }: SettingsContentProps) {
+export function SettingsContent({ initialName, initialEmail, initialAvatarUrl, initialShowInvestments = true }: SettingsContentProps) {
   const { theme, setTheme } = useTheme()
   const [isLoggingOut, startLogout] = useTransition()
   const [isSaving, startSaving] = useTransition()
@@ -29,19 +28,8 @@ export function SettingsContent({ initialName, initialEmail, initialAvatarUrl, i
   const [avatarPreview, setAvatarPreview] = useState<string | null>(initialAvatarUrl)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [showInvestments, setShowInvestments] = useState(initialShowInvestments)
-  const [showNasaApod, setShowNasaApod] = useState(initialShowNasaApod)
   const [isSavingNav, startSavingNav] = useTransition()
-  const [isSavingApod, startSavingApod] = useTransition()
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  function handleShowNasaApodToggle(checked: boolean) {
-    setShowNasaApod(checked)
-    startSavingApod(async () => {
-      const { updateShowNasaApod } = await import("@/app/settings/actions")
-      const result = await updateShowNasaApod(checked)
-      if (result?.error) toast.error(result.error)
-    })
-  }
 
   function handleShowInvestmentsToggle(checked: boolean) {
     setShowInvestments(checked)
@@ -209,17 +197,6 @@ export function SettingsContent({ initialName, initialEmail, initialAvatarUrl, i
               checked={showInvestments}
               onCheckedChange={handleShowInvestmentsToggle}
               disabled={isSavingNav}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium">NASA Image of the Day</p>
-              <p className="text-sm text-muted-foreground">Show today&apos;s NASA astronomy photo on the dashboard</p>
-            </div>
-            <Switch
-              checked={showNasaApod}
-              onCheckedChange={handleShowNasaApodToggle}
-              disabled={isSavingApod}
             />
           </div>
         </div>
