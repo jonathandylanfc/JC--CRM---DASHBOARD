@@ -10,6 +10,8 @@ interface Team { name: string; abbr: string; logo: string | null; score: string 
 interface MatchStatus { state: "pre" | "in" | "post"; detail: string; shortDetail: string; completed: boolean; clock: string | null; period: number | null }
 interface Match { id: string; date: string; homeTeam: Team; awayTeam: Team; status: MatchStatus; venue: string | null; group: string | null }
 
+interface ScoringPlay { scorer: string; minute: string; team: "home" | "away"; type: "goal" | "own_goal" | "penalty" }
+
 interface StandingEntry {
   team: { name: string; short: string; abbr: string; logo: string | null }
   gp: number; w: number; d: number; l: number; gf: number; ga: number; gd: number; pts: number
@@ -67,6 +69,12 @@ function StatusBadge({ status, date }: { status: MatchStatus; date: string }) {
   return <span className="text-[10px] font-semibold text-muted-foreground">{t}</span>
 }
 
+function GoalIcon({ type }: { type: ScoringPlay["type"] }) {
+  if (type === "own_goal") return <span className="text-[11px]" title="Own goal">⚽️</span>
+  if (type === "penalty") return <span className="text-[11px]" title="Penalty">⚽️ (P)</span>
+  return <span className="text-[11px]">⚽️</span>
+}
+
 function MatchCard({
   match,
   selectable = false,
@@ -80,16 +88,38 @@ function MatchCard({
 }) {
   const isLive = match.status.state === "in"
   const isDone = match.status.state === "post"
+  const canExpand = isLive || isDone
   const homeScore = parseInt(match.homeTeam.score ?? "", 10)
   const awayScore = parseInt(match.awayTeam.score ?? "", 10)
   const homeWin = isDone && !isNaN(homeScore) && !isNaN(awayScore) && homeScore > awayScore
   const awayWin = isDone && !isNaN(homeScore) && !isNaN(awayScore) && awayScore > homeScore
 
+  const [expanded, setExpanded] = useState(false)
+  const [plays, setPlays] = useState<ScoringPlay[] | null>(null)
+  const [loadingPlays, setLoadingPlays] = useState(false)
+
+  const handleCardClick = () => {
+    if (selectable) { onToggle?.(); return }
+    if (!canExpand) return
+    if (!expanded && plays === null) {
+      setLoadingPlays(true)
+      fetch(`/api/worldcup/match?id=${match.id}`)
+        .then((r) => r.json())
+        .then((d) => setPlays(d.scoringPlays ?? []))
+        .catch(() => setPlays([]))
+        .finally(() => setLoadingPlays(false))
+    }
+    setExpanded((v) => !v)
+  }
+
+  const homePlays = plays?.filter((p) => p.team === "home") ?? []
+  const awayPlays = plays?.filter((p) => p.team === "away") ?? []
+
   return (
     <div
-      onClick={selectable ? onToggle : undefined}
+      onClick={handleCardClick}
       className={`rounded-xl border p-3 transition-all backdrop-blur-sm relative ${
-        selectable ? "cursor-pointer" : ""
+        canExpand || selectable ? "cursor-pointer" : ""
       } ${
         selected
           ? "border-primary bg-primary/5 ring-1 ring-primary/30"
@@ -145,6 +175,48 @@ function MatchCard({
       </div>
       {match.venue && (
         <p className="text-[9px] text-muted-foreground mt-1.5 text-center truncate">{match.venue}</p>
+      )}
+
+      {/* Expanded scorer section */}
+      {canExpand && !selectable && expanded && (
+        <div className="mt-2 pt-2 border-t border-border/40">
+          {loadingPlays ? (
+            <div className="flex justify-center py-1">
+              <div className="w-4 h-4 rounded-full border-2 border-border border-t-muted-foreground animate-spin" />
+            </div>
+          ) : plays !== null && plays.length === 0 ? (
+            <p className="text-[10px] text-muted-foreground text-center py-0.5">No scoring data available</p>
+          ) : plays !== null ? (
+            <div className="flex gap-4 justify-between text-[11px]">
+              <div className="flex-1 space-y-1">
+                {homePlays.map((p, i) => (
+                  <div key={i} className="flex items-center gap-1 text-foreground/80">
+                    <GoalIcon type={p.type} />
+                    <span className="text-muted-foreground tabular-nums">{p.minute}&apos;</span>
+                    <span className="truncate">{p.scorer}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex-1 space-y-1 items-end flex flex-col">
+                {awayPlays.map((p, i) => (
+                  <div key={i} className="flex items-center gap-1 text-foreground/80 flex-row-reverse">
+                    <GoalIcon type={p.type} />
+                    <span className="text-muted-foreground tabular-nums">{p.minute}&apos;</span>
+                    <span className="truncate text-right">{p.scorer}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {canExpand && !selectable && (
+        <div className="flex justify-center mt-1.5 -mb-0.5">
+          {expanded
+            ? <ChevronUp className="w-3 h-3 text-muted-foreground/40" />
+            : <ChevronDown className="w-3 h-3 text-muted-foreground/40" />}
+        </div>
       )}
     </div>
   )
