@@ -845,37 +845,31 @@ const TAB_IDS = TABS.map((t) => t.id) as TabId[]
 
 export function WorldCupContent() {
   const [tab, setTab] = useState<TabId>("scores")
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const isProgrammatic = useRef(false)
+  const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const goNext = useCallback(() => {
-    setTab((prev) => {
-      const i = TAB_IDS.indexOf(prev)
-      return i < TAB_IDS.length - 1 ? TAB_IDS[i + 1] : prev
-    })
-  }, [])
+  const activeIndex = TAB_IDS.indexOf(tab)
 
-  const goPrev = useCallback(() => {
-    setTab((prev) => {
-      const i = TAB_IDS.indexOf(prev)
-      return i > 0 ? TAB_IDS[i - 1] : prev
-    })
-  }, [])
+  // Scroll the panel strip when a tab button is clicked
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    isProgrammatic.current = true
+    el.scrollTo({ left: activeIndex * el.offsetWidth, behavior: "smooth" })
+    if (snapTimer.current) clearTimeout(snapTimer.current)
+    snapTimer.current = setTimeout(() => { isProgrammatic.current = false }, 600)
+  }, [activeIndex])
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-  }, [])
-
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    const start = touchStartRef.current
-    if (!start) return
-    const dx = e.changedTouches[0].clientX - start.x
-    const dy = e.changedTouches[0].clientY - start.y
-    // Only fire if swipe is more horizontal than vertical and at least 60px
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
-      if (dx < 0) goNext(); else goPrev()
-    }
-    touchStartRef.current = null
-  }, [goNext, goPrev])
+  // Update the active tab indicator when the user swipes
+  const handleScroll = useCallback(() => {
+    if (isProgrammatic.current) return
+    const el = scrollRef.current
+    if (!el) return
+    const index = Math.round(el.scrollLeft / el.offsetWidth)
+    const next = TAB_IDS[index]
+    if (next && next !== tab) setTab(next)
+  }, [tab])
 
   return (
     <div className="space-y-0">
@@ -918,16 +912,17 @@ export function WorldCupContent() {
         </div>
       </div>
 
-      {/* Tab content — swipe left/right to change tabs */}
+      {/* Horizontally scrollable panel strip — swipe or tap tabs to navigate */}
       <div
-        className="pt-4"
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="wc-tabs-scroll flex overflow-x-auto snap-x snap-mandatory pt-4"
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
       >
-        {tab === "scores" && <ScoresTab />}
-        {tab === "groups" && <StandingsTab />}
-        {tab === "rankings" && <RankingsTab />}
-        {tab === "bracket" && <BracketTab />}
+        <div className="w-full shrink-0 snap-start snap-always"><ScoresTab /></div>
+        <div className="w-full shrink-0 snap-start snap-always"><StandingsTab /></div>
+        <div className="w-full shrink-0 snap-start snap-always"><RankingsTab /></div>
+        <div className="w-full shrink-0 snap-start snap-always"><BracketTab /></div>
       </div>
     </div>
   )

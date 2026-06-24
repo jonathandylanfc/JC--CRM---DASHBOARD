@@ -209,6 +209,9 @@
   animation: fade-in 0.2s ease-out forwards;
 }
 
+/* Hide scrollbar on the World Cup tab strip */
+.wc-tabs-scroll::-webkit-scrollbar { display: none; }
+
 /* Safe area inset support for iPhone notch / Dynamic Island */
 .safe-area-pb {
   padding-bottom: env(safe-area-inset-bottom);
