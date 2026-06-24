@@ -830,6 +830,122 @@ function BracketTab() {
   )
 }
 
+// ── News Tab ───────────────────────────────────────────────────────────────────
+
+interface NewsArticle {
+  id: string
+  headline: string
+  description: string
+  published: string
+  url: string
+  imageUrl: string | null
+  byline: string | null
+  isBrazil: boolean
+}
+
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
+function NewsTab() {
+  const [articles, setArticles] = useState<NewsArticle[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/worldcup/news")
+      .then((r) => r.json())
+      .then((d) => setArticles(d.articles ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="h-24 rounded-xl bg-muted animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  if (!articles.length) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        <Trophy className="w-10 h-10 mx-auto mb-3 opacity-30" />
+        <p className="text-sm">No news available right now</p>
+      </div>
+    )
+  }
+
+  const brazilArticles = articles.filter((a) => a.isBrazil)
+  const otherArticles = articles.filter((a) => !a.isBrazil)
+
+  return (
+    <div className="space-y-5 pb-24">
+      {brazilArticles.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🇧🇷</span>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Brazil</h3>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+          {brazilArticles.map((a) => <ArticleCard key={a.id} article={a} />)}
+        </div>
+      )}
+
+      {otherArticles.length > 0 && (
+        <div className="space-y-2">
+          {brazilArticles.length > 0 && (
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">More News</h3>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+          )}
+          {otherArticles.map((a) => <ArticleCard key={a.id} article={a} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ArticleCard({ article }: { article: NewsArticle }) {
+  return (
+    <a
+      href={article.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex gap-3 rounded-xl border border-border/60 bg-card/60 p-3 hover:bg-card transition-colors"
+    >
+      {article.imageUrl && (
+        <img
+          src={article.imageUrl}
+          alt=""
+          className="w-20 h-16 rounded-lg object-cover shrink-0 bg-muted"
+          loading="lazy"
+          onError={(e) => (e.currentTarget.style.display = "none")}
+        />
+      )}
+      <div className="flex-1 min-w-0 space-y-1">
+        <p className="text-sm font-semibold leading-snug line-clamp-2">{article.headline}</p>
+        {article.description && (
+          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">{article.description}</p>
+        )}
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          {article.byline && <span className="truncate">{article.byline}</span>}
+          {article.byline && <span>·</span>}
+          {article.published && <span className="shrink-0">{timeAgo(article.published)}</span>}
+        </div>
+      </div>
+    </a>
+  )
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 const TABS = [
@@ -837,6 +953,7 @@ const TABS = [
   { id: "groups", label: "Groups" },
   { id: "rankings", label: "Rankings" },
   { id: "bracket", label: "Bracket" },
+  { id: "news", label: "News" },
 ] as const
 
 type TabId = typeof TABS[number]["id"]
@@ -923,6 +1040,7 @@ export function WorldCupContent() {
         <div className="w-full shrink-0 snap-start snap-always"><StandingsTab /></div>
         <div className="w-full shrink-0 snap-start snap-always"><RankingsTab /></div>
         <div className="w-full shrink-0 snap-start snap-always"><BracketTab /></div>
+        <div className="w-full shrink-0 snap-start snap-always"><NewsTab /></div>
       </div>
     </div>
   )
