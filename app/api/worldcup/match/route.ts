@@ -11,6 +11,35 @@ interface ScoringPlay {
   type: "goal" | "own_goal" | "penalty"
 }
 
+interface RawDetail {
+  type?: { id?: string; text?: string }
+  clock?: { value?: number; displayValue?: string }
+  team?: { id?: string }
+  athletesInvolved?: Array<{ displayName?: string; shortName?: string }>
+  penaltyKick?: boolean
+  ownGoal?: boolean
+  text?: string
+}
+
+function parseMinute(clock?: { value?: number; displayValue?: string }): string {
+  if (!clock) return ""
+  // displayValue is "MM:SS" — we only want the minute portion
+  if (clock.displayValue) return clock.displayValue.split(":")[0]
+  if (clock.value != null) return String(Math.floor(clock.value / 60))
+  return ""
+}
+
+function isGoalEvent(d: RawDetail): boolean {
+  const typeText = (d.type?.text ?? "").toLowerCase()
+  const typeId = d.type?.id ?? ""
+  return (
+    typeText.includes("goal") ||
+    // ESPN soccer detail type IDs vary; cover common ones
+    typeId === "score" ||
+    typeId === "78" || typeId === "79" || typeId === "80"
+  )
+}
+
 export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id")
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
@@ -24,40 +53,35 @@ export async function GET(req: NextRequest) {
 
     const data = await r.json()
 
-    // ESPN summary includes scoringPlays for soccer
-    const rawPlays: Array<{
-      period?: { number?: number }
-      clock?: { displayValue?: string }
-      team?: { id?: string }
-      athletesInvolved?: Array<{ displayName?: string; shortName?: string }>
-      text?: string
-      type?: { id?: string; text?: string }
-    }> = data.scoringPlays ?? []
-
-    // Resolve home/away team IDs
+    // Resolve home/away team IDs from the header
     const comp = data.header?.competitions?.[0]
-    const homeId: string = comp?.competitors?.find((c: { homeAway: string }) => c.homeAway === "home")?.team?.id ?? ""
-    const awayId: string = comp?.competitors?.find((c: { homeAway: string }) => c.homeAway === "away")?.team?.id ?? ""
+    const competitors: Array<{ homeAway: string; team: { id: string } }> =
+      comp?.competitors ?? []
+    const homeId = competitors.find((c) => c.homeAway === "home")?.team?.id ?? ""
+    const awayId = competitors.find((c) => c.homeAway === "away")?.team?.id ?? ""
 
-    const scoringPlays: ScoringPlay[] = rawPlays
-      .filter((p) => {
-        // Only include goal-type events (type IDs: 78=goal, 79=penalty goal, 80=own goal in ESPN soccer)
-        const typeId = p.type?.id ?? ""
-        const typeText = (p.type?.text ?? "").toLowerCase()
-        return typeId === "78" || typeId === "79" || typeId === "80" ||
-          typeText.includes("goal") || typeText.includes("penalty")
-      })
-      .map((p) => {
-        const athletes = p.athletesInvolved ?? []
+    // For ESPN soccer, goals are in header.competitions[0].details
+    // Fall back to scoringPlays (used by some older leagues) or keyPlays
+    const rawDetails: RawDetail[] =
+      comp?.details ??
+      data.scoringPlays ??
+      data.keyPlays ??
+      []
+
+    const scoringPlays: ScoringPlay[] = rawDetails
+      .filter(isGoalEvent)
+      .map((d) => {
+        const athletes = d.athletesInvolved ?? []
         const scorer = athletes[0]?.shortName ?? athletes[0]?.displayName ?? "Unknown"
-        const minute = p.clock?.displayValue ?? ""
-        const teamId = p.team?.id ?? ""
-        const team: "home" | "away" = teamId === homeId ? "home" : teamId === awayId ? "away" : "home"
-        const typeId = p.type?.id ?? ""
-        const typeText = (p.type?.text ?? "").toLowerCase()
+        const minute = parseMinute(d.clock)
+        const teamId = d.team?.id ?? ""
+        const team: "home" | "away" =
+          teamId === homeId ? "home" : teamId === awayId ? "away" : "home"
         const type: ScoringPlay["type"] =
-          typeId === "80" || typeText.includes("own") ? "own_goal" :
-          typeId === "79" || typeText.includes("penalty") ? "penalty" :
+          d.ownGoal ? "own_goal" :
+          d.penaltyKick ? "penalty" :
+          (d.type?.text ?? "").toLowerCase().includes("own") ? "own_goal" :
+          (d.type?.text ?? "").toLowerCase().includes("penalty") ? "penalty" :
           "goal"
         return { scorer, minute, team, type }
       })
