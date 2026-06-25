@@ -775,7 +775,7 @@ function RankingsTab() {
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">FIFA Coca-Cola World Rankings</p>
         <span className="text-[10px] text-muted-foreground">
-          {source === "live" ? "Live · fifa.com" : "Last known · Jun 22"}
+          {source === "live" ? "Live · fifa.com" : "Last known · Jun 25"}
         </span>
       </div>
       {rankings.map((r) => {
