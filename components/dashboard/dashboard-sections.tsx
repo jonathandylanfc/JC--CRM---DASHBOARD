@@ -13,7 +13,7 @@ import { PortfolioSnapshotCard } from "@/components/dashboard/portfolio-snapshot
 import { useDashboardLayout, WidgetWrapper, type WidgetId } from "@/components/dashboard/dashboard-customizer"
 
 interface Props {
-  taskStats: { total: number; done: number; inProgress: number; todo: number }
+  taskStats: { total: number; done: number; inProgress: number; todo: number; dueToday?: number }
   recentTasks: Array<{ id: string; title: string; due_date: string | null; status: string; priority: string }>
   financeSummary: { income: number; expenses: number }
   lastMonthSummary: { income: number; expenses: number }

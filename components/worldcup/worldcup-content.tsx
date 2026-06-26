@@ -820,12 +820,109 @@ function RankingsTab() {
 
 // ── Bracket Tab ────────────────────────────────────────────────────────────────
 
-function BracketTab() {
+interface BracketTeam { name: string; shortName: string; logo: string | null; score: number | null }
+interface BracketMatch {
+  id: string; date: string; round: string; roundOrder: number
+  home: BracketTeam; away: BracketTeam; venue: string
+  status: "scheduled" | "in_progress" | "final"; winner: "home" | "away" | null
+}
+
+function BracketMatchCard({ match }: { match: BracketMatch }) {
+  const isLive = match.status === "in_progress"
+  const isFinal = match.status === "final"
+  const d = new Date(match.date)
+  const dateStr = isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  const timeStr = isNaN(d.getTime()) ? "" : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
+
+  const teamRow = (team: BracketTeam, side: "home" | "away") => {
+    const isWinner = match.winner === side
+    const isTBD = team.name === "TBD" || team.name.startsWith("Third Place") || team.name.startsWith("Winner")
+    return (
+      <div className={`flex items-center gap-2.5 py-2 px-3 ${isWinner ? "opacity-100" : isFinal && !isWinner ? "opacity-50" : "opacity-90"}`}>
+        <TeamLogo logo={isTBD ? null : team.logo} name={team.shortName} size={22} />
+        <span className={`flex-1 text-sm ${isWinner ? "font-semibold text-foreground" : "text-foreground/80"} truncate`}>
+          {team.name}
+        </span>
+        {(isFinal || isLive) && team.score != null && (
+          <span className={`text-sm font-bold tabular-nums ${isWinner ? "text-foreground" : "text-muted-foreground"}`}>
+            {team.score}
+          </span>
+        )}
+      </div>
+    )
+  }
+
   return (
+    <div className="bg-card/60 backdrop-blur-sm border border-border/60 rounded-xl overflow-hidden">
+      <div className="divide-y divide-border/40">
+        {teamRow(match.home, "home")}
+        {teamRow(match.away, "away")}
+      </div>
+      <div className="px-3 py-1.5 bg-muted/20 flex items-center justify-between">
+        <span className="text-[10px] text-muted-foreground truncate">{match.venue || dateStr}</span>
+        {isLive ? (
+          <span className="text-[10px] font-bold text-emerald-500 animate-pulse flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />LIVE
+          </span>
+        ) : isFinal ? (
+          <span className="text-[10px] text-muted-foreground">FT</span>
+        ) : (
+          <span className="text-[10px] text-muted-foreground">{dateStr} · {timeStr}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function BracketTab() {
+  const [matches, setMatches] = useState<BracketMatch[] | null>(null)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    fetch("/api/worldcup/bracket")
+      .then((r) => r.json())
+      .then((d) => setMatches(d.matches ?? []))
+      .catch(() => setError(true))
+  }, [])
+
+  if (error) return (
+    <div className="text-center py-12 text-muted-foreground text-sm">Failed to load bracket</div>
+  )
+
+  if (!matches) return (
+    <div className="space-y-3 animate-pulse">
+      {[...Array(6)].map((_, i) => (
+        <div key={i} className="h-24 rounded-xl bg-muted/30" />
+      ))}
+    </div>
+  )
+
+  if (matches.length === 0) return (
     <div className="text-center py-16 text-muted-foreground">
       <Trophy className="w-10 h-10 mx-auto mb-3 opacity-30" />
       <p className="text-sm font-medium mb-1">Knockout bracket</p>
-      <p className="text-xs">Available after the group stage (June 26)</p>
+      <p className="text-xs">Bracket data not yet available</p>
+    </div>
+  )
+
+  const byRound: Record<string, BracketMatch[]> = {}
+  for (const m of matches) {
+    if (!byRound[m.round]) byRound[m.round] = []
+    byRound[m.round].push(m)
+  }
+
+  const rounds = Object.entries(byRound).sort(([, a], [, b]) => a[0].roundOrder - b[0].roundOrder)
+
+  return (
+    <div className="space-y-5">
+      {rounds.map(([round, roundMatches]) => (
+        <div key={round}>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">{round}</h3>
+          <div className="space-y-2">
+            {roundMatches.map((m) => <BracketMatchCard key={m.id} match={m} />)}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
