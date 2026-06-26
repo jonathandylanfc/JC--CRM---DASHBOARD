@@ -874,6 +874,44 @@ function BracketMatchCard({ match }: { match: BracketMatch }) {
   )
 }
 
+const TBD_ROUNDS = [
+  { label: "Final", count: 1, cols: 1, isFinal: true },
+  { label: "Semifinals", count: 2, cols: 2, isFinal: false },
+  { label: "Quarterfinals", count: 4, cols: 2, isFinal: false },
+  { label: "Round of 16", count: 8, cols: 1, isFinal: false },
+  { label: "Round of 32", count: 16, cols: 1, isFinal: false },
+]
+
+function TbdMatchCard() {
+  return (
+    <div className="bg-card/40 border border-dashed border-border/40 rounded-xl overflow-hidden opacity-50">
+      <div className="divide-y divide-border/30">
+        {[0, 1].map((i) => (
+          <div key={i} className="flex items-center gap-2.5 py-2 px-3">
+            <div className="w-5 h-5 rounded-full bg-muted shrink-0" />
+            <span className="text-sm text-muted-foreground">TBD</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function BracketRoundHeader({ label, isFinal }: { label: string; isFinal?: boolean }) {
+  return (
+    <div className="flex items-center gap-2 px-1 mb-2">
+      {isFinal ? (
+        <span className="text-sm font-bold text-yellow-500 flex items-center gap-1.5">
+          <Trophy className="w-3.5 h-3.5" />{label}
+        </span>
+      ) : (
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</h3>
+      )}
+      <div className="flex-1 h-px bg-border/40" />
+    </div>
+  )
+}
+
 function BracketTab() {
   const [matches, setMatches] = useState<BracketMatch[] | null>(null)
   const [error, setError] = useState(false)
@@ -890,20 +928,35 @@ function BracketTab() {
   )
 
   if (!matches) return (
-    <div className="space-y-3 animate-pulse">
-      {[...Array(6)].map((_, i) => (
-        <div key={i} className="h-24 rounded-xl bg-muted/30" />
+    <div className="space-y-5 animate-pulse">
+      {TBD_ROUNDS.slice(0, 3).map((r) => (
+        <div key={r.label}>
+          <div className="h-3.5 w-24 rounded bg-muted/50 mb-2 ml-1" />
+          <div className={`grid gap-2 ${r.cols === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+            {Array.from({ length: r.count }).map((_, i) => (
+              <div key={i} className="h-20 rounded-xl bg-muted/30" />
+            ))}
+          </div>
+        </div>
       ))}
     </div>
   )
 
-  if (matches.length === 0) return (
-    <div className="text-center py-16 text-muted-foreground">
-      <Trophy className="w-10 h-10 mx-auto mb-3 opacity-30" />
-      <p className="text-sm font-medium mb-1">Knockout bracket</p>
-      <p className="text-xs">Bracket data not yet available</p>
-    </div>
-  )
+  if (matches.length === 0) {
+    return (
+      <div className="space-y-5 pb-24">
+        <p className="text-[10px] text-muted-foreground px-1">Knockout stage begins Jun 29 · bracket fills as teams advance</p>
+        {TBD_ROUNDS.map((r) => (
+          <div key={r.label}>
+            <BracketRoundHeader label={r.label} isFinal={r.isFinal} />
+            <div className={`grid gap-2 ${r.cols === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+              {Array.from({ length: r.count }).map((_, i) => <TbdMatchCard key={i} />)}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   const byRound: Record<string, BracketMatch[]> = {}
   for (const m of matches) {
@@ -912,13 +965,14 @@ function BracketTab() {
   }
 
   const rounds = Object.entries(byRound).sort(([, a], [, b]) => a[0].roundOrder - b[0].roundOrder)
+  const multiColRounds = new Set(["Quarterfinals", "Semifinals"])
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 pb-24">
       {rounds.map(([round, roundMatches]) => (
         <div key={round}>
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">{round}</h3>
-          <div className="space-y-2">
+          <BracketRoundHeader label={round} isFinal={round === "Final"} />
+          <div className={`gap-2 ${multiColRounds.has(round) ? "grid grid-cols-2" : "space-y-2"}`}>
             {roundMatches.map((m) => <BracketMatchCard key={m.id} match={m} />)}
           </div>
         </div>
