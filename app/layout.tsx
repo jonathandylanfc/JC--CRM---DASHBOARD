@@ -45,9 +45,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="font-sans antialiased">
+      <body className="font-sans antialiased h-screen overflow-hidden">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem storageKey="jdpro-theme">
-          {children}
+          <div className="h-full overflow-y-auto">
+            {children}
+          </div>
           <BottomNav />
           <Toaster richColors position="top-center" />
         </ThemeProvider>
