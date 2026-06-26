@@ -10,6 +10,8 @@ interface Team { name: string; abbr: string; logo: string | null; score: string 
 interface MatchStatus { state: "pre" | "in" | "post"; detail: string; shortDetail: string; completed: boolean; clock: string | null; period: number | null }
 interface Match { id: string; date: string; homeTeam: Team; awayTeam: Team; status: MatchStatus; venue: string | null; group: string | null }
 
+interface ScoringPlay { scorer: string; minute: string; team: "home" | "away"; type: "goal" | "own_goal" | "penalty" }
+
 interface StandingEntry {
   team: { name: string; short: string; abbr: string; logo: string | null }
   gp: number; w: number; d: number; l: number; gf: number; ga: number; gd: number; pts: number
@@ -67,6 +69,12 @@ function StatusBadge({ status, date }: { status: MatchStatus; date: string }) {
   return <span className="text-[10px] font-semibold text-muted-foreground">{t}</span>
 }
 
+function GoalIcon({ type }: { type: ScoringPlay["type"] }) {
+  if (type === "own_goal") return <span className="text-[11px]" title="Own goal">⚽️</span>
+  if (type === "penalty") return <span className="text-[11px]" title="Penalty">⚽️ (P)</span>
+  return <span className="text-[11px]">⚽️</span>
+}
+
 function MatchCard({
   match,
   selectable = false,
@@ -80,16 +88,38 @@ function MatchCard({
 }) {
   const isLive = match.status.state === "in"
   const isDone = match.status.state === "post"
+  const canExpand = isLive || isDone
   const homeScore = parseInt(match.homeTeam.score ?? "", 10)
   const awayScore = parseInt(match.awayTeam.score ?? "", 10)
   const homeWin = isDone && !isNaN(homeScore) && !isNaN(awayScore) && homeScore > awayScore
   const awayWin = isDone && !isNaN(homeScore) && !isNaN(awayScore) && awayScore > homeScore
 
+  const [expanded, setExpanded] = useState(false)
+  const [plays, setPlays] = useState<ScoringPlay[] | null>(null)
+  const [loadingPlays, setLoadingPlays] = useState(false)
+
+  const handleCardClick = () => {
+    if (selectable) { onToggle?.(); return }
+    if (!canExpand) return
+    if (!expanded && plays === null) {
+      setLoadingPlays(true)
+      fetch(`/api/worldcup/match?id=${match.id}`)
+        .then((r) => r.json())
+        .then((d) => setPlays(d.scoringPlays ?? []))
+        .catch(() => setPlays([]))
+        .finally(() => setLoadingPlays(false))
+    }
+    setExpanded((v) => !v)
+  }
+
+  const homePlays = plays?.filter((p) => p.team === "home") ?? []
+  const awayPlays = plays?.filter((p) => p.team === "away") ?? []
+
   return (
     <div
-      onClick={selectable ? onToggle : undefined}
+      onClick={handleCardClick}
       className={`rounded-xl border p-3 transition-all backdrop-blur-sm relative ${
-        selectable ? "cursor-pointer" : ""
+        canExpand || selectable ? "cursor-pointer" : ""
       } ${
         selected
           ? "border-primary bg-primary/5 ring-1 ring-primary/30"
@@ -146,6 +176,48 @@ function MatchCard({
       {match.venue && (
         <p className="text-[9px] text-muted-foreground mt-1.5 text-center truncate">{match.venue}</p>
       )}
+
+      {/* Expanded scorer section */}
+      {canExpand && !selectable && expanded && (
+        <div className="mt-2 pt-2 border-t border-border/40">
+          {loadingPlays ? (
+            <div className="flex justify-center py-1">
+              <div className="w-4 h-4 rounded-full border-2 border-border border-t-muted-foreground animate-spin" />
+            </div>
+          ) : plays !== null && plays.length === 0 ? (
+            <p className="text-[10px] text-muted-foreground text-center py-0.5">No scoring data available</p>
+          ) : plays !== null ? (
+            <div className="flex gap-4 justify-between text-[11px]">
+              <div className="flex-1 space-y-1">
+                {homePlays.map((p, i) => (
+                  <div key={i} className="flex items-center gap-1 text-foreground/80">
+                    <GoalIcon type={p.type} />
+                    <span className="text-muted-foreground tabular-nums">{p.minute}&apos;</span>
+                    <span className="truncate">{p.scorer}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex-1 space-y-1 items-end flex flex-col">
+                {awayPlays.map((p, i) => (
+                  <div key={i} className="flex items-center gap-1 text-foreground/80 flex-row-reverse">
+                    <GoalIcon type={p.type} />
+                    <span className="text-muted-foreground tabular-nums">{p.minute}&apos;</span>
+                    <span className="truncate text-right">{p.scorer}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {canExpand && !selectable && (
+        <div className="flex justify-center mt-1.5 -mb-0.5">
+          {expanded
+            ? <ChevronUp className="w-3 h-3 text-muted-foreground/40" />
+            : <ChevronDown className="w-3 h-3 text-muted-foreground/40" />}
+        </div>
+      )}
     </div>
   )
 }
@@ -166,7 +238,7 @@ function CalendarPickerModal({
   const [notConnected, setNotConnected] = useState(false)
   const [pickedId, setPickedId] = useState("")
   const [adding, setAdding] = useState(false)
-  const [done, setDone] = useState<{ created: number; failed: number } | null>(null)
+  const [done, setDone] = useState<{ created: number; updated: number; failed: number } | null>(null)
 
   useEffect(() => {
     fetch("/api/calendar/events")
@@ -193,9 +265,9 @@ function CalendarPickerModal({
         body: JSON.stringify({ matches, calendarId: pickedId }),
       })
       const d = await r.json()
-      setDone({ created: d.created ?? 0, failed: d.errors?.length ?? 0 })
+      setDone({ created: d.created ?? 0, updated: d.updated ?? 0, failed: d.errors?.length ?? 0 })
     } catch {
-      setDone({ created: 0, failed: matches.length })
+      setDone({ created: 0, updated: 0, failed: matches.length })
     }
     setAdding(false)
   }
@@ -213,11 +285,18 @@ function CalendarPickerModal({
         {done ? (
           <div className="py-4 text-center space-y-2">
             <CalendarCheck className="w-10 h-10 mx-auto text-emerald-500" />
-            <p className="font-semibold text-sm">
-              {done.created} {done.created === 1 ? "game" : "games"} added!
-            </p>
+            {done.created > 0 && (
+              <p className="font-semibold text-sm">
+                {done.created} {done.created === 1 ? "game" : "games"} added!
+              </p>
+            )}
+            {done.updated > 0 && (
+              <p className="font-semibold text-sm">
+                {done.updated} {done.updated === 1 ? "event" : "events"} updated with latest teams!
+              </p>
+            )}
             {done.failed > 0 && (
-              <p className="text-xs text-rose-500">{done.failed} failed to add</p>
+              <p className="text-xs text-rose-500">{done.failed} failed</p>
             )}
             <button
               onClick={onClose}
@@ -385,6 +464,15 @@ function ScoresTab() {
     })
   }, [])
 
+  const enterSelectMode = useCallback(() => {
+    // Pre-select every upcoming (not yet started) match
+    const futureIds = new Set(
+      matches.filter((m) => m.status.state === "pre").map((m) => m.id)
+    )
+    setSelectedIds(futureIds)
+    setSelectMode(true)
+  }, [matches])
+
   const exitSelectMode = () => {
     setSelectMode(false)
     setSelectedIds(new Set())
@@ -437,14 +525,6 @@ function ScoresTab() {
   const currentAndFutureDates = sortedDates.filter((d) => d >= today)
   const totalPastMatches = pastDates.reduce((n, d) => n + byDate.get(d)!.length, 0)
 
-  const handleShowHistory = () => {
-    setShowHistory(true)
-    // Scroll to the most recent past game (last in pastDates) after render
-    setTimeout(() => {
-      mostRecentPastRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-    }, 80)
-  }
-
   const selectedMatches = matches.filter((m) => selectedIds.has(m.id))
 
   return (
@@ -477,7 +557,7 @@ function ScoresTab() {
           </button>
         ) : (
           <button
-            onClick={() => setSelectMode(true)}
+            onClick={enterSelectMode}
             className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground border border-border rounded-lg px-2.5 py-1.5 transition-colors hover:bg-muted/40"
           >
             <CalendarPlus className="w-3.5 h-3.5" /> Add games to calendar
@@ -487,7 +567,7 @@ function ScoresTab() {
 
       {selectMode && (
         <p className="text-xs text-muted-foreground -mt-2">
-          Tap upcoming games to select them, then add to any calendar.
+          All upcoming games are selected — tap any to remove it.
         </p>
       )}
 
@@ -523,7 +603,7 @@ function ScoresTab() {
 
       {/* Sticky add bar */}
       {selectMode && selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+        <div className="fixed left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20" style={{ bottom: "calc(4rem + env(safe-area-inset-bottom, 0px) + 0.75rem)" }}>
           <span className="text-sm font-semibold">
             {selectedIds.size} {selectedIds.size === 1 ? "game" : "games"} selected
           </span>
@@ -694,7 +774,9 @@ function RankingsTab() {
     <div className="space-y-1">
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">FIFA Coca-Cola World Rankings</p>
-        {source !== "live" && <span className="text-[10px] text-muted-foreground">Pre-tournament rankings</span>}
+        <span className="text-[10px] text-muted-foreground">
+          {source === "live" ? "Live · fifa.com" : "Last known · Jun 25"}
+        </span>
       </div>
       {rankings.map((r) => {
         const moved = r.prevRank - r.rank
@@ -738,13 +820,353 @@ function RankingsTab() {
 
 // ── Bracket Tab ────────────────────────────────────────────────────────────────
 
-function BracketTab() {
+interface BracketTeam {
+  id: string; name: string; abbr: string; logo: string | null
+  score: string | null; winner: boolean; seed: string | null
+}
+interface BracketMatch {
+  id: string; round: number; roundName: string; matchNum: number
+  homeTeam: BracketTeam; awayTeam: BracketTeam
+  state: "pre" | "in" | "post"; date: string; tbd: boolean
+}
+
+const ROUND_ORDER = [2, 4, 8, 16, 32]
+const ROUND_LABELS: Record<number, string> = {
+  2: "Final", 4: "Semifinals", 8: "Quarterfinals", 16: "Round of 16", 32: "Round of 32",
+}
+
+function BracketMatchCard({ m, compact = false }: { m: BracketMatch; compact?: boolean }) {
+  const isDone = m.state === "post"
+  const isLive = m.state === "in"
+  const homeWin = isDone && m.homeTeam.winner
+  const awayWin = isDone && m.awayTeam.winner
+
+  if (compact) {
+    return (
+      <div className={`rounded-lg border px-3 py-2 flex items-center gap-2 text-xs ${
+        isLive ? "border-emerald-500/40 bg-emerald-500/5" : "border-border/50 bg-card/60"
+      }`}>
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          <TeamLogo logo={m.homeTeam.logo} name={m.homeTeam.abbr} size={16} />
+          <span className={`font-medium truncate ${homeWin ? "text-foreground" : isDone ? "text-muted-foreground" : "text-foreground"}`}>
+            {m.homeTeam.abbr}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {isLive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+          {(isLive || isDone) && m.homeTeam.score !== null ? (
+            <span className="font-bold tabular-nums">
+              <span className={homeWin ? "text-foreground" : "text-muted-foreground"}>{m.homeTeam.score}</span>
+              <span className="text-muted-foreground mx-0.5">-</span>
+              <span className={awayWin ? "text-foreground" : "text-muted-foreground"}>{m.awayTeam.score}</span>
+            </span>
+          ) : (
+            <span className="text-muted-foreground">vs</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
+          <span className={`font-medium truncate text-right ${awayWin ? "text-foreground" : isDone ? "text-muted-foreground" : "text-foreground"}`}>
+            {m.awayTeam.abbr}
+          </span>
+          <TeamLogo logo={m.awayTeam.logo} name={m.awayTeam.abbr} size={16} />
+        </div>
+      </div>
+    )
+  }
+
+  // Full card (used for QF, SF, Final)
   return (
-    <div className="text-center py-16 text-muted-foreground">
-      <Trophy className="w-10 h-10 mx-auto mb-3 opacity-30" />
-      <p className="text-sm font-medium mb-1">Knockout bracket</p>
-      <p className="text-xs">Available after the group stage (June 26)</p>
+    <div className={`rounded-xl border p-3 flex flex-col gap-2 ${
+      isLive ? "border-emerald-500/50 bg-emerald-500/5" : "border-border/60 bg-card/60"
+    }`}>
+      {isLive && (
+        <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-500">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />LIVE
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <TeamLogo logo={m.homeTeam.logo} name={m.homeTeam.abbr} size={22} />
+        <span className={`flex-1 text-sm font-semibold truncate ${homeWin ? "text-foreground" : isDone ? "text-muted-foreground" : "text-foreground"}`}>
+          {m.homeTeam.abbr}
+        </span>
+        {(isLive || isDone) && m.homeTeam.score !== null && (
+          <span className={`text-base font-bold tabular-nums ${homeWin ? "text-foreground" : "text-muted-foreground"}`}>
+            {m.homeTeam.score}
+          </span>
+        )}
+        {homeWin && <span className="text-[9px] font-bold text-emerald-500 uppercase">W</span>}
+      </div>
+      <div className="h-px bg-border/40 mx-1" />
+      <div className="flex items-center gap-2">
+        <TeamLogo logo={m.awayTeam.logo} name={m.awayTeam.abbr} size={22} />
+        <span className={`flex-1 text-sm font-semibold truncate ${awayWin ? "text-foreground" : isDone ? "text-muted-foreground" : "text-foreground"}`}>
+          {m.awayTeam.abbr}
+        </span>
+        {(isLive || isDone) && m.awayTeam.score !== null && (
+          <span className={`text-base font-bold tabular-nums ${awayWin ? "text-foreground" : "text-muted-foreground"}`}>
+            {m.awayTeam.score}
+          </span>
+        )}
+        {awayWin && <span className="text-[9px] font-bold text-emerald-500 uppercase">W</span>}
+      </div>
+      {!isLive && !isDone && m.date && (
+        <p className="text-[10px] text-muted-foreground text-center">
+          {new Date(m.date).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+        </p>
+      )}
     </div>
+  )
+}
+
+function TbdCard() {
+  return (
+    <div className="rounded-xl border border-dashed border-border/40 p-3 flex flex-col gap-2 opacity-50">
+      <div className="flex items-center gap-2">
+        <div className="w-5 h-5 rounded-full bg-muted" />
+        <span className="flex-1 text-sm text-muted-foreground">TBD</span>
+      </div>
+      <div className="h-px bg-border/30" />
+      <div className="flex items-center gap-2">
+        <div className="w-5 h-5 rounded-full bg-muted" />
+        <span className="flex-1 text-sm text-muted-foreground">TBD</span>
+      </div>
+    </div>
+  )
+}
+
+function BracketTab() {
+  const [matches, setMatches] = useState<BracketMatch[]>([])
+  const [loading, setLoading] = useState(true)
+  const [available, setAvailable] = useState(false)
+
+  useEffect(() => {
+    fetch("/api/worldcup/bracket")
+      .then((r) => r.json())
+      .then((d) => { setMatches(d.matches ?? []); setAvailable(d.available ?? false) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 4].map((n, i) => (
+          <div key={i}>
+            <div className="h-4 w-28 rounded bg-muted animate-pulse mb-2" />
+            <div className={`grid gap-2 ${n > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+              {Array.from({ length: n }).map((_, j) => (
+                <div key={j} className="h-24 rounded-xl bg-muted animate-pulse" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const byRound = new Map<number, BracketMatch[]>()
+  for (const m of matches) {
+    if (!byRound.has(m.round)) byRound.set(m.round, [])
+    byRound.get(m.round)!.push(m)
+  }
+
+  if (!available || matches.length === 0) {
+    const ROUND_COUNTS = [
+      { round: 2, label: "Final", count: 1, cols: 1 },
+      { round: 4, label: "Semifinals", count: 2, cols: 2 },
+      { round: 8, label: "Quarterfinals", count: 4, cols: 2 },
+      { round: 16, label: "Round of 16", count: 8, cols: 1 },
+      { round: 32, label: "Round of 32", count: 16, cols: 1 },
+    ]
+    return (
+      <div className="space-y-6 pb-24">
+        <div className="flex items-center gap-2 px-1">
+          <Trophy className="w-4 h-4 text-yellow-500" />
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">2026 World Cup Bracket</span>
+        </div>
+        {ROUND_COUNTS.map(({ round, label, count, cols }) => (
+          <div key={round} className="space-y-2">
+            <RoundHeader round={round} label={label} matchCount={count} />
+            <div className={`grid gap-2 ${cols === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+              {Array.from({ length: count }).map((_, i) => <TbdCard key={i} />)}
+            </div>
+          </div>
+        ))}
+        <p className="text-[10px] text-muted-foreground text-center pt-2">
+          Bracket fills as matches are decided
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6 pb-24">
+      <div className="flex items-center gap-2 px-1">
+        <Trophy className="w-4 h-4 text-yellow-500" />
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">2026 World Cup Bracket</span>
+      </div>
+
+      {ROUND_ORDER.map((round) => {
+        const roundMatches = byRound.get(round)
+        if (!roundMatches?.length) return null
+        const label = ROUND_LABELS[round] ?? `Round of ${round}`
+        const isEarly = round >= 16
+        const cols = round === 4 ? 2 : round === 8 ? 2 : 1
+
+        return (
+          <div key={round} className="space-y-2">
+            <RoundHeader round={round} label={label} matchCount={roundMatches.length} />
+            {isEarly ? (
+              <div className="space-y-1.5">
+                {roundMatches.map((m) => <BracketMatchCard key={m.id} m={m} compact />)}
+              </div>
+            ) : (
+              <div className={`grid gap-2 ${cols === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+                {roundMatches.map((m) => <BracketMatchCard key={m.id} m={m} />)}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function RoundHeader({ round, label, matchCount }: { round: number; label: string; matchCount: number }) {
+  const isFinal = round === 2
+  const isSemi = round === 4
+  return (
+    <div className="flex items-center gap-2">
+      {isFinal ? (
+        <span className="text-sm font-bold text-yellow-500 flex items-center gap-1.5">
+          <Trophy className="w-3.5 h-3.5" />{label}
+        </span>
+      ) : (
+        <span className={`text-xs font-bold uppercase tracking-wider ${isSemi ? "text-foreground" : "text-muted-foreground"}`}>
+          {label}
+        </span>
+      )}
+      {matchCount > 1 && (
+        <span className="text-[10px] text-muted-foreground">· {matchCount} matches</span>
+      )}
+      <div className="flex-1 h-px bg-border/50" />
+    </div>
+  )
+}
+
+// ── News Tab ───────────────────────────────────────────────────────────────────
+
+interface NewsArticle {
+  id: string
+  headline: string
+  description: string
+  published: string
+  url: string
+  imageUrl: string | null
+  byline: string | null
+  isBrazil: boolean
+}
+
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
+function NewsTab() {
+  const [articles, setArticles] = useState<NewsArticle[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/worldcup/news")
+      .then((r) => r.json())
+      .then((d) => setArticles(d.articles ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="h-24 rounded-xl bg-muted animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  if (!articles.length) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        <Trophy className="w-10 h-10 mx-auto mb-3 opacity-30" />
+        <p className="text-sm">No news available right now</p>
+      </div>
+    )
+  }
+
+  const brazilArticles = articles.filter((a) => a.isBrazil)
+  const otherArticles = articles.filter((a) => !a.isBrazil)
+
+  return (
+    <div className="space-y-5 pb-24">
+      {brazilArticles.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🇧🇷</span>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Brazil</h3>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+          {brazilArticles.map((a) => <ArticleCard key={a.id} article={a} />)}
+        </div>
+      )}
+
+      {otherArticles.length > 0 && (
+        <div className="space-y-2">
+          {brazilArticles.length > 0 && (
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">More News</h3>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+          )}
+          {otherArticles.map((a) => <ArticleCard key={a.id} article={a} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ArticleCard({ article }: { article: NewsArticle }) {
+  return (
+    <a
+      href={article.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex gap-3 rounded-xl border border-border/60 bg-card/60 p-3 hover:bg-card transition-colors"
+    >
+      {article.imageUrl && (
+        <img
+          src={article.imageUrl}
+          alt=""
+          className="w-20 h-16 rounded-lg object-cover shrink-0 bg-muted"
+          loading="lazy"
+          onError={(e) => (e.currentTarget.style.display = "none")}
+        />
+      )}
+      <div className="flex-1 min-w-0 space-y-1">
+        <p className="text-sm font-semibold leading-snug line-clamp-2">{article.headline}</p>
+        {article.description && (
+          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">{article.description}</p>
+        )}
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          {article.byline && <span className="truncate">{article.byline}</span>}
+          {article.byline && <span>·</span>}
+          {article.published && <span className="shrink-0">{timeAgo(article.published)}</span>}
+        </div>
+      </div>
+    </a>
   )
 }
 
@@ -755,36 +1177,65 @@ const TABS = [
   { id: "groups", label: "Groups" },
   { id: "rankings", label: "Rankings" },
   { id: "bracket", label: "Bracket" },
+  { id: "news", label: "News" },
 ] as const
 
 type TabId = typeof TABS[number]["id"]
 
+const TAB_IDS = TABS.map((t) => t.id) as TabId[]
+
 export function WorldCupContent() {
   const [tab, setTab] = useState<TabId>("scores")
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const isProgrammatic = useRef(false)
+  const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const activeIndex = TAB_IDS.indexOf(tab)
+
+  // Scroll the panel strip when a tab button is clicked
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    isProgrammatic.current = true
+    el.scrollTo({ left: activeIndex * el.offsetWidth, behavior: "smooth" })
+    if (snapTimer.current) clearTimeout(snapTimer.current)
+    snapTimer.current = setTimeout(() => { isProgrammatic.current = false }, 600)
+  }, [activeIndex])
+
+  // Update the active tab indicator when the user swipes
+  const handleScroll = useCallback(() => {
+    if (isProgrammatic.current) return
+    const el = scrollRef.current
+    if (!el) return
+    const index = Math.round(el.scrollLeft / el.offsetWidth)
+    const next = TAB_IDS[index]
+    if (next && next !== tab) setTab(next)
+  }, [tab])
 
   return (
     <div className="space-y-0">
-      {/* Header */}
-      <div className="flex items-center gap-3 pb-4">
-        <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center shrink-0">
-          <Trophy className="w-5 h-5 text-yellow-500" />
+      {/* Sticky header + tabs */}
+      <div className="sticky top-0 z-20 bg-background/90 backdrop-blur-md -mx-4 px-4 lg:-mx-6 lg:px-6 border-b border-border/50 pb-0">
+        <div className="flex items-center gap-3 pt-3 pb-2">
+          <div className="w-8 h-8 rounded-full bg-yellow-500/10 flex items-center justify-center shrink-0">
+            <Trophy className="w-4 h-4 text-yellow-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-bold leading-tight">2026 FIFA World Cup</h1>
+            <p className="text-[10px] text-muted-foreground">USA · Canada · Mexico — Jun 11 – Jul 19</p>
+          </div>
+          <a
+            href="/api/worldcup/calendar"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors shrink-0"
+            title="Add all matches to your calendar"
+          >
+            <CalendarPlus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Calendar</span>
+          </a>
         </div>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold">2026 FIFA World Cup</h1>
-          <p className="text-xs text-muted-foreground">USA · Canada · Mexico — Jun 11 – Jul 19, 2026</p>
-        </div>
-        <a
-          href="/api/worldcup/calendar"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors shrink-0"
-          title="Add all matches to your calendar"
-        >
-          <CalendarPlus className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Add to Calendar</span>
-        </a>
-      </div>
 
-      {/* Sticky tabs */}
-      <div className="sticky top-0 z-20 bg-background/70 backdrop-blur-md border-b border-border/50 -mx-4 px-4 lg:-mx-6 lg:px-6">
         <div className="flex gap-1">
           {TABS.map((t) => (
             <button
@@ -802,12 +1253,18 @@ export function WorldCupContent() {
         </div>
       </div>
 
-      {/* Tab content */}
-      <div className="pt-4">
-        {tab === "scores" && <ScoresTab />}
-        {tab === "groups" && <StandingsTab />}
-        {tab === "rankings" && <RankingsTab />}
-        {tab === "bracket" && <BracketTab />}
+      {/* Horizontally scrollable panel strip — swipe or tap tabs to navigate */}
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="wc-tabs-scroll flex overflow-x-auto snap-x snap-mandatory pt-4"
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+      >
+        <div className="w-full shrink-0 snap-start snap-always"><ScoresTab /></div>
+        <div className="w-full shrink-0 snap-start snap-always"><StandingsTab /></div>
+        <div className="w-full shrink-0 snap-start snap-always"><RankingsTab /></div>
+        <div className="w-full shrink-0 snap-start snap-always"><BracketTab /></div>
+        <div className="w-full shrink-0 snap-start snap-always"><NewsTab /></div>
       </div>
     </div>
   )
