@@ -879,7 +879,7 @@ export function CalendarContent() {
               {all.map((item, i) => (
                 <div key={i} className="flex items-center gap-3 text-sm">
                   <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                  <span className="font-medium truncate flex-1">{item.title}{"amount" in item ? ` — ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(item.amount)}` : ""}</span>
+                  <span className="font-medium truncate flex-1">{item.title}{"amount" in item ? ` — ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(item.amount as number)}` : ""}</span>
                   <span className="text-xs text-muted-foreground shrink-0">
                     {format(parseISO(item.date), item.allDay ? "MMM d" : "MMM d, h:mm a")}
                   </span>

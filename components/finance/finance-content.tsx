@@ -97,6 +97,7 @@ interface BudgetCat {
   name: string
   type: "percentage" | "fixed"
   value: number
+  is_catchall?: boolean
 }
 
 interface FinanceContentProps {

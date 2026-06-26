@@ -146,7 +146,8 @@ Rules:
 
     // Resolve relative day names to absolute dates
     const refDate = new Date()
-    const resolved = events.map((e: { title: string; date: string; start_time?: string; end_time?: string; notes?: string }) => {
+    type RawEvent = { title: string; date: string; start_time?: string; end_time?: string; notes?: string }
+    const resolved = (events as RawEvent[]).map((e) => {
       // If date looks like a day name, resolve it
       const isDateFormat = /^\d{4}-\d{2}-\d{2}$/.test(e.date)
       const resolvedDate = isDateFormat ? e.date : resolveDate(e.date, refDate)
