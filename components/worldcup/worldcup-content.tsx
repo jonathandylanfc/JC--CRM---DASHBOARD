@@ -982,42 +982,57 @@ function BracketTab() {
     if (lv >= 0 && lv <= 4) byLevel[lv].push(m)
   }
 
+  const g = (lv: number, start: number, count: number): (BracketMatch | null)[] =>
+    Array.from({ length: count }, (_, i) => byLevel[lv][start + i] ?? null)
+
   const finalMatch = byLevel[4][0] ?? null
 
-  const ROUNDS = [
-    { label: "Round of 32", level: 0 },
-    { label: "Round of 16", level: 1 },
-    { label: "Quarterfinals", level: 2 },
-    { label: "Semifinals", level: 3 },
-  ] as const
+  // Top half: outer R32 → R16 → QF → SF, flowing downward to Final
+  const topSections = [
+    { label: "Round of 32",   left: g(0, 0, 4),  right: g(0, 8,  4) },
+    { label: "Round of 16",   left: g(1, 0, 2),  right: g(1, 4,  2) },
+    { label: "Quarterfinals", left: g(2, 0, 1),  right: g(2, 2,  1) },
+    { label: "Semifinals",    left: g(3, 0, 1),  right: g(3, 1,  1) },
+  ]
+
+  // Bottom half: QF → R16 → outer R32, flowing away from Final downward
+  const botSections = [
+    { label: "Quarterfinals", left: g(2, 1, 1),  right: g(2, 3,  1) },
+    { label: "Round of 16",   left: g(1, 2, 2),  right: g(1, 6,  2) },
+    { label: "Round of 32",   left: g(0, 4, 4),  right: g(0, 12, 4) },
+  ]
+
+  const renderSection = (label: string, left: (BracketMatch | null)[], right: (BracketMatch | null)[], key: string) => (
+    <div key={key}>
+      <div className="flex items-center gap-2 mb-1.5">
+        <div className="flex-1 h-px bg-border/30" />
+        <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/50 px-1">
+          {label}
+        </span>
+        <div className="flex-1 h-px bg-border/30" />
+      </div>
+      <div className="flex gap-1">
+        <BracketHalf matches={left} side="left" />
+        <BracketHalf matches={right} side="right" />
+      </div>
+    </div>
+  )
 
   return (
-    <div className="space-y-4 pb-4">
-      {ROUNDS.map(({ label, level }) => {
-        const count = Math.pow(2, 3 - level)
-        const all = byLevel[level]
-        const left  = Array.from({ length: count }, (_, i) => all[i] ?? null)
-        const right = Array.from({ length: count }, (_, i) => all[count + i] ?? null)
+    <div className="pb-4">
+      {/* Top half: R32 top → R16 → QF → SF downward */}
+      <div className="space-y-3">
+        {topSections.map(({ label, left, right }, i) => renderSection(label, left, right, `top-${i}`))}
+      </div>
 
-        return (
-          <div key={label}>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="flex-1 h-px bg-border/30" />
-              <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/50 px-1">
-                {label}
-              </span>
-              <div className="flex-1 h-px bg-border/30" />
-            </div>
-            <div className="flex gap-1">
-              <BracketHalf matches={left} side="left" />
-              <BracketHalf matches={right} side="right" />
-            </div>
-          </div>
-        )
-      })}
+      {/* Connector */}
+      <div className="flex justify-center my-2">
+        <div className="w-px h-4 bg-border/30" />
+      </div>
 
+      {/* Final at center */}
       <div className="text-center">
-        <div className="flex items-center justify-center gap-1.5 mb-2">
+        <div className="flex items-center justify-center gap-1.5 mb-1.5">
           <Trophy className="w-3 h-3 text-yellow-500" />
           <span className="text-[8px] font-bold uppercase tracking-widest text-yellow-500">
             World Cup Final · Jul 19
@@ -1026,6 +1041,16 @@ function BracketTab() {
         <div className="max-w-[180px] mx-auto">
           <BKCard match={finalMatch} rowH={15} />
         </div>
+      </div>
+
+      {/* Connector */}
+      <div className="flex justify-center my-2">
+        <div className="w-px h-4 bg-border/30" />
+      </div>
+
+      {/* Bottom half: QF → R16 → R32 bottom (mirror of top) */}
+      <div className="space-y-3">
+        {botSections.map(({ label, left, right }, i) => renderSection(label, left, right, `bot-${i}`))}
       </div>
     </div>
   )
