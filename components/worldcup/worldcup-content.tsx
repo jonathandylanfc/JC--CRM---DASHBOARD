@@ -956,23 +956,43 @@ function BracketTab() {
   }
   const finalMatch = byLevel[4][0] ?? null
 
+  // Left column: R32(top) → R16 → QF → SF(bottom)
+  // Right column: SF(top) → QF → R16 → R32(bottom)  ← reversed so R32s are on opposite ends
+  const leftRounds  = [0, 1, 2, 3] as const
+  const rightRounds = [3, 2, 1, 0] as const
+  const rightLabels = ["SF", "QF", "R16", "R32"]
+
   return (
     <div className="pb-4">
-      {[0, 1, 2, 3].map((r) => (
-        <div key={r} className={r > 0 ? "mt-2" : undefined}>
-          <p className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wide mb-1">
-            {BK_ROUND_LABELS[r]}
-          </p>
-          <div className="flex gap-2">
-            <div className="flex-1 flex flex-col gap-[2px]">
-              {left[r].map((m, i) => <BKCard key={i} match={m} />)}
+      <div className="flex gap-2">
+        {/* Left: R32 at top, SF at bottom */}
+        <div className="flex-1 flex flex-col">
+          {leftRounds.map((r, idx) => (
+            <div key={r} className={idx > 0 ? "mt-2" : undefined}>
+              <p className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wide mb-1">
+                {BK_ROUND_LABELS[r]}
+              </p>
+              <div className="flex flex-col gap-[2px]">
+                {left[r].map((m, i) => <BKCard key={i} match={m} />)}
+              </div>
             </div>
-            <div className="flex-1 flex flex-col gap-[2px]">
-              {right[r].map((m, i) => <BKCard key={i} match={m} />)}
-            </div>
-          </div>
+          ))}
         </div>
-      ))}
+
+        {/* Right: SF at top, R32 at bottom */}
+        <div className="flex-1 flex flex-col">
+          {rightRounds.map((r, idx) => (
+            <div key={r} className={idx > 0 ? "mt-2" : undefined}>
+              <p className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wide mb-1">
+                {rightLabels[idx]}
+              </p>
+              <div className="flex flex-col gap-[2px]">
+                {right[r].map((m, i) => <BKCard key={i} match={m} />)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div className="mt-3">
         <div className="flex items-center gap-1.5 mb-1">
