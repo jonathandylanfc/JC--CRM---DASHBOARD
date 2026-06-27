@@ -45,9 +45,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="font-sans antialiased h-screen overflow-hidden">
+      <body className="font-sans antialiased h-dvh overflow-hidden">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem storageKey="jdpro-theme">
-          <div className="h-full overflow-y-auto">
+          <div className="h-full overflow-y-auto overscroll-none">
             {children}
           </div>
           <BottomNav />
