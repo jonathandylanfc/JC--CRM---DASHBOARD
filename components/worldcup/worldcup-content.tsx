@@ -919,6 +919,45 @@ function BKCard({ match, rowH = 14 }: { match: BracketMatch | null; rowH?: numbe
 
 // ─ Tournament bracket ─────────────────────────────────────────────────────────
 
+const BK_ROW_H = 13
+const BK_CARD_H = BK_ROW_H * 2          // 26px
+const BK_PAIR_H = BK_CARD_H + 2 + BK_CARD_H  // 54px (2px gap between cards)
+const BK_ARM_W = 6
+
+function BracketHalf({ matches, side }: { matches: (BracketMatch | null)[], side: "left" | "right" }) {
+  return (
+    <div className="space-y-1.5 flex-1 min-w-0">
+      {Array.from({ length: Math.ceil(matches.length / 2) }, (_, pi) => {
+        const m1 = matches[pi * 2] ?? null
+        const m2Idx = pi * 2 + 1
+        const hasPair = m2Idx < matches.length
+        const m2 = hasPair ? (matches[m2Idx] ?? null) : null
+        return (
+          <div key={pi} className={`flex ${side === "right" ? "flex-row-reverse" : "flex-row"}`}>
+            <div className="flex-1 min-w-0 space-y-0.5">
+              <BKCard match={m1} rowH={BK_ROW_H} />
+              {hasPair && <BKCard match={m2} rowH={BK_ROW_H} />}
+            </div>
+            {hasPair && (
+              <svg width={BK_ARM_W} height={BK_PAIR_H} style={{ flexShrink: 0 }}>
+                <path
+                  d={side === "left"
+                    ? `M 0 ${BK_ROW_H} H ${BK_ARM_W - 1} V ${BK_PAIR_H - BK_ROW_H} H 0`
+                    : `M ${BK_ARM_W} ${BK_ROW_H} H 1 V ${BK_PAIR_H - BK_ROW_H} H ${BK_ARM_W}`}
+                  fill="none"
+                  stroke="hsl(var(--border))"
+                  strokeWidth="1"
+                  opacity="0.4"
+                />
+              </svg>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function BracketTab() {
   const [matches, setMatches] = useState<BracketMatch[] | null>(null)
   const [error, setError] = useState(false)
@@ -943,157 +982,49 @@ function BracketTab() {
     if (lv >= 0 && lv <= 4) byLevel[lv].push(m)
   }
 
-  const left: (BracketMatch | null)[][] = []
-  const right: (BracketMatch | null)[][] = []
-  for (let r = 0; r < 4; r++) {
-    const perSide = Math.pow(2, 3 - r)
-    const all = byLevel[r]
-    left[r]  = Array.from({ length: perSide }, (_, i) => all[i] ?? null)
-    right[r] = Array.from({ length: perSide }, (_, i) => all[perSide + i] ?? null)
-  }
   const finalMatch = byLevel[4][0] ?? null
 
-  // ── Layout constants ─────────────────────────────────────────────────────
-  const CW = 38   // card width px
-  const CH = 24   // card height px (2 × RH)
-  const RH = 12   // row height per team
-  const SL = 26   // vertical slot = CH + 2px gap
-  const CP = 43   // column pitch = CW + 5px gap
-  const CG = 8    // center gap between SF-L and SF-R
-
-  // Left column X positions (left edges): level 0=R32(outer) → level 3=SF(inner)
-  const LX = [0, CP, CP * 2, CP * 3]                       // [0, 43, 86, 129]
-  // Right column X positions: level 0=R32(outer/right) → level 3=SF(inner/left)
-  const RX_SF = LX[3] + CW + CG                            // 129+38+8 = 175
-  const RX = [RX_SF + CP * 3, RX_SF + CP * 2, RX_SF + CP, RX_SF]  // [304,261,218,175]
-  const TOTAL_W = RX[0] + CW                               // 342
-
-  // Y position of card top for a given round level and match index
-  function cardY(level: number, idx: number): number {
-    const span = SL * Math.pow(2, level)
-    return (span - CH) / 2 + idx * span
-  }
-
-  const BRACKET_H = cardY(0, 7) + CH   // bottom of lowest R32 card ≈ 207
-
-  // ── SVG connector lines ──────────────────────────────────────────────────
-  const paths: React.ReactNode[] = []
-
-  // Left bracket: child right edge ─┤ vertical ├─ parent left edge
-  for (let L = 0; L < 3; L++) {
-    const n  = Math.pow(2, 2 - L)        // pair count: 4,2,1
-    const cR = LX[L] + CW               // child right edge
-    const pL = LX[L + 1]               // parent left edge
-    const ex = (cR + pL) / 2           // elbow X
-    for (let i = 0; i < n; i++) {
-      const c0 = cardY(L, 2 * i) + RH
-      const c1 = cardY(L, 2 * i + 1) + RH
-      const cp = cardY(L + 1, i) + RH
-      paths.push(
-        <g key={`L${L}-${i}`}>
-          <polyline points={`${cR},${c0} ${ex},${c0} ${ex},${c1} ${cR},${c1}`} />
-          <line x1={ex} y1={cp} x2={pL} y2={cp} />
-        </g>
-      )
-    }
-  }
-
-  // Right bracket: child left edge ├─ vertical ─┤ parent right edge
-  for (let L = 0; L < 3; L++) {
-    const n  = Math.pow(2, 2 - L)
-    const cL = RX[L]                    // child left edge
-    const pR = RX[L + 1] + CW          // parent right edge
-    const ex = (cL + pR) / 2
-    for (let i = 0; i < n; i++) {
-      const c0 = cardY(L, 2 * i) + RH
-      const c1 = cardY(L, 2 * i + 1) + RH
-      const cp = cardY(L + 1, i) + RH
-      paths.push(
-        <g key={`R${L}-${i}`}>
-          <polyline points={`${cL},${c0} ${ex},${c0} ${ex},${c1} ${cL},${c1}`} />
-          <line x1={ex} y1={cp} x2={pR} y2={cp} />
-        </g>
-      )
-    }
-  }
-
-  // SF → Final connector: both SFs drop down and meet at center
-  const sfLcx = LX[3] + CW / 2          // SF-L center X = 148
-  const sfRcx = RX[3] + CW / 2          // SF-R center X = 194
-  const sfBot = cardY(3, 0) + CH         // SF bottom Y = 116
-  const midY  = sfBot + 5               // meeting height
-  const ctrX  = TOTAL_W / 2             // = 171
-  paths.push(
-    <g key="sf-final">
-      <line x1={sfLcx} y1={sfBot} x2={sfLcx} y2={midY} />
-      <line x1={sfRcx} y1={sfBot} x2={sfRcx} y2={midY} />
-      <line x1={sfLcx} y1={midY}  x2={sfRcx} y2={midY} />
-      <line x1={ctrX}  y1={midY}  x2={ctrX}  y2={BRACKET_H + 20} />
-    </g>
-  )
-
-  // ── Column round labels ─────────────────────────────────────────────────
-  const colLabels = [
-    { x: LX[0]+CW/2, t: "R32" }, { x: LX[1]+CW/2, t: "R16" },
-    { x: LX[2]+CW/2, t: "QF"  }, { x: LX[3]+CW/2, t: "SF"  },
-    { x: RX[3]+CW/2, t: "SF"  }, { x: RX[2]+CW/2, t: "QF"  },
-    { x: RX[1]+CW/2, t: "R16" }, { x: RX[0]+CW/2, t: "R32" },
-  ]
-
-  const FINAL_W = 110
-  const FINAL_X = Math.round((TOTAL_W - FINAL_W) / 2)  // = 116
+  const ROUNDS = [
+    { label: "Round of 32", level: 0 },
+    { label: "Round of 16", level: 1 },
+    { label: "Quarterfinals", level: 2 },
+    { label: "Semifinals", level: 3 },
+  ] as const
 
   return (
-    <div className="pb-4">
-      {/* Round column labels */}
-      <div className="relative mb-1" style={{ height: 12, width: TOTAL_W }}>
-        {colLabels.map(({ x, t }, i) => (
-          <span key={i}
-                className="absolute text-[6px] font-bold uppercase tracking-widest text-muted-foreground/40"
-                style={{ left: x, top: 0, transform: "translateX(-50%)" }}>
-            {t}
-          </span>
-        ))}
-      </div>
+    <div className="space-y-4 pb-4">
+      {ROUNDS.map(({ label, level }) => {
+        const count = Math.pow(2, 3 - level)
+        const all = byLevel[level]
+        const left  = Array.from({ length: count }, (_, i) => all[i] ?? null)
+        const right = Array.from({ length: count }, (_, i) => all[count + i] ?? null)
 
-      {/* Bracket area with SVG connector lines */}
-      <div className="relative" style={{ width: TOTAL_W, height: BRACKET_H }}>
-        <svg
-          style={{ position: "absolute", top: 0, left: 0, overflow: "visible" }}
-          width={TOTAL_W} height={BRACKET_H}
-          fill="none" stroke="hsl(var(--border))" strokeWidth="1">
-          {paths}
-        </svg>
-
-        {/* Left bracket match cards */}
-        {[0, 1, 2, 3].map(level =>
-          Array.from({ length: Math.pow(2, 3 - level) }, (_, i) => (
-            <div key={`L${level}-${i}`}
-                 style={{ position: "absolute", left: LX[level], top: cardY(level, i), width: CW, height: CH }}>
-              <BKCard match={left[level][i] ?? null} rowH={RH} />
+        return (
+          <div key={label}>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="flex-1 h-px bg-border/30" />
+              <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/50 px-1">
+                {label}
+              </span>
+              <div className="flex-1 h-px bg-border/30" />
             </div>
-          ))
-        )}
-
-        {/* Right bracket match cards */}
-        {[0, 1, 2, 3].map(level =>
-          Array.from({ length: Math.pow(2, 3 - level) }, (_, i) => (
-            <div key={`R${level}-${i}`}
-                 style={{ position: "absolute", left: RX[level], top: cardY(level, i), width: CW, height: CH }}>
-              <BKCard match={right[level][i] ?? null} rowH={RH} />
+            <div className="flex gap-1">
+              <BracketHalf matches={left} side="left" />
+              <BracketHalf matches={right} side="right" />
             </div>
-          ))
-        )}
-      </div>
+          </div>
+        )
+      })}
 
-      {/* Final */}
-      <div style={{ marginTop: 22, width: TOTAL_W }}>
-        <div className="flex items-center justify-center gap-1 mb-0.5">
+      <div className="text-center">
+        <div className="flex items-center justify-center gap-1.5 mb-2">
           <Trophy className="w-3 h-3 text-yellow-500" />
-          <span className="text-[7px] font-bold uppercase tracking-widest text-yellow-500/80">Final · Jul 19</span>
+          <span className="text-[8px] font-bold uppercase tracking-widest text-yellow-500">
+            World Cup Final · Jul 19
+          </span>
         </div>
-        <div style={{ width: FINAL_W, marginLeft: FINAL_X }}>
-          <BKCard match={finalMatch} rowH={16} />
+        <div className="max-w-[180px] mx-auto">
+          <BKCard match={finalMatch} rowH={15} />
         </div>
       </div>
     </div>
