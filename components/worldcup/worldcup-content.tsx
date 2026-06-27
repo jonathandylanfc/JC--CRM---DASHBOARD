@@ -925,8 +925,15 @@ const BK_ROW_H = 22
 const BK_CARD_H = BK_ROW_H * 2          // 44px
 const BK_PAIR_H = BK_CARD_H + 2 + BK_CARD_H  // 90px (2px gap between cards)
 const BK_ARM_W = 8
+const BK_CONNECTOR_H = 30               // stub length bridging to next section
 
-function BracketHalf({ matches, side }: { matches: (BracketMatch | null)[], side: "left" | "right" }) {
+function BracketHalf({ matches, side, showConnector = false }: {
+  matches: (BracketMatch | null)[]
+  side: "left" | "right"
+  showConnector?: boolean
+}) {
+  const armX = side === "left" ? BK_ARM_W - 1 : 1
+
   return (
     <div className="space-y-1.5 flex-1 min-w-0">
       {Array.from({ length: Math.ceil(matches.length / 2) }, (_, pi) => {
@@ -940,17 +947,37 @@ function BracketHalf({ matches, side }: { matches: (BracketMatch | null)[], side
               <BKCard match={m1} rowH={BK_ROW_H} />
               {hasPair && <BKCard match={m2} rowH={BK_ROW_H} />}
             </div>
-            {hasPair && (
-              <svg width={BK_ARM_W} height={BK_PAIR_H} style={{ flexShrink: 0 }}>
+            {hasPair ? (
+              <svg width={BK_ARM_W} height={BK_PAIR_H} style={{ flexShrink: 0, overflow: "visible" }}>
                 <path
                   d={side === "left"
                     ? `M 0 ${BK_ROW_H} H ${BK_ARM_W - 1} V ${BK_PAIR_H - BK_ROW_H} H 0`
                     : `M ${BK_ARM_W} ${BK_ROW_H} H 1 V ${BK_PAIR_H - BK_ROW_H} H ${BK_ARM_W}`}
-                  fill="none"
-                  stroke="hsl(var(--border))"
-                  strokeWidth="1"
-                  opacity="0.4"
+                  fill="none" stroke="hsl(var(--border))" strokeWidth="1" opacity="0.4"
                 />
+                {showConnector && (
+                  <line
+                    x1={armX} y1={BK_PAIR_H / 2}
+                    x2={armX} y2={BK_PAIR_H + BK_CONNECTOR_H}
+                    stroke="hsl(var(--border))" strokeWidth="1" opacity="0.4"
+                  />
+                )}
+              </svg>
+            ) : (
+              <svg width={BK_ARM_W} height={BK_CARD_H} style={{ flexShrink: 0, overflow: "visible" }}>
+                {/* Horizontal exit line from card center to arm position */}
+                <line
+                  x1={side === "left" ? 0 : BK_ARM_W} y1={BK_ROW_H}
+                  x2={armX} y2={BK_ROW_H}
+                  stroke="hsl(var(--border))" strokeWidth="1" opacity="0.4"
+                />
+                {showConnector && (
+                  <line
+                    x1={armX} y1={BK_ROW_H}
+                    x2={armX} y2={BK_CARD_H + BK_CONNECTOR_H}
+                    stroke="hsl(var(--border))" strokeWidth="1" opacity="0.4"
+                  />
+                )}
               </svg>
             )}
           </div>
@@ -991,20 +1018,20 @@ function BracketTab() {
 
   // Top half: outer R32 → R16 → QF → SF, flowing downward to Final
   const topSections = [
-    { label: "Round of 32",   left: g(0, 0, 4),  right: g(0, 8,  4) },
-    { label: "Round of 16",   left: g(1, 0, 2),  right: g(1, 4,  2) },
-    { label: "Quarterfinals", left: g(2, 0, 1),  right: g(2, 2,  1) },
-    { label: "Semifinals",    left: g(3, 0, 1),  right: g(3, 1,  1) },
+    { label: "Round of 32",   left: g(0, 0, 4),  right: g(0, 8,  4),  connector: true  },
+    { label: "Round of 16",   left: g(1, 0, 2),  right: g(1, 4,  2),  connector: true  },
+    { label: "Quarterfinals", left: g(2, 0, 1),  right: g(2, 2,  1),  connector: true  },
+    { label: "Semifinals",    left: g(3, 0, 1),  right: g(3, 1,  1),  connector: false },
   ]
 
   // Bottom half: QF → R16 → outer R32, flowing away from Final downward
   const botSections = [
-    { label: "Quarterfinals", left: g(2, 1, 1),  right: g(2, 3,  1) },
-    { label: "Round of 16",   left: g(1, 2, 2),  right: g(1, 6,  2) },
-    { label: "Round of 32",   left: g(0, 4, 4),  right: g(0, 12, 4) },
+    { label: "Quarterfinals", left: g(2, 1, 1),  right: g(2, 3,  1),  connector: true  },
+    { label: "Round of 16",   left: g(1, 2, 2),  right: g(1, 6,  2),  connector: true  },
+    { label: "Round of 32",   left: g(0, 4, 4),  right: g(0, 12, 4),  connector: false },
   ]
 
-  const renderSection = (label: string, left: (BracketMatch | null)[], right: (BracketMatch | null)[], key: string) => (
+  const renderSection = (label: string, left: (BracketMatch | null)[], right: (BracketMatch | null)[], key: string, showConnector = false) => (
     <div key={key}>
       <div className="flex items-center gap-2 mb-1.5">
         <div className="flex-1 h-px bg-border/30" />
@@ -1014,8 +1041,8 @@ function BracketTab() {
         <div className="flex-1 h-px bg-border/30" />
       </div>
       <div className="flex gap-2">
-        <BracketHalf matches={left} side="left" />
-        <BracketHalf matches={right} side="right" />
+        <BracketHalf matches={left} side="left" showConnector={showConnector} />
+        <BracketHalf matches={right} side="right" showConnector={showConnector} />
       </div>
     </div>
   )
@@ -1024,7 +1051,7 @@ function BracketTab() {
     <div className="pb-4">
       {/* Top half: R32 top → R16 → QF → SF downward */}
       <div className="space-y-3">
-        {topSections.map(({ label, left, right }, i) => renderSection(label, left, right, `top-${i}`))}
+        {topSections.map(({ label, left, right, connector }, i) => renderSection(label, left, right, `top-${i}`, connector))}
       </div>
 
       {/* Connector */}
@@ -1052,7 +1079,7 @@ function BracketTab() {
 
       {/* Bottom half: QF → R16 → R32 bottom (mirror of top) */}
       <div className="space-y-3">
-        {botSections.map(({ label, left, right }, i) => renderSection(label, left, right, `bot-${i}`))}
+        {botSections.map(({ label, left, right, connector }, i) => renderSection(label, left, right, `bot-${i}`, connector))}
       </div>
     </div>
   )
