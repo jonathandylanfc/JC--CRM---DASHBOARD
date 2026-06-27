@@ -876,7 +876,7 @@ function BKTeamRow({ team, win, isDone, isLive, rowH }: {
       ) : (
         <div className="rounded-full bg-muted/50 shrink-0" style={{ width: flagSize, height: flagSize }} />
       )}
-      <span className={`text-xs whitespace-nowrap ${win ? "font-semibold" : "text-muted-foreground/80"}`}>
+      <span className={`text-xs truncate flex-1 ${win ? "font-semibold" : "text-muted-foreground/80"}`}>
         {displayName}
       </span>
       {(isLive || isDone) && team.score !== null && (
@@ -891,7 +891,7 @@ function BKTeamRow({ team, win, isDone, isLive, rowH }: {
 function BKCard({ match, rowH = 14 }: { match: BracketMatch | null; rowH?: number }) {
   if (!match) {
     return (
-      <div className="rounded border border-dashed border-border/30 bg-card/30 overflow-hidden"
+      <div className="rounded border border-dashed border-border/30 bg-card/30 overflow-hidden w-full"
            style={{ height: rowH * 2 }}>
         {[0, 1].map((i) => (
           <div key={i} className={`flex items-center gap-1.5 px-2 ${i > 0 ? "border-t border-border/20" : ""}`}
@@ -910,7 +910,7 @@ function BKCard({ match, rowH = 14 }: { match: BracketMatch | null; rowH?: numbe
   const awayWin = match.winner === "away"
 
   return (
-    <div className={`rounded border overflow-hidden ${isLive ? "border-emerald-500/60 bg-emerald-500/5" : "border-border/60 bg-card/80"}`}
+    <div className={`rounded border overflow-hidden w-full ${isLive ? "border-emerald-500/60 bg-emerald-500/5" : "border-border/60 bg-card/80"}`}
          style={{ height: rowH * 2 }}>
       <BKTeamRow team={match.home} win={homeWin} isDone={isDone} isLive={isLive} rowH={rowH} />
       <div className="border-t border-border/40" />
@@ -928,7 +928,7 @@ const BK_ARM_W = 8
 
 function BracketHalf({ matches, side }: { matches: (BracketMatch | null)[], side: "left" | "right" }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5 flex-1 min-w-0">
       {Array.from({ length: Math.ceil(matches.length / 2) }, (_, pi) => {
         const m1 = matches[pi * 2] ?? null
         const m2Idx = pi * 2 + 1
@@ -936,7 +936,7 @@ function BracketHalf({ matches, side }: { matches: (BracketMatch | null)[], side
         const m2 = hasPair ? (matches[m2Idx] ?? null) : null
         return (
           <div key={pi} className={`flex ${side === "right" ? "flex-row-reverse" : "flex-row"}`}>
-            <div className="space-y-0.5">
+            <div className="flex-1 min-w-0 space-y-0.5">
               <BKCard match={m1} rowH={BK_ROW_H} />
               {hasPair && <BKCard match={m2} rowH={BK_ROW_H} />}
             </div>
@@ -1013,7 +1013,7 @@ function BracketTab() {
         </span>
         <div className="flex-1 h-px bg-border/30" />
       </div>
-      <div className="flex justify-between items-start">
+      <div className="flex gap-2">
         <BracketHalf matches={left} side="left" />
         <BracketHalf matches={right} side="right" />
       </div>
