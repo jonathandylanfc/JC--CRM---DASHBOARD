@@ -857,6 +857,46 @@ function roundNameToLevel(name: string): number {
 
 // ─ Compact bracket card ────────────────────────────────────────────────────────
 
+function isBkPlaceholder(s: string | null | undefined) {
+  if (!s || s === "TBD") return true
+  const l = s.toLowerCase()
+  if (l.startsWith("winner") || l.startsWith("runner") || l.startsWith("third")) return true
+  if (l.includes(" of ") || l.includes("match ")) return true
+  if (/\d$/.test(s)) return true  // ESPN codes: QFW1, SFW2, W50, RD16W1, etc.
+  return false
+}
+
+function BKTeamRow({ team, win, isDone, isLive }: {
+  team: BracketMatch["home"]; win: boolean; isDone: boolean; isLive: boolean
+}) {
+  const [imgErr, setImgErr] = useState(false)
+  const rowH = BK_CH / 2
+  const isTBD = isBkPlaceholder(team.name) || isBkPlaceholder(team.shortName)
+  const showFlag = !isTBD && !!team.logo && !imgErr
+
+  return (
+    <div className={`flex items-center gap-1 px-1.5 ${isDone && !win ? "opacity-35" : ""}`}
+         style={{ height: rowH }}>
+      {showFlag ? (
+        <img src={team.logo!} alt={team.shortName}
+             className="rounded-full object-cover shrink-0 bg-muted"
+             style={{ width: 14, height: 14 }}
+             onError={() => setImgErr(true)} />
+      ) : (
+        <div className="rounded-full bg-muted/50 shrink-0" style={{ width: 14, height: 14 }} />
+      )}
+      <span className={`text-[10px] truncate flex-1 ${win ? "font-semibold" : ""}`}>
+        {isTBD ? "TBD" : (team.shortName || team.name)}
+      </span>
+      {(isLive || isDone) && team.score !== null && (
+        <span className={`text-[10px] font-bold tabular-nums shrink-0 ${win ? "" : "text-muted-foreground"}`}>
+          {team.score}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function BKCard({ match }: { match: BracketMatch | null }) {
   const rowH = BK_CH / 2
   if (!match) {
@@ -879,32 +919,12 @@ function BKCard({ match }: { match: BracketMatch | null }) {
   const homeWin = match.winner === "home"
   const awayWin = match.winner === "away"
 
-  const TeamRow = ({ team, win }: { team: BracketTeam; win: boolean }) => {
-    const isTBD = !team.name || team.name === "TBD" || team.name.startsWith("Winner") || team.name.startsWith("Third")
-    return (
-      <div className={`flex items-center gap-1 px-1.5 ${isDone && !win ? "opacity-35" : ""}`} style={{ height: rowH }}>
-        {isTBD
-          ? <div className="w-3.5 h-3.5 rounded-full bg-muted/50 shrink-0" />
-          : <TeamLogo logo={team.logo} name={team.shortName} size={14} />
-        }
-        <span className={`text-[10px] truncate flex-1 ${win ? "font-semibold" : ""}`}>
-          {isTBD ? "TBD" : (team.shortName || team.name)}
-        </span>
-        {(isLive || isDone) && team.score !== null && (
-          <span className={`text-[10px] font-bold tabular-nums shrink-0 ${win ? "" : "text-muted-foreground"}`}>
-            {team.score}
-          </span>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div className={`rounded border overflow-hidden ${isLive ? "border-emerald-500/60 bg-emerald-500/5" : "border-border/60 bg-card/80"}`}
          style={{ width: BK_CW, height: BK_CH }}>
-      <TeamRow team={match.home} win={homeWin} />
+      <BKTeamRow team={match.home} win={homeWin} isDone={isDone} isLive={isLive} />
       <div className="border-t border-border/40" />
-      <TeamRow team={match.away} win={awayWin} />
+      <BKTeamRow team={match.away} win={awayWin} isDone={isDone} isLive={isLive} />
     </div>
   )
 }
