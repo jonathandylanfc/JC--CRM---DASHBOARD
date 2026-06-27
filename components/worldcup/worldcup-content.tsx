@@ -864,7 +864,7 @@ function BKTeamRow({ team, win, isDone, isLive, rowH }: {
   const flagSize = Math.max(rowH - 4, 8)
 
   return (
-    <div className={`flex items-center gap-1 px-1.5 ${isDone && !win ? "opacity-35" : ""}`}
+    <div className={`flex items-center gap-1 px-1 ${isDone && !win ? "opacity-35" : ""}`}
          style={{ height: rowH }}>
       {showFlag ? (
         <img src={flagSrc!} alt={abbr}
@@ -917,25 +917,7 @@ function BKCard({ match, rowH = 14 }: { match: BracketMatch | null; rowH?: numbe
   )
 }
 
-// ─ Vertical bracket helpers ───────────────────────────────────────────────────
-
-const BK_ROUND_LABELS = ["Round of 32", "Round of 16", "Quarterfinals", "Semifinals"]
-
-function RoundSection({ matches, cols = 2 }: { matches: (BracketMatch | null)[]; cols?: number }) {
-  const rows: (BracketMatch | null)[][] = []
-  for (let i = 0; i < matches.length; i += cols) rows.push(matches.slice(i, i + cols))
-  return (
-    <div className="flex flex-col gap-[1px]">
-      {rows.map((row, ri) =>
-        cols === 1
-          ? <BKCard key={ri} match={row[0] ?? null} rowH={12} />
-          : <div key={ri} className="flex gap-[2px]">
-              {row.map((m, ci) => <div key={ci} className="flex-1 min-w-0"><BKCard match={m} rowH={12} /></div>)}
-            </div>
-      )}
-    </div>
-  )
-}
+// ─ Tournament bracket ─────────────────────────────────────────────────────────
 
 function BracketTab() {
   const [matches, setMatches] = useState<BracketMatch[] | null>(null)
@@ -949,7 +931,6 @@ function BracketTab() {
   }, [])
 
   if (error) return <div className="text-center py-12 text-muted-foreground text-sm">Failed to load bracket</div>
-
   if (!matches) return (
     <div className="flex justify-center py-16">
       <div className="w-8 h-8 rounded-full border-2 border-border border-t-muted-foreground animate-spin" />
@@ -972,42 +953,149 @@ function BracketTab() {
   }
   const finalMatch = byLevel[4][0] ?? null
 
-  return (
-    <div className="pb-4 flex flex-col gap-1">
-      {/* Top half: left bracket R32 → SF, funneling toward center */}
-      {[
-        { label: BK_ROUND_LABELS[0], matches: left[0], cols: 2 },
-        { label: BK_ROUND_LABELS[1], matches: left[1], cols: 2 },
-        { label: BK_ROUND_LABELS[2], matches: left[2], cols: 2 },
-        { label: BK_ROUND_LABELS[3], matches: left[3], cols: 1 },
-      ].map(({ label, matches, cols }) => (
-        <div key={label + "-t"}>
-          <p className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wide mb-0.5">{label}</p>
-          <RoundSection matches={matches} cols={cols} />
-        </div>
-      ))}
+  // ── Layout constants ─────────────────────────────────────────────────────
+  const CW = 38   // card width px
+  const CH = 24   // card height px (2 × RH)
+  const RH = 12   // row height per team
+  const SL = 26   // vertical slot = CH + 2px gap
+  const CP = 43   // column pitch = CW + 5px gap
+  const CG = 8    // center gap between SF-L and SF-R
 
-      {/* Final */}
-      <div className="my-1">
-        <div className="flex items-center gap-1.5 mb-0.5">
-          <Trophy className="w-3.5 h-3.5 text-yellow-500" />
-          <p className="text-[8px] font-bold text-yellow-500/80 uppercase tracking-wide">Final · Jul 19</p>
-        </div>
-        <BKCard match={finalMatch} rowH={18} />
+  // Left column X positions (left edges): level 0=R32(outer) → level 3=SF(inner)
+  const LX = [0, CP, CP * 2, CP * 3]                       // [0, 43, 86, 129]
+  // Right column X positions: level 0=R32(outer/right) → level 3=SF(inner/left)
+  const RX_SF = LX[3] + CW + CG                            // 129+38+8 = 175
+  const RX = [RX_SF + CP * 3, RX_SF + CP * 2, RX_SF + CP, RX_SF]  // [304,261,218,175]
+  const TOTAL_W = RX[0] + CW                               // 342
+
+  // Y position of card top for a given round level and match index
+  function cardY(level: number, idx: number): number {
+    const span = SL * Math.pow(2, level)
+    return (span - CH) / 2 + idx * span
+  }
+
+  const BRACKET_H = cardY(0, 7) + CH   // bottom of lowest R32 card ≈ 207
+
+  // ── SVG connector lines ──────────────────────────────────────────────────
+  const paths: React.ReactNode[] = []
+
+  // Left bracket: child right edge ─┤ vertical ├─ parent left edge
+  for (let L = 0; L < 3; L++) {
+    const n  = Math.pow(2, 2 - L)        // pair count: 4,2,1
+    const cR = LX[L] + CW               // child right edge
+    const pL = LX[L + 1]               // parent left edge
+    const ex = (cR + pL) / 2           // elbow X
+    for (let i = 0; i < n; i++) {
+      const c0 = cardY(L, 2 * i) + RH
+      const c1 = cardY(L, 2 * i + 1) + RH
+      const cp = cardY(L + 1, i) + RH
+      paths.push(
+        <g key={`L${L}-${i}`}>
+          <polyline points={`${cR},${c0} ${ex},${c0} ${ex},${c1} ${cR},${c1}`} />
+          <line x1={ex} y1={cp} x2={pL} y2={cp} />
+        </g>
+      )
+    }
+  }
+
+  // Right bracket: child left edge ├─ vertical ─┤ parent right edge
+  for (let L = 0; L < 3; L++) {
+    const n  = Math.pow(2, 2 - L)
+    const cL = RX[L]                    // child left edge
+    const pR = RX[L + 1] + CW          // parent right edge
+    const ex = (cL + pR) / 2
+    for (let i = 0; i < n; i++) {
+      const c0 = cardY(L, 2 * i) + RH
+      const c1 = cardY(L, 2 * i + 1) + RH
+      const cp = cardY(L + 1, i) + RH
+      paths.push(
+        <g key={`R${L}-${i}`}>
+          <polyline points={`${cL},${c0} ${ex},${c0} ${ex},${c1} ${cL},${c1}`} />
+          <line x1={ex} y1={cp} x2={pR} y2={cp} />
+        </g>
+      )
+    }
+  }
+
+  // SF → Final connector: both SFs drop down and meet at center
+  const sfLcx = LX[3] + CW / 2          // SF-L center X = 148
+  const sfRcx = RX[3] + CW / 2          // SF-R center X = 194
+  const sfBot = cardY(3, 0) + CH         // SF bottom Y = 116
+  const midY  = sfBot + 5               // meeting height
+  const ctrX  = TOTAL_W / 2             // = 171
+  paths.push(
+    <g key="sf-final">
+      <line x1={sfLcx} y1={sfBot} x2={sfLcx} y2={midY} />
+      <line x1={sfRcx} y1={sfBot} x2={sfRcx} y2={midY} />
+      <line x1={sfLcx} y1={midY}  x2={sfRcx} y2={midY} />
+      <line x1={ctrX}  y1={midY}  x2={ctrX}  y2={BRACKET_H + 20} />
+    </g>
+  )
+
+  // ── Column round labels ─────────────────────────────────────────────────
+  const colLabels = [
+    { x: LX[0]+CW/2, t: "R32" }, { x: LX[1]+CW/2, t: "R16" },
+    { x: LX[2]+CW/2, t: "QF"  }, { x: LX[3]+CW/2, t: "SF"  },
+    { x: RX[3]+CW/2, t: "SF"  }, { x: RX[2]+CW/2, t: "QF"  },
+    { x: RX[1]+CW/2, t: "R16" }, { x: RX[0]+CW/2, t: "R32" },
+  ]
+
+  const FINAL_W = 110
+  const FINAL_X = Math.round((TOTAL_W - FINAL_W) / 2)  // = 116
+
+  return (
+    <div className="pb-4">
+      {/* Round column labels */}
+      <div className="relative mb-1" style={{ height: 12, width: TOTAL_W }}>
+        {colLabels.map(({ x, t }, i) => (
+          <span key={i}
+                className="absolute text-[6px] font-bold uppercase tracking-widest text-muted-foreground/40"
+                style={{ left: x, top: 0, transform: "translateX(-50%)" }}>
+            {t}
+          </span>
+        ))}
       </div>
 
-      {/* Bottom half: right bracket SF → R32, expanding from center */}
-      {[
-        { label: BK_ROUND_LABELS[3], matches: right[3], cols: 1 },
-        { label: BK_ROUND_LABELS[2], matches: right[2], cols: 2 },
-        { label: BK_ROUND_LABELS[1], matches: right[1], cols: 2 },
-        { label: BK_ROUND_LABELS[0], matches: right[0], cols: 2 },
-      ].map(({ label, matches, cols }) => (
-        <div key={label + "-b"}>
-          <p className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wide mb-0.5">{label}</p>
-          <RoundSection matches={matches} cols={cols} />
+      {/* Bracket area with SVG connector lines */}
+      <div className="relative" style={{ width: TOTAL_W, height: BRACKET_H }}>
+        <svg
+          style={{ position: "absolute", top: 0, left: 0, overflow: "visible" }}
+          width={TOTAL_W} height={BRACKET_H}
+          fill="none" stroke="hsl(var(--border))" strokeWidth="1">
+          {paths}
+        </svg>
+
+        {/* Left bracket match cards */}
+        {[0, 1, 2, 3].map(level =>
+          Array.from({ length: Math.pow(2, 3 - level) }, (_, i) => (
+            <div key={`L${level}-${i}`}
+                 style={{ position: "absolute", left: LX[level], top: cardY(level, i), width: CW, height: CH }}>
+              <BKCard match={left[level][i] ?? null} rowH={RH} />
+            </div>
+          ))
+        )}
+
+        {/* Right bracket match cards */}
+        {[0, 1, 2, 3].map(level =>
+          Array.from({ length: Math.pow(2, 3 - level) }, (_, i) => (
+            <div key={`R${level}-${i}`}
+                 style={{ position: "absolute", left: RX[level], top: cardY(level, i), width: CW, height: CH }}>
+              <BKCard match={right[level][i] ?? null} rowH={RH} />
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Final */}
+      <div style={{ marginTop: 22, width: TOTAL_W }}>
+        <div className="flex items-center justify-center gap-1 mb-0.5">
+          <Trophy className="w-3 h-3 text-yellow-500" />
+          <span className="text-[7px] font-bold uppercase tracking-widest text-yellow-500/80">Final · Jul 19</span>
         </div>
-      ))}
+        <div style={{ width: FINAL_W, marginLeft: FINAL_X }}>
+          <BKCard match={finalMatch} rowH={16} />
+        </div>
+      </div>
     </div>
   )
 }
