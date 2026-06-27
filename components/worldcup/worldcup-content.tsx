@@ -917,9 +917,25 @@ function BKCard({ match, rowH = 14 }: { match: BracketMatch | null; rowH?: numbe
   )
 }
 
-// ─ Vertical two-column bracket ────────────────────────────────────────────────
+// ─ Vertical bracket helpers ───────────────────────────────────────────────────
 
 const BK_ROUND_LABELS = ["Round of 32", "Round of 16", "Quarterfinals", "Semifinals"]
+
+function RoundSection({ matches, cols = 2 }: { matches: (BracketMatch | null)[]; cols?: number }) {
+  const rows: (BracketMatch | null)[][] = []
+  for (let i = 0; i < matches.length; i += cols) rows.push(matches.slice(i, i + cols))
+  return (
+    <div className="flex flex-col gap-[1px]">
+      {rows.map((row, ri) =>
+        cols === 1
+          ? <BKCard key={ri} match={row[0] ?? null} rowH={12} />
+          : <div key={ri} className="flex gap-[2px]">
+              {row.map((m, ci) => <div key={ci} className="flex-1 min-w-0"><BKCard match={m} rowH={12} /></div>)}
+            </div>
+      )}
+    </div>
+  )
+}
 
 function BracketTab() {
   const [matches, setMatches] = useState<BracketMatch[] | null>(null)
@@ -956,51 +972,42 @@ function BracketTab() {
   }
   const finalMatch = byLevel[4][0] ?? null
 
-  // Left column: R32(top) → R16 → QF → SF(bottom)
-  // Right column: SF(top) → QF → R16 → R32(bottom)  ← reversed so R32s are on opposite ends
-  const leftRounds  = [0, 1, 2, 3] as const
-  const rightRounds = [3, 2, 1, 0] as const
-  const rightLabels = ["SF", "QF", "R16", "R32"]
-
   return (
-    <div className="pb-4">
-      <div className="flex gap-2">
-        {/* Left: R32 at top, SF at bottom */}
-        <div className="flex-1 flex flex-col">
-          {leftRounds.map((r, idx) => (
-            <div key={r} className={idx > 0 ? "mt-2" : undefined}>
-              <p className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wide mb-1">
-                {BK_ROUND_LABELS[r]}
-              </p>
-              <div className="flex flex-col gap-[2px]">
-                {left[r].map((m, i) => <BKCard key={i} match={m} />)}
-              </div>
-            </div>
-          ))}
+    <div className="pb-4 flex flex-col gap-1">
+      {/* Top half: left bracket R32 → SF, funneling toward center */}
+      {[
+        { label: BK_ROUND_LABELS[0], matches: left[0], cols: 2 },
+        { label: BK_ROUND_LABELS[1], matches: left[1], cols: 2 },
+        { label: BK_ROUND_LABELS[2], matches: left[2], cols: 2 },
+        { label: BK_ROUND_LABELS[3], matches: left[3], cols: 1 },
+      ].map(({ label, matches, cols }) => (
+        <div key={label + "-t"}>
+          <p className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wide mb-0.5">{label}</p>
+          <RoundSection matches={matches} cols={cols} />
         </div>
+      ))}
 
-        {/* Right: SF at top, R32 at bottom */}
-        <div className="flex-1 flex flex-col">
-          {rightRounds.map((r, idx) => (
-            <div key={r} className={idx > 0 ? "mt-2" : undefined}>
-              <p className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wide mb-1">
-                {rightLabels[idx]}
-              </p>
-              <div className="flex flex-col gap-[2px]">
-                {right[r].map((m, i) => <BKCard key={i} match={m} />)}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-3">
-        <div className="flex items-center gap-1.5 mb-1">
+      {/* Final */}
+      <div className="my-1">
+        <div className="flex items-center gap-1.5 mb-0.5">
           <Trophy className="w-3.5 h-3.5 text-yellow-500" />
           <p className="text-[8px] font-bold text-yellow-500/80 uppercase tracking-wide">Final · Jul 19</p>
         </div>
-        <BKCard match={finalMatch} rowH={20} />
+        <BKCard match={finalMatch} rowH={18} />
       </div>
+
+      {/* Bottom half: right bracket SF → R32, expanding from center */}
+      {[
+        { label: BK_ROUND_LABELS[3], matches: right[3], cols: 1 },
+        { label: BK_ROUND_LABELS[2], matches: right[2], cols: 2 },
+        { label: BK_ROUND_LABELS[1], matches: right[1], cols: 2 },
+        { label: BK_ROUND_LABELS[0], matches: right[0], cols: 2 },
+      ].map(({ label, matches, cols }) => (
+        <div key={label + "-b"}>
+          <p className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wide mb-0.5">{label}</p>
+          <RoundSection matches={matches} cols={cols} />
+        </div>
+      ))}
     </div>
   )
 }
