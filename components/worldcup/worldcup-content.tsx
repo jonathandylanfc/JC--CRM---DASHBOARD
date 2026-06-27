@@ -827,23 +827,6 @@ interface BracketMatch {
   status: "scheduled" | "in_progress" | "final"; winner: "home" | "away" | null
 }
 
-// ─ Visual bracket layout constants ────────────────────────────────────────────
-const BK_SL = 56   // slot height per R32 match
-const BK_CW = 62   // card width
-const BK_CH = 44   // card height (2 team rows of 22px)
-const BK_GW = 12   // gap between round columns
-const BK_CTW = 88  // center section width
-const BK_TOP = 16  // top margin for round labels
-const BK_H = 8 * BK_SL + BK_TOP          // 464
-const BK_LW = 4 * (BK_CW + BK_GW)        // 296
-const BK_W = BK_LW * 2 + BK_CTW          // 680
-const BK_FINAL_X = BK_LW + (BK_CTW - BK_CW) / 2  // 309
-
-function bkCY(round: number, idx: number) {
-  return BK_TOP + (idx + 0.5) * Math.pow(2, round) * BK_SL
-}
-function bkLX(round: number) { return round * (BK_CW + BK_GW) }
-function bkRX(round: number) { return BK_LW + BK_CTW + (3 - round) * (BK_CW + BK_GW) }
 
 function roundNameToLevel(name: string): number {
   const l = name.toLowerCase()
@@ -866,36 +849,36 @@ function isBkPlaceholder(s: string | null | undefined) {
   return false
 }
 
-function BKTeamRow({ team, win, isDone, isLive }: {
-  team: BracketMatch["home"]; win: boolean; isDone: boolean; isLive: boolean
+function BKTeamRow({ team, win, isDone, isLive, rowH }: {
+  team: BracketMatch["home"]; win: boolean; isDone: boolean; isLive: boolean; rowH: number
 }) {
   const [imgErr, setImgErr] = useState(false)
   const isTBD = isBkPlaceholder(team.name) || isBkPlaceholder(team.shortName)
   const abbr = team.shortName?.toUpperCase() ?? ""
-  // ESPN doesn't return logos for future scheduled matches; fall back to country logo by abbreviation
   const flagSrc = !isTBD
     ? (team.logo ?? (abbr.length <= 3
         ? `https://a.espncdn.com/i/teamlogos/countries/500/${abbr.toLowerCase()}.png`
         : null))
     : null
   const showFlag = !!flagSrc && !imgErr
+  const flagSize = Math.max(rowH - 4, 8)
 
   return (
-    <div className={`flex items-center gap-1 px-2 ${isDone && !win ? "opacity-35" : ""}`}
-         style={{ height: BK_CH / 2 }}>
+    <div className={`flex items-center gap-1 px-1.5 ${isDone && !win ? "opacity-35" : ""}`}
+         style={{ height: rowH }}>
       {showFlag ? (
         <img src={flagSrc!} alt={abbr}
              className="rounded-full object-cover shrink-0"
-             style={{ width: 14, height: 14 }}
+             style={{ width: flagSize, height: flagSize }}
              onError={() => setImgErr(true)} />
       ) : (
-        <div className="rounded-full bg-muted/50 shrink-0" style={{ width: 14, height: 14 }} />
+        <div className="rounded-full bg-muted/50 shrink-0" style={{ width: flagSize, height: flagSize }} />
       )}
-      <span className={`text-[10px] truncate flex-1 ${win ? "font-semibold" : "text-muted-foreground/80"}`}>
+      <span className={`text-[9px] truncate flex-1 ${win ? "font-semibold" : "text-muted-foreground/80"}`}>
         {isTBD ? "TBD" : (abbr || team.name)}
       </span>
       {(isLive || isDone) && team.score !== null && (
-        <span className={`text-[10px] font-bold tabular-nums shrink-0 ${win ? "" : "text-muted-foreground"}`}>
+        <span className={`text-[9px] font-bold tabular-nums shrink-0 ${win ? "" : "text-muted-foreground"}`}>
           {team.score}
         </span>
       )}
@@ -903,16 +886,16 @@ function BKTeamRow({ team, win, isDone, isLive }: {
   )
 }
 
-function BKCard({ match }: { match: BracketMatch | null }) {
+function BKCard({ match, rowH = 14 }: { match: BracketMatch | null; rowH?: number }) {
   if (!match) {
     return (
-      <div className="rounded border border-dashed border-border/30 bg-card/30 overflow-hidden"
-           style={{ width: BK_CW, height: BK_CH }}>
+      <div className="rounded border border-dashed border-border/30 bg-card/30 overflow-hidden w-full"
+           style={{ height: rowH * 2 }}>
         {[0, 1].map((i) => (
-          <div key={i} className={`flex items-center gap-1 px-2 ${i > 0 ? "border-t border-border/20" : ""}`}
-               style={{ height: BK_CH / 2 }}>
-            <div className="rounded-full bg-muted/50 shrink-0" style={{ width: 14, height: 14 }} />
-            <span className="text-[10px] text-muted-foreground/40">TBD</span>
+          <div key={i} className={`flex items-center gap-1 px-1.5 ${i > 0 ? "border-t border-border/20" : ""}`}
+               style={{ height: rowH }}>
+            <div className="rounded-full bg-muted/50 shrink-0" style={{ width: rowH - 4, height: rowH - 4 }} />
+            <span className="text-[9px] text-muted-foreground/40">TBD</span>
           </div>
         ))}
       </div>
@@ -925,68 +908,22 @@ function BKCard({ match }: { match: BracketMatch | null }) {
   const awayWin = match.winner === "away"
 
   return (
-    <div className={`rounded border overflow-hidden ${isLive ? "border-emerald-500/60 bg-emerald-500/5" : "border-border/60 bg-card/80"}`}
-         style={{ width: BK_CW, height: BK_CH }}>
-      <BKTeamRow team={match.home} win={homeWin} isDone={isDone} isLive={isLive} />
+    <div className={`rounded border overflow-hidden w-full ${isLive ? "border-emerald-500/60 bg-emerald-500/5" : "border-border/60 bg-card/80"}`}
+         style={{ height: rowH * 2 }}>
+      <BKTeamRow team={match.home} win={homeWin} isDone={isDone} isLive={isLive} rowH={rowH} />
       <div className="border-t border-border/40" />
-      <BKTeamRow team={match.away} win={awayWin} isDone={isDone} isLive={isLive} />
+      <BKTeamRow team={match.away} win={awayWin} isDone={isDone} isLive={isLive} rowH={rowH} />
     </div>
   )
 }
 
-// ─ SVG connector lines ─────────────────────────────────────────────────────────
+// ─ Vertical two-column bracket ────────────────────────────────────────────────
 
-function BKLines() {
-  const paths: string[] = []
-
-  // Left bracket: connectors flow rightward (R32 → SF)
-  for (let r = 0; r < 3; r++) {
-    const n = Math.pow(2, 3 - r)  // matches per side in this round (8,4,2)
-    for (let i = 0; i < n / 2; i++) {
-      const y1 = bkCY(r, i * 2)
-      const y2 = bkCY(r, i * 2 + 1)
-      const ym = bkCY(r + 1, i)
-      const xR = bkLX(r) + BK_CW
-      const xM = xR + BK_GW / 2
-      paths.push(`M${xR} ${y1}H${xM}V${y2}H${xR}`, `M${xM} ${ym}H${bkLX(r + 1)}`)
-    }
-  }
-  // Left SF → Final
-  paths.push(`M${bkLX(3) + BK_CW} ${bkCY(3, 0)}H${BK_FINAL_X}`)
-
-  // Right bracket: connectors flow leftward (R32 → SF, mirrored)
-  for (let r = 0; r < 3; r++) {
-    const n = Math.pow(2, 3 - r)
-    for (let i = 0; i < n / 2; i++) {
-      const y1 = bkCY(r, i * 2)
-      const y2 = bkCY(r, i * 2 + 1)
-      const ym = bkCY(r + 1, i)
-      const xL = bkRX(r)
-      const xM = xL - BK_GW / 2
-      const xPrev = bkRX(r + 1) + BK_CW
-      paths.push(`M${xL} ${y1}H${xM}V${y2}H${xL}`, `M${xM} ${ym}H${xPrev}`)
-    }
-  }
-  // Right SF → Final
-  paths.push(`M${bkRX(3)} ${bkCY(3, 0)}H${BK_FINAL_X + BK_CW}`)
-
-  return (
-    <svg className="absolute inset-0 overflow-visible pointer-events-none" width={BK_W} height={BK_H}>
-      {paths.map((d, i) => (
-        <path key={i} d={d} fill="none" stroke="hsl(var(--border))" strokeWidth={1} opacity={0.65} />
-      ))}
-    </svg>
-  )
-}
-
-// ─ Main bracket component ──────────────────────────────────────────────────────
-
-const BK_LEFT_LABELS = ["R32", "R16", "QF", "SF"]
+const BK_ROUND_LABELS = ["Round of 32", "Round of 16", "Quarterfinals", "Semifinals"]
 
 function BracketTab() {
   const [matches, setMatches] = useState<BracketMatch[] | null>(null)
   const [error, setError] = useState(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetch("/api/worldcup/bracket")
@@ -994,12 +931,6 @@ function BracketTab() {
       .then((d) => setMatches(d.matches ?? []))
       .catch(() => setError(true))
   }, [])
-
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el || !matches) return
-    el.scrollLeft = (el.scrollWidth - el.offsetWidth) / 2
-  }, [matches])
 
   if (error) return <div className="text-center py-12 text-muted-foreground text-sm">Failed to load bracket</div>
 
@@ -1009,7 +940,6 @@ function BracketTab() {
     </div>
   )
 
-  // Group by round level, split into left (first half) and right (second half)
   const byLevel: BracketMatch[][] = [[], [], [], [], []]
   for (const m of matches) {
     const lv = roundNameToLevel(m.round)
@@ -1019,7 +949,7 @@ function BracketTab() {
   const left: (BracketMatch | null)[][] = []
   const right: (BracketMatch | null)[][] = []
   for (let r = 0; r < 4; r++) {
-    const perSide = Math.pow(2, 3 - r)  // 8, 4, 2, 1
+    const perSide = Math.pow(2, 3 - r)
     const all = byLevel[r]
     left[r]  = Array.from({ length: perSide }, (_, i) => all[i] ?? null)
     right[r] = Array.from({ length: perSide }, (_, i) => all[perSide + i] ?? null)
@@ -1027,76 +957,30 @@ function BracketTab() {
   const finalMatch = byLevel[4][0] ?? null
 
   return (
-    <div className="pb-6">
-      <div ref={scrollRef} className="overflow-x-auto -mx-4" style={{ scrollbarWidth: "none" }}>
-        <div style={{ paddingLeft: 16, paddingRight: 16, width: BK_W + 32 }}>
-        <div className="relative" style={{ width: BK_W, height: BK_H }}>
-            <BKLines />
-
-            {/* Round labels — left side */}
-            {BK_LEFT_LABELS.map((lbl, r) => (
-              <div key={`ll-${r}`} className="absolute text-center text-[9px] font-bold text-muted-foreground/55 uppercase tracking-wide"
-                   style={{ left: bkLX(r), top: 0, width: BK_CW }}>
-                {lbl}
-              </div>
-            ))}
-
-            {/* Final label */}
-            <div className="absolute text-center text-[9px] font-bold text-yellow-500/80 uppercase tracking-wide"
-                 style={{ left: BK_FINAL_X, top: 0, width: BK_CW }}>
-              Final
+    <div className="pb-4">
+      {[0, 1, 2, 3].map((r) => (
+        <div key={r} className={r > 0 ? "mt-2" : undefined}>
+          <p className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wide mb-1">
+            {BK_ROUND_LABELS[r]}
+          </p>
+          <div className="flex gap-2">
+            <div className="flex-1 flex flex-col gap-[2px]">
+              {left[r].map((m, i) => <BKCard key={i} match={m} />)}
             </div>
-
-            {/* Round labels — right side (mirrored) */}
-            {["SF", "QF", "R16", "R32"].map((lbl, i) => {
-              const r = 3 - i
-              return (
-                <div key={`rl-${r}`} className="absolute text-center text-[9px] font-bold text-muted-foreground/55 uppercase tracking-wide"
-                     style={{ left: bkRX(r), top: 0, width: BK_CW }}>
-                  {lbl}
-                </div>
-              )
-            })}
-
-            {/* Left bracket cards */}
-            {[0, 1, 2, 3].flatMap((r) =>
-              left[r].map((m, idx) => (
-                <div key={`l-${r}-${idx}`} className="absolute"
-                     style={{ left: bkLX(r), top: bkCY(r, idx) - BK_CH / 2 }}>
-                  <BKCard match={m} />
-                </div>
-              ))
-            )}
-
-            {/* Right bracket cards */}
-            {[0, 1, 2, 3].flatMap((r) =>
-              right[r].map((m, idx) => (
-                <div key={`r-${r}-${idx}`} className="absolute"
-                     style={{ left: bkRX(r), top: bkCY(r, idx) - BK_CH / 2 }}>
-                  <BKCard match={m} />
-                </div>
-              ))
-            )}
-
-            {/* Final card */}
-            <div className="absolute" style={{ left: BK_FINAL_X, top: bkCY(3, 0) - BK_CH / 2 }}>
-              <BKCard match={finalMatch} />
-            </div>
-
-            {/* Trophy icon in center above Final */}
-            <div className="absolute flex flex-col items-center"
-                 style={{ left: BK_FINAL_X, top: BK_TOP, width: BK_CW }}>
-              <Trophy className="w-4 h-4 text-yellow-500/60" />
+            <div className="flex-1 flex flex-col gap-[2px]">
+              {right[r].map((m, i) => <BKCard key={i} match={m} />)}
             </div>
           </div>
         </div>
-      </div>
+      ))}
 
-      {matches.length === 0 && (
-        <p className="text-[10px] text-muted-foreground text-center mt-3">
-          Knockout bracket begins Jun 29 · bracket fills as teams advance
-        </p>
-      )}
+      <div className="mt-3">
+        <div className="flex items-center gap-1.5 mb-1">
+          <Trophy className="w-3.5 h-3.5 text-yellow-500" />
+          <p className="text-[8px] font-bold text-yellow-500/80 uppercase tracking-wide">Final · Jul 19</p>
+        </div>
+        <BKCard match={finalMatch} rowH={20} />
+      </div>
     </div>
   )
 }
