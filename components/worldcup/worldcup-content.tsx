@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface Team { name: string; abbr: string; logo: string | null; score: string | null }
+interface Team { name: string; abbr: string; logo: string | null; score: string | null; shootoutScore?: string | null }
 interface MatchStatus { state: "pre" | "in" | "post"; detail: string; shortDetail: string; completed: boolean; clock: string | null; period: number | null }
 interface Match { id: string; date: string; homeTeam: Team; awayTeam: Team; status: MatchStatus; venue: string | null; group: string | null }
 
@@ -152,14 +152,24 @@ function MatchCard({
             <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Final</span>
           )}
           {(isLive || isDone) && match.homeTeam.score !== null ? (
-            <div className="flex items-center gap-1.5">
-              <span className={`text-lg font-bold tabular-nums ${homeWin ? "text-foreground" : "text-muted-foreground"}`}>
-                {match.homeTeam.score}
-              </span>
-              <span className="text-muted-foreground text-sm">–</span>
-              <span className={`text-lg font-bold tabular-nums ${awayWin ? "text-foreground" : "text-muted-foreground"}`}>
-                {match.awayTeam.score}
-              </span>
+            <div className="flex flex-col items-center gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <span className={`text-lg font-bold tabular-nums ${homeWin ? "text-foreground" : "text-muted-foreground"}`}>
+                  {match.homeTeam.score}
+                </span>
+                <span className="text-muted-foreground text-sm">–</span>
+                <span className={`text-lg font-bold tabular-nums ${awayWin ? "text-foreground" : "text-muted-foreground"}`}>
+                  {match.awayTeam.score}
+                </span>
+              </div>
+              {match.homeTeam.shootoutScore != null && match.awayTeam.shootoutScore != null && (
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="tabular-nums">{match.homeTeam.shootoutScore}</span>
+                  <span>–</span>
+                  <span className="tabular-nums">{match.awayTeam.shootoutScore}</span>
+                  <span className="text-[9px] uppercase tracking-wide ml-0.5">pen</span>
+                </div>
+              )}
             </div>
           ) : (
             <span className="text-muted-foreground text-sm font-medium">vs</span>

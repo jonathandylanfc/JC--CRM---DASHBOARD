@@ -56,6 +56,7 @@ export async function GET() {
           competitors: Array<{
             homeAway: string
             score: string
+            shootoutScore?: string
             team: {
               abbreviation: string
               displayName: string
@@ -83,12 +84,14 @@ export async function GET() {
           abbr: home.team.abbreviation,
           logo: home.team.logo ?? null,
           score: home.score ?? null,
+          shootoutScore: home.shootoutScore ?? null,
         },
         awayTeam: {
           name: away.team.displayName,
           abbr: away.team.abbreviation,
           logo: away.team.logo ?? null,
           score: away.score ?? null,
+          shootoutScore: away.shootoutScore ?? null,
         },
         status: {
           state: status.type.state, // "pre" | "in" | "post"
