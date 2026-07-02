@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Trophy, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, CalendarPlus, X, CheckCircle2, Circle, CalendarCheck } from "lucide-react"
+import { Trophy, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, ChevronRight, CalendarPlus, X, CheckCircle2, Circle, CalendarCheck } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -929,82 +929,161 @@ function BKCard({ match, rowH = 14 }: { match: BracketMatch | null; rowH?: numbe
   )
 }
 
-// ─ Tournament bracket ─────────────────────────────────────────────────────────
+// ─ Tournament bracket – round-list view ──────────────────────────────────────
 
-const BK_ROW_H   = 17
-const BK_CARD_H  = BK_ROW_H * 2   // 34px
-const BK_SLOT    = 40              // px per R32 slot
-const BK_N       = 8               // R32 matches per bracket half
-const BK_TOTAL_H = BK_N * BK_SLOT  // 320px
-const BK_COL_W   = 66              // match card column width
-const BK_CONN_W  = 14              // connector SVG width
+const BRACKET_ROUNDS = [
+  { label: "Round of 32",  level: 0 },
+  { label: "Round of 16",  level: 1 },
+  { label: "Quarterfinals", level: 2 },
+  { label: "Semifinals",   level: 3 },
+  { label: "Final",        level: 4 },
+]
 
-// Center Y of match i in round k: guaranteed to align across rounds
-function bkCY(k: number, i: number) {
-  return BK_SLOT * Math.pow(2, k) * (i + 0.5)
+function fmtMatchDate(iso: string): string {
+  if (!iso) return ""
+  try {
+    const d = new Date(iso)
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" })
+      + " · "
+      + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })
+  } catch { return "" }
 }
 
-function BracketCol({ matches, k }: { matches: (BracketMatch | null)[], k: number }) {
+function BMatchTeamRow({ team, win, isDone, isLive }: {
+  team: BracketMatch["home"]; win: boolean; isDone: boolean; isLive: boolean
+}) {
+  const [imgErr, setImgErr] = useState(false)
+  const isTBD = isBkPlaceholder(team.name) || isBkPlaceholder(team.shortName)
+  const abbr = team.shortName?.toUpperCase() ?? ""
+  const flagSrc = !isTBD
+    ? (team.logo ?? (abbr.length <= 3
+        ? `https://a.espncdn.com/i/teamlogos/countries/500/${abbr.toLowerCase()}.png`
+        : null))
+    : null
+
   return (
-    <div style={{ position: "relative", width: BK_COL_W, height: BK_TOTAL_H, flexShrink: 0 }}>
-      {matches.map((m, i) => (
-        <div key={i} style={{
-          position: "absolute",
-          top: bkCY(k, i) - BK_CARD_H / 2,
-          left: 0,
-          right: 0,
-        }}>
-          <BKCard match={m} rowH={BK_ROW_H} />
-        </div>
-      ))}
+    <div className={`flex items-center gap-2.5 py-2 ${isDone && !win ? "opacity-40" : ""}`}>
+      {flagSrc && !imgErr ? (
+        <img src={flagSrc} alt={abbr}
+             className="w-6 h-6 rounded-full object-cover shrink-0"
+             onError={() => setImgErr(true)} />
+      ) : (
+        <div className="w-6 h-6 rounded-full bg-muted/50 shrink-0" />
+      )}
+      <span className={`text-sm flex-1 truncate ${win ? "font-semibold text-foreground" : "text-foreground/80"}`}>
+        {isTBD ? "TBD" : (team.name || abbr)}
+      </span>
+      {(isDone || isLive) && team.score !== null && (
+        <span className={`text-sm font-bold tabular-nums ${win ? "text-foreground" : "text-muted-foreground"}`}>
+          {team.score}
+        </span>
+      )}
     </div>
   )
 }
 
-// Draws L-shaped bracket connectors between round k and round k+1.
-// "left": pairs open left (toward the card), exit right (toward next round).
-// "right": mirror — pairs open right, exit left.
-function BracketConn({ fromK, side }: { fromK: number, side: "left" | "right" }) {
-  const toCount = BK_N / Math.pow(2, fromK + 1)
-  const midX = BK_CONN_W / 2
-
-  const paths = Array.from({ length: toCount }, (_, i) => {
-    const y1 = bkCY(fromK, i * 2)
-    const y2 = bkCY(fromK, i * 2 + 1)
-    const yM = bkCY(fromK + 1, i)
-    return side === "left"
-      ? `M 0 ${y1} H ${midX} V ${y2} H 0 M ${midX} ${yM} H ${BK_CONN_W}`
-      : `M ${BK_CONN_W} ${y1} H ${midX} V ${y2} H ${BK_CONN_W} M ${midX} ${yM} H 0`
-  })
+function BMatchCard({ match, showArrow }: { match: BracketMatch; showArrow?: boolean }) {
+  const isLive = match.status === "in_progress"
+  const isDone = match.status === "final"
+  const homeWin = match.winner === "home"
+  const awayWin = match.winner === "away"
 
   return (
-    <svg width={BK_CONN_W} height={BK_TOTAL_H} style={{ flexShrink: 0, display: "block" }}>
-      {paths.map((d, i) => (
-        <path key={i} d={d} fill="none" stroke="hsl(var(--border))" strokeWidth="1.5" opacity="0.75" />
-      ))}
-    </svg>
+    <div className={`rounded-xl border px-3 pt-2 pb-1 ${
+      isLive ? "border-emerald-500/50 bg-emerald-500/5" : "border-border/60 bg-card/80"
+    }`}>
+      <div className="flex items-center justify-between mb-0.5">
+        <span className={`text-[10px] font-medium uppercase tracking-wide ${
+          isLive ? "text-emerald-500" : "text-muted-foreground/60"
+        }`}>
+          {isLive ? "● Live" : isDone ? "FT" : match.date ? fmtMatchDate(match.date) : "TBD"}
+        </span>
+        {showArrow && (
+          <ChevronRight className="w-3 h-3 text-muted-foreground/30" />
+        )}
+      </div>
+      <BMatchTeamRow team={match.home} win={homeWin} isDone={isDone} isLive={isLive} />
+      <div className="border-t border-border/20" />
+      <BMatchTeamRow team={match.away} win={awayWin} isDone={isDone} isLive={isLive} />
+    </div>
   )
 }
 
-// Straight horizontal connector between SF and Final (both at bkCY(3,0) = 216).
-function BracketFinalConn() {
-  const cy = bkCY(3, 0)
+function BPeekCard({ match }: { match: BracketMatch }) {
+  const isDone = match.status === "final"
+  const isLive = match.status === "in_progress"
+  const rows = [
+    { team: match.home, win: match.winner === "home" },
+    { team: match.away, win: match.winner === "away" },
+  ]
+
   return (
-    <svg width={BK_CONN_W} height={BK_TOTAL_H} style={{ flexShrink: 0, display: "block" }}>
-      <line x1={0} y1={cy} x2={BK_CONN_W} y2={cy}
-            stroke="hsl(var(--border))" strokeWidth="1.5" opacity="0.75" />
-    </svg>
+    <div className={`rounded-xl border p-2.5 min-w-[92px] ${
+      isLive ? "border-emerald-500/40 bg-emerald-500/5"
+      : isDone ? "border-border/60 bg-card/80"
+      : "border-primary/25 bg-card/80"
+    }`}>
+      <div className="text-[9px] text-muted-foreground/50 mb-1.5 leading-none">
+        {isLive ? "● Live" : isDone ? "FT" : match.date ? fmtMatchDate(match.date) : "Next match"}
+      </div>
+      {rows.map(({ team, win }, i) => {
+        const isTBD = isBkPlaceholder(team.name) || isBkPlaceholder(team.shortName)
+        const abbr = team.shortName?.toUpperCase() ?? ""
+        const flagSrc = !isTBD
+          ? (team.logo ?? (abbr.length <= 3
+              ? `https://a.espncdn.com/i/teamlogos/countries/500/${abbr.toLowerCase()}.png`
+              : null))
+          : null
+        return (
+          <div key={i} className={`flex items-center gap-1.5 py-0.5 ${isDone && !win ? "opacity-40" : ""}`}>
+            {flagSrc ? (
+              <img src={flagSrc} alt={abbr}
+                   className="w-4 h-4 rounded-full object-cover shrink-0" />
+            ) : (
+              <div className="w-4 h-4 rounded-full bg-muted/50 shrink-0" />
+            )}
+            <span className={`text-[11px] truncate ${win ? "font-semibold" : ""} ${isTBD ? "text-muted-foreground/50 italic" : "text-foreground/80"}`}>
+              {isTBD ? "TBD" : (team.shortName || team.name || abbr)}
+            </span>
+            {(isDone || isLive) && team.score !== null && (
+              <span className={`text-[11px] font-bold tabular-nums ml-auto ${win ? "" : "text-muted-foreground"}`}>
+                {team.score}
+              </span>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
 function BracketTab() {
   const [matches, setMatches] = useState<BracketMatch[] | null>(null)
   const [error, setError] = useState(false)
+  const [activeLevel, setActiveLevel] = useState(0)
 
   useEffect(() => {
     fetch("/api/worldcup/bracket")
       .then((r) => r.json())
-      .then((d) => setMatches(d.matches ?? []))
+      .then((d) => {
+        const ms: BracketMatch[] = d.matches ?? []
+        setMatches(ms)
+        // Auto-select the earliest round that still has unfinished matches
+        const byLv: BracketMatch[][] = [[], [], [], [], []]
+        for (const m of ms) {
+          const lv = roundNameToLevel(m.round)
+          if (lv >= 0 && lv <= 4) byLv[lv].push(m)
+        }
+        for (let lv = 0; lv <= 4; lv++) {
+          if (byLv[lv].length > 0 && byLv[lv].some((m) => m.status !== "final")) {
+            setActiveLevel(lv)
+            return
+          }
+        }
+        for (let lv = 4; lv >= 0; lv--) {
+          if (byLv[lv].length > 0) { setActiveLevel(lv); return }
+        }
+      })
       .catch(() => setError(true))
   }, [])
 
@@ -1021,80 +1100,60 @@ function BracketTab() {
     if (lv >= 0 && lv <= 4) byLevel[lv].push(m)
   }
 
-  const g = (lv: number, start: number, count: number): (BracketMatch | null)[] =>
-    Array.from({ length: count }, (_, i) => byLevel[lv][start + i] ?? null)
-
-  // Left half (L→R: wider → narrower → center)
-  const lR32 = g(0, 0,  8)
-  const lR16 = g(1, 0,  4)
-  const lQF  = g(2, 0,  2)
-  const lSF  = g(3, 0,  1)
-  // Center
-  const fin  = g(4, 0,  1)
-  // Right half (L→R: center → narrower → wider)
-  const rSF  = g(3, 1,  1)
-  const rQF  = g(2, 2,  2)
-  const rR16 = g(1, 4,  4)
-  const rR32 = g(0, 8,  8)
-
-  const labelCols: { text: string | null, w: number }[] = [
-    { text: "R32",   w: BK_COL_W  },
-    { text: null,    w: BK_CONN_W },
-    { text: "R16",   w: BK_COL_W  },
-    { text: null,    w: BK_CONN_W },
-    { text: "QF",    w: BK_COL_W  },
-    { text: null,    w: BK_CONN_W },
-    { text: "SF",    w: BK_COL_W  },
-    { text: null,    w: BK_CONN_W },
-    { text: "Final", w: BK_COL_W  },
-    { text: null,    w: BK_CONN_W },
-    { text: "SF",    w: BK_COL_W  },
-    { text: null,    w: BK_CONN_W },
-    { text: "QF",    w: BK_COL_W  },
-    { text: null,    w: BK_CONN_W },
-    { text: "R16",   w: BK_COL_W  },
-    { text: null,    w: BK_CONN_W },
-    { text: "R32",   w: BK_COL_W  },
-  ]
+  const current = byLevel[activeLevel]
+  const nextRound = activeLevel < 4 ? byLevel[activeLevel + 1] : []
+  const hasNext = activeLevel < 4
 
   return (
     <div className="pb-4">
-      <div className="-mx-4 overflow-x-auto">
-        <div style={{ minWidth: 9 * BK_COL_W + 8 * BK_CONN_W, padding: "0 16px" }}>
-          {/* Round labels */}
-          <div style={{ display: "flex", gap: 0, marginBottom: 8 }}>
-            {labelCols.map((col, i) => (
-              <div key={i} style={{ width: col.w, flexShrink: 0, textAlign: "center" }}>
-                {col.text && (
-                  <span className={`text-[9px] font-bold uppercase tracking-wider ${col.text === "Final" ? "text-yellow-500/80" : "text-muted-foreground/50"}`}>
-                    {col.text}
-                  </span>
+      {/* Round pills */}
+      <div className="-mx-4 px-4 overflow-x-auto mb-4">
+        <div className="flex gap-2 pb-1" style={{ minWidth: "max-content" }}>
+          {BRACKET_ROUNDS.map(({ label, level }) => {
+            if (byLevel[level].length === 0) return null
+            const active = activeLevel === level
+            return (
+              <button key={level}
+                onClick={() => setActiveLevel(level)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors whitespace-nowrap ${
+                  active
+                    ? "bg-foreground text-background"
+                    : "border border-border/60 text-muted-foreground hover:text-foreground hover:border-border"
+                }`}>
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Match list grouped in pairs that feed the same next-round slot */}
+      <div className="space-y-5">
+        {current.length === 0 ? (
+          <p className="text-center py-8 text-muted-foreground text-sm">No matches yet</p>
+        ) : (
+          Array.from({ length: Math.ceil(current.length / 2) }, (_, pi) => {
+            const m1 = current[pi * 2] ?? null
+            const m2 = current[pi * 2 + 1] ?? null
+            const nextMatch = hasNext ? (nextRound[pi] ?? null) : null
+
+            return (
+              <div key={pi} className="flex items-center gap-2">
+                <div className="flex-1 space-y-2 min-w-0">
+                  {m1 && <BMatchCard match={m1} showArrow={!!nextMatch} />}
+                  {m2 && <BMatchCard match={m2} showArrow={!!nextMatch} />}
+                </div>
+                {nextMatch && (
+                  <button
+                    onClick={() => setActiveLevel(activeLevel + 1)}
+                    className="shrink-0 transition-opacity hover:opacity-80 active:opacity-60">
+                    <BPeekCard match={nextMatch} />
+                  </button>
                 )}
               </div>
-            ))}
-          </div>
-
-          {/* Bracket — all columns share the same BK_TOTAL_H baseline */}
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 0 }}>
-            <BracketCol matches={lR32} k={0} />
-            <BracketConn fromK={0} side="left" />
-            <BracketCol matches={lR16} k={1} />
-            <BracketConn fromK={1} side="left" />
-            <BracketCol matches={lQF}  k={2} />
-            <BracketConn fromK={2} side="left" />
-            <BracketCol matches={lSF}  k={3} />
-            <BracketFinalConn />
-            <BracketCol matches={fin}  k={3} />
-            <BracketFinalConn />
-            <BracketCol matches={rSF}  k={3} />
-            <BracketConn fromK={2} side="right" />
-            <BracketCol matches={rQF}  k={2} />
-            <BracketConn fromK={1} side="right" />
-            <BracketCol matches={rR16} k={1} />
-            <BracketConn fromK={0} side="right" />
-            <BracketCol matches={rR32} k={0} />
-          </div>
-        </div>
+            )
+          })
+        )}
       </div>
     </div>
   )
