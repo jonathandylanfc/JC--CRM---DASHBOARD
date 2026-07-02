@@ -876,7 +876,7 @@ function BKTeamRow({ team, win, isDone, isLive, rowH }: {
   const displayName = isTBD ? "TBD" : (team.shortName || team.name || abbr)
 
   return (
-    <div className={`flex items-center gap-1.5 px-2 ${isDone && !win ? "opacity-35" : ""}`}
+    <div className={`flex items-center gap-1 px-1.5 ${isDone && !win ? "opacity-35" : ""}`}
          style={{ height: rowH }}>
       {showFlag ? (
         <img src={flagSrc!} alt={abbr}
@@ -886,11 +886,11 @@ function BKTeamRow({ team, win, isDone, isLive, rowH }: {
       ) : (
         <div className="rounded-full bg-muted/50 shrink-0" style={{ width: flagSize, height: flagSize }} />
       )}
-      <span className={`text-xs truncate flex-1 ${win ? "font-semibold" : "text-muted-foreground/80"}`}>
+      <span className={`text-[10px] truncate flex-1 ${win ? "font-semibold" : "text-muted-foreground/80"}`}>
         {displayName}
       </span>
       {(isLive || isDone) && team.score !== null && (
-        <span className={`text-xs font-bold tabular-nums shrink-0 ml-1 ${win ? "" : "text-muted-foreground"}`}>
+        <span className={`text-[10px] font-bold tabular-nums shrink-0 ml-1 ${win ? "" : "text-muted-foreground"}`}>
           {team.score}
         </span>
       )}
@@ -931,13 +931,13 @@ function BKCard({ match, rowH = 14 }: { match: BracketMatch | null; rowH?: numbe
 
 // ─ Tournament bracket ─────────────────────────────────────────────────────────
 
-const BK_ROW_H   = 22
-const BK_CARD_H  = BK_ROW_H * 2   // 44px
-const BK_SLOT    = 54              // px per R32 slot
+const BK_ROW_H   = 17
+const BK_CARD_H  = BK_ROW_H * 2   // 34px
+const BK_SLOT    = 40              // px per R32 slot
 const BK_N       = 8               // R32 matches per bracket half
-const BK_TOTAL_H = BK_N * BK_SLOT  // 432px
-const BK_COL_W   = 80              // match card column width
-const BK_CONN_W  = 24              // connector SVG width
+const BK_TOTAL_H = BK_N * BK_SLOT  // 320px
+const BK_COL_W   = 66              // match card column width
+const BK_CONN_W  = 14              // connector SVG width
 
 // Center Y of match i in round k: guaranteed to align across rounds
 function bkCY(k: number, i: number) {
