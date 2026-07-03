@@ -1127,37 +1127,46 @@ function BracketTab() {
         </div>
       </div>
 
-      {/* Match list — each completed match looks up its winner in the next round by name */}
-      <div className="space-y-3">
+      {/* Match list — pairs share one peek card; peek looked up by winner name */}
+      <div className="space-y-5">
         {current.length === 0 ? (
           <p className="text-center py-8 text-muted-foreground text-sm">No matches yet</p>
-        ) : current.map((m, i) => {
-          // Find the next-round match containing this match's winner
-          let nextMatch: BracketMatch | null = null
-          if (hasNext && m.winner) {
-            const winner = m.winner === "home" ? m.home : m.away
-            if (!isBkPlaceholder(winner.name)) {
-              nextMatch = nextRound.find(
-                nm => nm.home.name === winner.name || nm.away.name === winner.name
-              ) ?? null
-            }
-          }
+        ) : (
+          Array.from({ length: Math.ceil(current.length / 2) }, (_, pi) => {
+            const m1 = current[pi * 2] ?? null
+            const m2 = current[pi * 2 + 1] ?? null
 
-          return (
-            <div key={i} className="flex items-center gap-2">
-              <div className="flex-1 min-w-0">
-                <BMatchCard match={m} showArrow={!!nextMatch} />
+            // Find the correct next-round match by looking up each winner's name
+            let nextMatch: BracketMatch | null = null
+            if (hasNext) {
+              for (const m of [m1, m2]) {
+                if (!m?.winner) continue
+                const winner = m.winner === "home" ? m.home : m.away
+                if (isBkPlaceholder(winner.name)) continue
+                const found = nextRound.find(
+                  nm => nm.home.name === winner.name || nm.away.name === winner.name
+                )
+                if (found) { nextMatch = found; break }
+              }
+            }
+
+            return (
+              <div key={pi} className="flex items-center gap-2">
+                <div className="flex-1 space-y-2 min-w-0">
+                  {m1 && <BMatchCard match={m1} showArrow={!!nextMatch} />}
+                  {m2 && <BMatchCard match={m2} showArrow={!!nextMatch} />}
+                </div>
+                {nextMatch && (
+                  <button
+                    onClick={() => setActiveLevel(activeLevel + 1)}
+                    className="shrink-0 transition-opacity hover:opacity-80 active:opacity-60">
+                    <BPeekCard match={nextMatch} />
+                  </button>
+                )}
               </div>
-              {nextMatch && (
-                <button
-                  onClick={() => setActiveLevel(activeLevel + 1)}
-                  className="shrink-0 transition-opacity hover:opacity-80 active:opacity-60">
-                  <BPeekCard match={nextMatch} />
-                </button>
-              )}
-            </div>
-          )
-        })}
+            )
+          })
+        )}
       </div>
     </div>
   )
