@@ -1101,14 +1101,28 @@ function buildBracketGroups(
   const assignedNext = new Set<string>()
   const linked: Array<{ a: BracketMatch | null; b: BracketMatch | null; nextMatch: BracketMatch }> = []
 
-  // Phase 1: winner-name matching for completed matches
+  // Check if a winner feeds a given next-round team slot.
+  // Tries full displayName first, then falls back to 3-letter abbreviation so
+  // minor ESPN name inconsistencies between R32 results and R16 fixture data don't break pairing.
+  function winnerFeedsSlot(
+    winner: BracketMatch["home"],
+    slot: BracketMatch["home"]
+  ): boolean {
+    if (!winner.name || winner.name === "TBD") return false
+    if (winner.name === slot.name) return true
+    const ws = (winner.shortName ?? "").toUpperCase()
+    const ss = (slot.shortName ?? "").toUpperCase()
+    return !!(ws && ws !== "TBD" && ss && ss !== "TBD" && ws === ss)
+  }
+
+  // Phase 1: winner-name (+ shortName) matching for completed matches
   for (const nm of next) {
     const feeders: BracketMatch[] = []
     for (const m of current) {
       if (!m.winner) continue
       const winner = m.winner === "home" ? m.home : m.away
       if (isBkPlaceholder(winner.name)) continue
-      if (nm.home.name === winner.name || nm.away.name === winner.name) {
+      if (winnerFeedsSlot(winner, nm.home) || winnerFeedsSlot(winner, nm.away)) {
         feeders.push(m)
         assignedCurrent.add(m.id)
       }
@@ -1117,6 +1131,24 @@ function buildBracketGroups(
       assignedNext.add(nm.id)
       feeders.sort((a, b) => a.date.localeCompare(b.date))
       linked.push({ a: feeders[0] ?? null, b: feeders[1] ?? null, nextMatch: nm })
+    }
+  }
+
+  // Phase 1b: second pass — if a linked group only found ONE feeder, scan unassigned
+  // matches again with the same logic. Catches edge cases where the first scan missed
+  // a partner due to iteration order or a partial name match.
+  for (const group of linked) {
+    if (group.b !== null) continue
+    const nm = group.nextMatch
+    for (const m of current) {
+      if (assignedCurrent.has(m.id) || !m.winner) continue
+      const winner = m.winner === "home" ? m.home : m.away
+      if (isBkPlaceholder(winner.name)) continue
+      if (winnerFeedsSlot(winner, nm.home) || winnerFeedsSlot(winner, nm.away)) {
+        group.b = m
+        assignedCurrent.add(m.id)
+        break
+      }
     }
   }
 
