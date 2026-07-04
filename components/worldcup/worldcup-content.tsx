@@ -1057,6 +1057,85 @@ function BPeekCard({ match }: { match: BracketMatch }) {
   )
 }
 
+function buildBracketGroups(
+  current: BracketMatch[],
+  next: BracketMatch[],
+  hasNext: boolean
+): Array<{ a: BracketMatch | null; b: BracketMatch | null; nextMatch: BracketMatch | null }> {
+  if (!hasNext || next.length === 0) {
+    const groups = []
+    for (let i = 0; i < current.length; i += 2)
+      groups.push({ a: current[i] ?? null, b: current[i + 1] ?? null, nextMatch: null })
+    return groups
+  }
+
+  const assigned = new Set<string>()
+  const linked: Array<{ a: BracketMatch | null; b: BracketMatch | null; nextMatch: BracketMatch }> = []
+
+  for (const nm of next) {
+    const feeders: BracketMatch[] = []
+    for (const m of current) {
+      if (!m.winner) continue
+      const winner = m.winner === "home" ? m.home : m.away
+      if (isBkPlaceholder(winner.name)) continue
+      if (nm.home.name === winner.name || nm.away.name === winner.name) {
+        feeders.push(m)
+        assigned.add(m.id)
+      }
+    }
+    if (feeders.length > 0) {
+      feeders.sort((a, b) => a.date.localeCompare(b.date))
+      linked.push({ a: feeders[0] ?? null, b: feeders[1] ?? null, nextMatch: nm })
+    }
+  }
+
+  linked.sort((a, b) => a.nextMatch.date.localeCompare(b.nextMatch.date))
+
+  // Matches with no resolved winner yet — group by next-round slot via placeholder name matching
+  const unassigned = current.filter(m => !assigned.has(m.id))
+  const unlinkedWithNext: Array<{ a: BracketMatch | null; b: BracketMatch | null; nextMatch: BracketMatch | null }> = []
+  const fullyUnlinked: Array<BracketMatch> = []
+
+  for (const m of unassigned) {
+    // Try to find which next-round match references this match's slot via placeholder
+    const slotMatch = next.find(nm =>
+      isBkPlaceholder(nm.home.name) && nm.home.name.includes(m.id) ||
+      isBkPlaceholder(nm.away.name) && nm.away.name.includes(m.id)
+    ) ?? null
+
+    if (slotMatch && !linked.find(l => l.nextMatch.id === slotMatch.id)) {
+      // Group into existing unlinkedWithNext for this nextMatch
+      const existing = unlinkedWithNext.find(u => u.nextMatch?.id === slotMatch.id)
+      if (existing) {
+        existing.b = m
+      } else {
+        unlinkedWithNext.push({ a: m, b: null, nextMatch: slotMatch })
+        assigned.add(m.id)
+      }
+    } else {
+      fullyUnlinked.push(m)
+    }
+  }
+
+  const remaining: Array<{ a: BracketMatch | null; b: BracketMatch | null; nextMatch: BracketMatch | null }> = []
+  for (let i = 0; i < fullyUnlinked.length; i += 2)
+    remaining.push({ a: fullyUnlinked[i] ?? null, b: fullyUnlinked[i + 1] ?? null, nextMatch: null })
+
+  return [...linked, ...unlinkedWithNext, ...remaining]
+}
+
+function BracketArm({ hasSecond }: { hasSecond: boolean }) {
+  return (
+    <div className="relative shrink-0 self-stretch" style={{ width: 16 }}>
+      {hasSecond && (
+        <div className="absolute right-0 top-[24%] bottom-[24%] w-px bg-border/40" />
+      )}
+      <div className="absolute top-1/2 inset-x-0 h-px bg-border/40"
+           style={{ transform: "translateY(-0.5px)" }} />
+    </div>
+  )
+}
+
 function BracketTab() {
   const [matches, setMatches] = useState<BracketMatch[] | null>(null)
   const [error, setError] = useState(false)
@@ -1127,45 +1206,29 @@ function BracketTab() {
         </div>
       </div>
 
-      {/* Match list — pairs share one peek card; peek looked up by winner name */}
+      {/* Match list — pairs grouped by bracket path (who feeds the same next-round slot) */}
       <div className="space-y-5">
         {current.length === 0 ? (
           <p className="text-center py-8 text-muted-foreground text-sm">No matches yet</p>
         ) : (
-          Array.from({ length: Math.ceil(current.length / 2) }, (_, pi) => {
-            const m1 = current[pi * 2] ?? null
-            const m2 = current[pi * 2 + 1] ?? null
-
-            // Find the correct next-round match by looking up each winner's name
-            let nextMatch: BracketMatch | null = null
-            if (hasNext) {
-              for (const m of [m1, m2]) {
-                if (!m?.winner) continue
-                const winner = m.winner === "home" ? m.home : m.away
-                if (isBkPlaceholder(winner.name)) continue
-                const found = nextRound.find(
-                  nm => nm.home.name === winner.name || nm.away.name === winner.name
-                )
-                if (found) { nextMatch = found; break }
-              }
-            }
-
-            return (
-              <div key={pi} className="flex items-center gap-2">
-                <div className="flex-1 space-y-2 min-w-0">
-                  {m1 && <BMatchCard match={m1} showArrow={!!nextMatch} />}
-                  {m2 && <BMatchCard match={m2} showArrow={!!nextMatch} />}
-                </div>
-                {nextMatch && (
+          buildBracketGroups(current, nextRound, hasNext).map((group, gi) => (
+            <div key={gi} className="flex items-stretch gap-0">
+              <div className="flex-1 space-y-2 min-w-0">
+                {group.a && <BMatchCard match={group.a} showArrow={!!group.nextMatch} />}
+                {group.b && <BMatchCard match={group.b} showArrow={!!group.nextMatch} />}
+              </div>
+              {group.nextMatch && (
+                <>
+                  <BracketArm hasSecond={!!group.b} />
                   <button
                     onClick={() => setActiveLevel(activeLevel + 1)}
-                    className="shrink-0 transition-opacity hover:opacity-80 active:opacity-60">
-                    <BPeekCard match={nextMatch} />
+                    className="shrink-0 self-center transition-opacity hover:opacity-80 active:opacity-60">
+                    <BPeekCard match={group.nextMatch} />
                   </button>
-                )}
-              </div>
-            )
-          })
+                </>
+              )}
+            </div>
+          ))
         )}
       </div>
     </div>
