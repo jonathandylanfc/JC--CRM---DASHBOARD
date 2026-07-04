@@ -1069,9 +1069,11 @@ function buildBracketGroups(
     return groups
   }
 
-  const assigned = new Set<string>()
+  const assignedCurrent = new Set<string>()
+  const assignedNext = new Set<string>()
   const linked: Array<{ a: BracketMatch | null; b: BracketMatch | null; nextMatch: BracketMatch }> = []
 
+  // Phase 1: winner-name matching for completed matches
   for (const nm of next) {
     const feeders: BracketMatch[] = []
     for (const m of current) {
@@ -1080,10 +1082,11 @@ function buildBracketGroups(
       if (isBkPlaceholder(winner.name)) continue
       if (nm.home.name === winner.name || nm.away.name === winner.name) {
         feeders.push(m)
-        assigned.add(m.id)
+        assignedCurrent.add(m.id)
       }
     }
     if (feeders.length > 0) {
+      assignedNext.add(nm.id)
       feeders.sort((a, b) => a.date.localeCompare(b.date))
       linked.push({ a: feeders[0] ?? null, b: feeders[1] ?? null, nextMatch: nm })
     }
@@ -1091,37 +1094,28 @@ function buildBracketGroups(
 
   linked.sort((a, b) => a.nextMatch.date.localeCompare(b.nextMatch.date))
 
-  // Matches with no resolved winner yet — group by next-round slot via placeholder name matching
-  const unassigned = current.filter(m => !assigned.has(m.id))
-  const unlinkedWithNext: Array<{ a: BracketMatch | null; b: BracketMatch | null; nextMatch: BracketMatch | null }> = []
-  const fullyUnlinked: Array<BracketMatch> = []
+  // Phase 2: positional pairing for unresolved matches — pair by date order
+  const unassignedCurrent = current.filter(m => !assignedCurrent.has(m.id))
+  const unassignedNext = next.filter(nm => !assignedNext.has(nm.id))
 
-  for (const m of unassigned) {
-    // Try to find which next-round match references this match's slot via placeholder
-    const slotMatch = next.find(nm =>
-      isBkPlaceholder(nm.home.name) && nm.home.name.includes(m.id) ||
-      isBkPlaceholder(nm.away.name) && nm.away.name.includes(m.id)
-    ) ?? null
+  unassignedCurrent.sort((a, b) => a.date.localeCompare(b.date))
+  unassignedNext.sort((a, b) => a.date.localeCompare(b.date))
 
-    if (slotMatch && !linked.find(l => l.nextMatch.id === slotMatch.id)) {
-      // Group into existing unlinkedWithNext for this nextMatch
-      const existing = unlinkedWithNext.find(u => u.nextMatch?.id === slotMatch.id)
-      if (existing) {
-        existing.b = m
-      } else {
-        unlinkedWithNext.push({ a: m, b: null, nextMatch: slotMatch })
-        assigned.add(m.id)
-      }
-    } else {
-      fullyUnlinked.push(m)
-    }
+  const positional: Array<{ a: BracketMatch | null; b: BracketMatch | null; nextMatch: BracketMatch | null }> = []
+  for (let i = 0; i < unassignedNext.length; i++) {
+    positional.push({
+      a: unassignedCurrent[i * 2] ?? null,
+      b: unassignedCurrent[i * 2 + 1] ?? null,
+      nextMatch: unassignedNext[i],
+    })
   }
 
-  const remaining: Array<{ a: BracketMatch | null; b: BracketMatch | null; nextMatch: BracketMatch | null }> = []
-  for (let i = 0; i < fullyUnlinked.length; i += 2)
-    remaining.push({ a: fullyUnlinked[i] ?? null, b: fullyUnlinked[i + 1] ?? null, nextMatch: null })
+  // Any surplus current matches beyond what next slots cover
+  const overflow: Array<{ a: BracketMatch | null; b: BracketMatch | null; nextMatch: BracketMatch | null }> = []
+  for (let i = unassignedNext.length * 2; i < unassignedCurrent.length; i += 2)
+    overflow.push({ a: unassignedCurrent[i] ?? null, b: unassignedCurrent[i + 1] ?? null, nextMatch: null })
 
-  return [...linked, ...unlinkedWithNext, ...remaining]
+  return [...linked, ...positional, ...overflow]
 }
 
 function BracketArm({ hasSecond }: { hasSecond: boolean }) {
