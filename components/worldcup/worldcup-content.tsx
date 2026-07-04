@@ -1057,6 +1057,34 @@ function BPeekCard({ match }: { match: BracketMatch }) {
   )
 }
 
+// 2026 WC knockout bracket order derived from the FIFA.com bracket view.
+// Pairs of 3-letter abbreviations, listed in the order they appear top-to-bottom
+// on the bracket. Used to sort R16 (and later QF) groups by bracket path rather
+// than chronological date, since the schedule interleaves the two bracket halves.
+const BRACKET_SLOT_ORDER: Array<[string, string]> = [
+  // Round of 16 — upper bracket half (→ QF Jul 10)
+  ["PAR", "FRA"],  // M89
+  ["CAN", "MAR"],  // M90
+  ["POR", "ESP"],  // M93
+  ["USA", "BEL"],  // M94
+  // Round of 16 — lower bracket half (→ QF Jul 11)
+  ["BRA", "NOR"],  // M91
+  ["MEX", "ENG"],  // M92
+  ["ARG", "EGY"],  // M95
+  ["SUI", "COL"],  // M96
+  // Quarterfinals — fill in after bracket advances
+]
+
+function bracketSlot(nm: BracketMatch): number {
+  const h = (nm.home.shortName ?? nm.home.name ?? "").toUpperCase().slice(0, 3)
+  const a = (nm.away.shortName ?? nm.away.name ?? "").toUpperCase().slice(0, 3)
+  for (let i = 0; i < BRACKET_SLOT_ORDER.length; i++) {
+    const [t1, t2] = BRACKET_SLOT_ORDER[i]
+    if (h === t1 || h === t2 || a === t1 || a === t2) return i
+  }
+  return 99
+}
+
 function buildBracketGroups(
   current: BracketMatch[],
   next: BracketMatch[],
@@ -1092,14 +1120,24 @@ function buildBracketGroups(
     }
   }
 
-  linked.sort((a, b) => a.nextMatch.date.localeCompare(b.nextMatch.date))
+  // Sort by bracket slot first (FIFA bracket structure), then by date as tiebreaker
+  linked.sort((a, b) => {
+    const slotDiff = bracketSlot(a.nextMatch) - bracketSlot(b.nextMatch)
+    if (slotDiff !== 0) return slotDiff
+    return a.nextMatch.date.localeCompare(b.nextMatch.date)
+  })
 
   // Phase 2: positional pairing for unresolved matches — pair by date order
   const unassignedCurrent = current.filter(m => !assignedCurrent.has(m.id))
   const unassignedNext = next.filter(nm => !assignedNext.has(nm.id))
 
   unassignedCurrent.sort((a, b) => a.date.localeCompare(b.date))
-  unassignedNext.sort((a, b) => a.date.localeCompare(b.date))
+  // Sort unresolved next-round matches by bracket slot first
+  unassignedNext.sort((a, b) => {
+    const slotDiff = bracketSlot(a) - bracketSlot(b)
+    if (slotDiff !== 0) return slotDiff
+    return a.date.localeCompare(b.date)
+  })
 
   const positional: Array<{ a: BracketMatch | null; b: BracketMatch | null; nextMatch: BracketMatch | null }> = []
   for (let i = 0; i < unassignedNext.length; i++) {
