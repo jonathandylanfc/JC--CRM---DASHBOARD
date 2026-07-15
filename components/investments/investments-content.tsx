@@ -207,6 +207,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
   const [isPending, startTransition] = useTransition()
   const [isRefreshing, startRefreshing] = useTransition()
   const [isImporting, startImporting] = useTransition()
+  const [totalBalMode, setTotalBalMode] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Portfolio history for line chart
@@ -309,12 +310,22 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
+    // "Total Balance" mode: user entered a lump-sum balance (e.g. 401k account).
+    // Override shares=1 and price=balance so the portfolio total shows the right number.
+    const totalBalance = fd.get("total_balance") as string
+    if (totalBalance && parseFloat(totalBalance) > 0) {
+      fd.set("shares", "1")
+      fd.set("avg_cost", totalBalance)
+      fd.set("current_price", totalBalance)
+      fd.set("asset_type", "mutual fund")
+    }
     startTransition(async () => {
       const result = await upsertInvestment(fd)
       if (result.error) { toast.error(result.error); return }
       toast.success(`${fd.get("symbol")} saved`)
       setOpen(false)
       setEditingInv(null)
+      setTotalBalMode(false)
       router.refresh()
     })
   }
@@ -350,33 +361,59 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
         <Label htmlFor="name">Company Name <span className="text-muted-foreground">(optional)</span></Label>
         <Input id="name" name="name" placeholder="e.g. Apple Inc." defaultValue={inv?.name ?? ""} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="shares">Shares</Label>
-          <Input id="shares" name="shares" type="number" step="0.0001" min="0.0001" placeholder="0" defaultValue={inv?.shares} required />
+
+      {totalBalMode ? (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="total_balance">Account Balance ($)</Label>
+            <Input id="total_balance" name="total_balance" type="number" step="0.01" min="0.01" placeholder="e.g. 1789.79" required autoFocus />
+            <p className="text-[11px] text-muted-foreground">Sets value to this amount directly (ideal for 401k / retirement accounts). Price refresh is disabled for mutual funds.</p>
+          </div>
+          {/* hidden placeholders so server action gets valid shares/avg_cost */}
+          <input type="hidden" name="shares" value="1" />
+          <input type="hidden" name="avg_cost" value="0" />
+          <button type="button" className="text-xs text-muted-foreground underline underline-offset-2" onClick={() => setTotalBalMode(false)}>
+            Switch to shares / avg cost instead
+          </button>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="avg_cost">Avg Cost / Share ($)</Label>
-          <Input id="avg_cost" name="avg_cost" type="number" step="0.01" min="0" placeholder="0.00" defaultValue={inv?.avg_cost} required />
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="shares">Shares</Label>
+              <Input id="shares" name="shares" type="number" step="0.0001" min="0.0001" placeholder="0" defaultValue={inv?.shares} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="avg_cost">Avg Cost / Share ($)</Label>
+              <Input id="avg_cost" name="avg_cost" type="number" step="0.01" min="0" placeholder="0.00" defaultValue={inv?.avg_cost} required />
+            </div>
+          </div>
+          <button type="button" className="text-xs text-muted-foreground underline underline-offset-2" onClick={() => setTotalBalMode(true)}>
+            Set as total account balance instead (401k / retirement)
+          </button>
         </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="current_price">Current Price ($) <span className="text-muted-foreground">(optional)</span></Label>
-          <Input id="current_price" name="current_price" type="number" step="0.01" min="0" placeholder="auto-fetch" defaultValue={inv?.current_price ?? ""} />
+      )}
+
+      {!totalBalMode && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="current_price">Current Price ($) <span className="text-muted-foreground">(optional)</span></Label>
+            <Input id="current_price" name="current_price" type="number" step="0.01" min="0" placeholder="auto-fetch" defaultValue={inv?.current_price ?? ""} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="sector">Sector <span className="text-muted-foreground">(optional)</span></Label>
+            <Select name="sector" defaultValue={inv?.sector ?? ""}>
+              <SelectTrigger id="sector"><SelectValue placeholder="Select sector" /></SelectTrigger>
+              <SelectContent>
+                {SECTORS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="sector">Sector <span className="text-muted-foreground">(optional)</span></Label>
-          <Select name="sector" defaultValue={inv?.sector ?? ""}>
-            <SelectTrigger id="sector"><SelectValue placeholder="Select sector" /></SelectTrigger>
-            <SelectContent>
-              {SECTORS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      )}
+
       <div className="flex gap-3 pt-1">
-        <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => { setOpen(false); setEditingInv(null) }}>Cancel</Button>
+        <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => { setOpen(false); setEditingInv(null); setTotalBalMode(false) }}>Cancel</Button>
         <Button type="submit" className="flex-1" disabled={isPending}>{isPending ? "Saving…" : "Save"}</Button>
       </div>
     </form>
@@ -811,7 +848,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       </div>
 
       {/* Edit dialog */}
-      <Dialog open={!!editingInv} onOpenChange={(o) => { if (!o) setEditingInv(null) }}>
+      <Dialog open={!!editingInv} onOpenChange={(o) => { if (!o) { setEditingInv(null); setTotalBalMode(false) } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Edit {editingInv?.symbol}</DialogTitle>
