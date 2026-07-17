@@ -109,9 +109,7 @@ export async function refreshPrices() {
 
   if (!investments?.length) return { updated: 0 }
 
-  // Skip mutual funds — stored as shares=1 + account balance, so per-share NAV from
-  // Yahoo Finance would overwrite the balance with the wrong number.
-  const refreshable = investments.filter((i) => i.asset_type !== "mutual fund")
+  const refreshable = investments
 
   // Batch all symbols into a single Yahoo Finance request
   const symbols = refreshable.map((i) => i.symbol).join(",")
