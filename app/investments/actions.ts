@@ -109,9 +109,9 @@ export async function refreshPrices() {
 
   if (!investments?.length) return { updated: 0 }
 
-  // Try all asset types; Yahoo Finance returns NAV for most mutual funds (e.g. FLPKX).
-  // If no price is found the holding is simply left unchanged.
-  const refreshable = investments
+  // Skip mutual funds — stored as shares=1 + account balance, so per-share NAV from
+  // Yahoo Finance would overwrite the balance with the wrong number.
+  const refreshable = investments.filter((i) => i.asset_type !== "mutual fund")
 
   // Batch all symbols into a single Yahoo Finance request
   const symbols = refreshable.map((i) => i.symbol).join(",")
