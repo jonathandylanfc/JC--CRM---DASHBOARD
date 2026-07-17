@@ -196,6 +196,7 @@ interface Props {
 export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [] }: Props) {
   const router = useRouter()
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments)
+  useEffect(() => { setInvestments(initialInvestments) }, [initialInvestments])
   const [open, setOpen] = useState(false)
   const [editingInv, setEditingInv] = useState<Investment | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
