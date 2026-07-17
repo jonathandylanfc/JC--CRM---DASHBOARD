@@ -299,7 +299,6 @@ export function DayTradesTracker({ initialTrades }: Props) {
 
               {/* Round Trips view */}
               {!showOrders && (() => {
-                // Group trips by close date
                 const byDate: Record<string, RoundTrip[]> = {}
                 for (const t of trips) {
                   const d = t.closedAt.slice(0, 10)
@@ -309,7 +308,66 @@ export function DayTradesTracker({ initialTrades }: Props) {
                 const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a))
                 return (
                   <div className="rounded-xl border border-border overflow-hidden">
-                    <table className="w-full text-sm">
+                    {/* Mobile card layout */}
+                    <div className="sm:hidden divide-y divide-border/50">
+                      {sortedDates.map((date) => {
+                        const dayTrips = byDate[date]
+                        const dayPnl = dayTrips.reduce((s, t) => s + t.pnl, 0)
+                        const dayWins = dayTrips.filter((t) => t.pnl > 0).length
+                        return (
+                          <div key={date}>
+                            <div className="flex items-center justify-between px-4 py-2 bg-muted/40">
+                              <span className="text-xs font-semibold text-muted-foreground">
+                                {format(new Date(date + "T12:00:00"), "EEE, MMM d")}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">{dayWins}/{dayTrips.length}</span>
+                                <span className={`text-xs font-semibold ${dayPnl > 0 ? "text-emerald-500" : dayPnl < 0 ? "text-rose-500" : "text-muted-foreground"}`}>
+                                  {dayPnl >= 0 ? "+" : ""}{currency(dayPnl)}
+                                </span>
+                              </div>
+                            </div>
+                            {dayTrips.map((t, i) => (
+                              <div key={i} className="px-4 py-3 space-y-1.5 border-t border-border/30">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-sm">{t.symbol}</span>
+                                    <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                                      {t.entryAction === "buy" ? "Long" : "Short"}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">{t.shares} ct</span>
+                                  </div>
+                                  <span className={`font-semibold text-sm ${t.pnl > 0 ? "text-emerald-500" : t.pnl < 0 ? "text-rose-500" : "text-muted-foreground"}`}>
+                                    {t.pnl >= 0 ? "+" : ""}{currency(t.pnl)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                                  <span className="text-foreground">{currency(t.entryPrice)}</span>
+                                  <span>→</span>
+                                  <span className="text-foreground">{currency(t.exitPrice)}</span>
+                                  {getMultiplier(t.symbol) > 1 && (
+                                    <span className="ml-auto text-xs">
+                                      {((t.exitPrice - t.entryPrice) * (t.entryAction === "buy" ? 1 : -1)).toFixed(2)} pts
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {format(new Date(t.closedAt), "h:mm a")}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })}
+                      {openLegs.length > 0 && (
+                        <div className="px-4 py-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/5">
+                          {openLegs.length} open leg{openLegs.length !== 1 ? "s" : ""} (no matching close yet)
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Desktop table */}
+                    <table className="hidden sm:table w-full text-sm">
                       <thead>
                         <tr className="bg-muted/50 border-b border-border">
                           <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Symbol</th>
@@ -387,7 +445,34 @@ export function DayTradesTracker({ initialTrades }: Props) {
               {/* All Orders view */}
               {showOrders && (
                 <div className="rounded-xl border border-border overflow-hidden">
-                  <table className="w-full text-sm">
+                  {/* Mobile card layout */}
+                  <div className="sm:hidden divide-y divide-border/50">
+                    {[...trades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => (
+                      <div key={t.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm">{t.symbol}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.action === "buy" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"}`}>
+                              {t.action.toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {t.shares} × {currency(t.price)} = <span className="font-medium text-foreground">{currency(t.total)}</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {format(new Date(t.traded_at), "MMM d, h:mm a")}
+                            {t.notes && <span className="ml-1 opacity-60 truncate">· {t.notes}</span>}
+                          </div>
+                        </div>
+                        <Button variant="ghost" size="icon" className="w-7 h-7 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => handleDelete(t.id)}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop table */}
+                  <table className="hidden sm:table w-full text-sm">
                     <thead>
                       <tr className="bg-muted/50 border-b border-border">
                         <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Symbol</th>
