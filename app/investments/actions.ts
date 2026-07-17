@@ -109,17 +109,17 @@ export async function refreshPrices() {
 
   if (!investments?.length) return { updated: 0 }
 
-  // Mutual funds excluded — Yahoo Finance NAV data is unreliable for many fund tickers
-  // (returns wrong prices or maps to unrelated securities). Update current_price manually.
-  const refreshable = investments.filter((i) => i.asset_type !== "mutual fund")
+  const refreshable = investments
 
-  // Batch all symbols into a single Yahoo Finance request
+  // Batch all symbols into a single Yahoo Finance request.
+  // For mutual funds, Yahoo Finance exposes navPrice (the true NAV); regularMarketPrice
+  // may return an unrelated value, so we prefer navPrice when present.
   const symbols = refreshable.map((i) => i.symbol).join(",")
   const priceMap = new Map<string, number>()
 
   try {
     const res = await fetch(
-      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice,symbol`,
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice,navPrice,symbol`,
       {
         headers: {
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -135,8 +135,9 @@ export async function refreshPrices() {
       const json = await res.json()
       const quotes = json?.quoteResponse?.result ?? []
       for (const q of quotes) {
-        if (q.symbol && q.regularMarketPrice) {
-          priceMap.set(q.symbol.toUpperCase(), q.regularMarketPrice)
+        const price = q.navPrice ?? q.regularMarketPrice
+        if (q.symbol && price) {
+          priceMap.set(q.symbol.toUpperCase(), price)
         }
       }
     }
