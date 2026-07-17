@@ -109,85 +109,107 @@ export async function refreshPrices() {
 
   if (!investments?.length) return { updated: 0 }
 
-  const refreshable = investments
-
-  // Batch all symbols into a single Yahoo Finance request.
-  // For mutual funds, Yahoo Finance exposes navPrice (the true NAV); regularMarketPrice
-  // may return an unrelated value, so we prefer navPrice when present.
-  const symbols = refreshable.map((i) => i.symbol).join(",")
+  const mutualFunds = investments.filter((i) => i.asset_type === "mutual fund")
+  const nonFunds = investments.filter((i) => i.asset_type !== "mutual fund")
   const priceMap = new Map<string, number>()
+  const today = new Date().toISOString().slice(0, 10)
 
-  try {
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice,navPrice,symbol`,
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "application/json",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-        cache: "no-store",
-        signal: AbortSignal.timeout(8000),
-      }
+  // ── Mutual funds via Alpha Vantage GLOBAL_QUOTE ──────────────────────────
+  // NAV updates once per day after market close, so we only call AV once per
+  // calendar day per fund to preserve the 25-request/day free quota.
+  const AV_KEY = process.env.ALPHA_VANTAGE_KEY
+  if (AV_KEY && mutualFunds.length > 0) {
+    // Check which funds already have a price snapshot for today
+    const { data: todaySnaps } = await supabase
+      .from("investment_price_snapshots")
+      .select("symbol")
+      .eq("user_id", user.id)
+      .in("symbol", mutualFunds.map((f) => f.symbol.toUpperCase()))
+      .eq("snapshot_date", today)
+
+    const alreadyUpdatedToday = new Set((todaySnaps ?? []).map((r) => (r.symbol as string).toUpperCase()))
+    const fundsToFetch = mutualFunds.filter((f) => !alreadyUpdatedToday.has(f.symbol.toUpperCase()))
+
+    await Promise.allSettled(
+      fundsToFetch.map(async (inv) => {
+        try {
+          const res = await fetch(
+            `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${inv.symbol}&apikey=${AV_KEY}`,
+            { cache: "no-store", signal: AbortSignal.timeout(8000) }
+          )
+          const json = await res.json()
+          const price = parseFloat(json?.["Global Quote"]?.["05. price"] ?? "")
+          if (!isNaN(price) && price > 0) priceMap.set(inv.symbol.toUpperCase(), price)
+        } catch {}
+      })
     )
-
-    if (res.ok) {
-      const json = await res.json()
-      const quotes = json?.quoteResponse?.result ?? []
-      for (const q of quotes) {
-        const price = q.navPrice ?? q.regularMarketPrice
-        if (q.symbol && price) {
-          priceMap.set(q.symbol.toUpperCase(), price)
-        }
-      }
-    }
-  } catch (e) {
-    console.error("Yahoo Finance batch fetch failed:", e)
   }
 
-  // If batch failed, fall back to individual fetches for missing symbols
-  const missing = refreshable.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
-  await Promise.allSettled(
-    missing.map(async (inv) => {
-      try {
-        const res = await fetch(
-          `https://query2.finance.yahoo.com/v8/finance/chart/${inv.symbol}?interval=1d&range=1d`,
-          {
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-              "Accept": "application/json",
-            },
-            cache: "no-store",
-            signal: AbortSignal.timeout(6000),
-          }
-        )
+  // ── Stocks / ETFs / crypto via Yahoo Finance ──────────────────────────────
+  const symbols = nonFunds.map((i) => i.symbol).join(",")
+  if (symbols) {
+    try {
+      const res = await fetch(
+        `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice,symbol`,
+        {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+          },
+          cache: "no-store",
+          signal: AbortSignal.timeout(8000),
+        }
+      )
+      if (res.ok) {
         const json = await res.json()
-        const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice
-        if (price) priceMap.set(inv.symbol.toUpperCase(), price)
-      } catch {}
-    })
-  )
+        const quotes = json?.quoteResponse?.result ?? []
+        for (const q of quotes) {
+          if (q.symbol && q.regularMarketPrice) priceMap.set(q.symbol.toUpperCase(), q.regularMarketPrice)
+        }
+      }
+    } catch (e) {
+      console.error("Yahoo Finance batch fetch failed:", e)
+    }
 
-  // If still missing prices, try Stooq as final fallback
-  const stillMissing = refreshable.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
-  await Promise.allSettled(
-    stillMissing.map(async (inv) => {
-      try {
-        const url = `https://stooq.com/q/l/?s=${inv.symbol.toLowerCase()}.us&f=sd2ohlcv&h&e=csv`
-        const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(6000) })
-        if (!res.ok) return
-        const text = await res.text()
-        const lines = text.trim().split("\n")
-        const cols = lines[1]?.split(",")
-        const close = parseFloat(cols?.[5] ?? "")
-        if (!isNaN(close) && close > 0) priceMap.set(inv.symbol.toUpperCase(), close)
-      } catch {}
-    })
-  )
+    // Fall back to individual Yahoo Finance chart endpoint for missing symbols
+    const missing = nonFunds.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
+    await Promise.allSettled(
+      missing.map(async (inv) => {
+        try {
+          const res = await fetch(
+            `https://query2.finance.yahoo.com/v8/finance/chart/${inv.symbol}?interval=1d&range=1d`,
+            { headers: { "User-Agent": "Mozilla/5.0" }, cache: "no-store", signal: AbortSignal.timeout(6000) }
+          )
+          const json = await res.json()
+          const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice
+          if (price) priceMap.set(inv.symbol.toUpperCase(), price)
+        } catch {}
+      })
+    )
+
+    // Stooq as final fallback
+    const stillMissing = nonFunds.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
+    await Promise.allSettled(
+      stillMissing.map(async (inv) => {
+        try {
+          const url = `https://stooq.com/q/l/?s=${inv.symbol.toLowerCase()}.us&f=sd2ohlcv&h&e=csv`
+          const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(6000) })
+          if (!res.ok) return
+          const text = await res.text()
+          const lines = text.trim().split("\n")
+          const cols = lines[1]?.split(",")
+          const close = parseFloat(cols?.[5] ?? "")
+          if (!isNaN(close) && close > 0) priceMap.set(inv.symbol.toUpperCase(), close)
+        } catch {}
+      })
+    )
+  }
+
+  const refreshable = investments
 
   // Write all updated prices in parallel
   let updated = 0
-  const today = new Date().toISOString().slice(0, 10)
   const snapshotRows: { user_id: string; symbol: string; price: number; snapshot_date: string }[] = []
 
   await Promise.allSettled(
