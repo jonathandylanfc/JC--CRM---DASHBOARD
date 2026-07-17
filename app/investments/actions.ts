@@ -109,7 +109,9 @@ export async function refreshPrices() {
 
   if (!investments?.length) return { updated: 0 }
 
-  const refreshable = investments
+  // Mutual funds excluded — Yahoo Finance NAV data is unreliable for many fund tickers
+  // (returns wrong prices or maps to unrelated securities). Update current_price manually.
+  const refreshable = investments.filter((i) => i.asset_type !== "mutual fund")
 
   // Batch all symbols into a single Yahoo Finance request
   const symbols = refreshable.map((i) => i.symbol).join(",")
