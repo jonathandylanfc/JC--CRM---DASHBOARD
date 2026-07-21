@@ -110,36 +110,13 @@ export async function refreshPrices() {
 
   if (!investments?.length) return { updated: 0 }
 
-  const mutualFunds = investments.filter((i) => i.asset_type === "mutual fund")
-  const nonFunds = investments.filter((i) => i.asset_type !== "mutual fund")
+  // Mutual funds use manual balance / auto-contributions — never touch their price
+  const refreshable = investments.filter((i) => i.asset_type !== "mutual fund")
   const priceMap = new Map<string, number>()
   const today = new Date().toISOString().slice(0, 10)
 
-  // ── Mutual funds via Alpha Vantage GLOBAL_QUOTE ──────────────────────────
-  const AV_KEY = process.env.ALPHA_VANTAGE_KEY
-  if (AV_KEY && mutualFunds.length > 0) {
-    await Promise.allSettled(
-      mutualFunds.map(async (inv) => {
-        try {
-          const res = await fetch(
-            `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${inv.symbol}&apikey=${AV_KEY}`,
-            { cache: "no-store", signal: AbortSignal.timeout(10000) }
-          )
-          const json = await res.json()
-          console.log(`[AV] ${inv.symbol}:`, JSON.stringify(json))
-          const price = parseFloat(json?.["Global Quote"]?.["05. price"] ?? "")
-          if (!isNaN(price) && price > 0) priceMap.set(inv.symbol.toUpperCase(), price)
-        } catch (e) {
-          console.error(`[AV] ${inv.symbol} error:`, e)
-        }
-      })
-    )
-  } else {
-    console.log("[AV] skipped — AV_KEY set:", !!AV_KEY, "mutualFunds:", mutualFunds.length)
-  }
-
   // ── Stocks / ETFs / crypto via Yahoo Finance ──────────────────────────────
-  const symbols = nonFunds.map((i) => i.symbol).join(",")
+  const symbols = refreshable.map((i) => i.symbol).join(",")
   if (symbols) {
     try {
       const res = await fetch(
@@ -166,7 +143,7 @@ export async function refreshPrices() {
     }
 
     // Fall back to individual Yahoo Finance chart endpoint for missing symbols
-    const missing = nonFunds.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
+    const missing = refreshable.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
     await Promise.allSettled(
       missing.map(async (inv) => {
         try {
@@ -182,7 +159,7 @@ export async function refreshPrices() {
     )
 
     // Stooq as final fallback
-    const stillMissing = nonFunds.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
+    const stillMissing = refreshable.filter((i) => !priceMap.has(i.symbol.toUpperCase()))
     await Promise.allSettled(
       stillMissing.map(async (inv) => {
         try {
@@ -198,8 +175,6 @@ export async function refreshPrices() {
       })
     )
   }
-
-  const refreshable = investments
 
   // Write all updated prices in parallel
   let updated = 0
