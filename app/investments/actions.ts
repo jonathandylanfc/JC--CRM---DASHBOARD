@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { google } from "googleapis"
 
 export async function upsertInvestment(formData: FormData) {
   const supabase = await createClient()
@@ -232,4 +233,178 @@ export async function refreshPrices() {
   revalidatePath("/investments")
   revalidatePath("/")
   return { updated }
+}
+
+// ── Auto-contributions ────────────────────────────────────────────────────────
+
+export async function applyAutoContributions(): Promise<{ applied: number }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { applied: 0 }
+
+  const { data: rules, error: rulesErr } = await supabase
+    .from("investment_auto_contributions")
+    .select("id, symbol, amount, calendar_keyword, last_applied_event_date")
+    .eq("user_id", user.id)
+
+  if (rulesErr || !rules?.length) return { applied: 0 }
+
+  const now = new Date()
+  let totalApplied = 0
+
+  for (const rule of rules) {
+    // Compute the start boundary: day after last applied, or epoch
+    let sinceDate: string
+    if (rule.last_applied_event_date) {
+      const d = new Date(rule.last_applied_event_date + "T00:00:00Z")
+      d.setUTCDate(d.getUTCDate() + 1)
+      sinceDate = d.toISOString().slice(0, 10)
+    } else {
+      sinceDate = "2000-01-01"
+    }
+
+    const keyword = (rule.calendar_keyword ?? "paycheck").toLowerCase()
+    const todayIso = now.toISOString().slice(0, 10)
+
+    // Local calendar events
+    const { data: localEvents } = await supabase
+      .from("local_calendar_events")
+      .select("start_at")
+      .eq("user_id", user.id)
+      .ilike("title", `%${keyword}%`)
+      .gte("start_at", sinceDate)
+      .lte("start_at", todayIso)
+
+    // Google Calendar events (best-effort)
+    const googleDates: string[] = []
+    try {
+      const { data: tokenRow } = await supabase
+        .from("calendar_tokens")
+        .select("access_token, refresh_token, expiry_date")
+        .eq("user_id", user.id)
+        .single()
+
+      if (tokenRow) {
+        const oauth2 = new google.auth.OAuth2(
+          process.env.GOOGLE_CLIENT_ID,
+          process.env.GOOGLE_CLIENT_SECRET,
+        )
+        oauth2.setCredentials({
+          access_token: tokenRow.access_token,
+          refresh_token: tokenRow.refresh_token,
+          expiry_date: tokenRow.expiry_date,
+        })
+        oauth2.on("tokens", async (t) => {
+          if (t.access_token) {
+            await supabase.from("calendar_tokens").update({
+              access_token: t.access_token,
+              expiry_date: t.expiry_date ?? Date.now() + 3600000,
+              ...(t.refresh_token ? { refresh_token: t.refresh_token } : {}),
+            }).eq("user_id", user.id)
+          }
+        })
+
+        const cal = google.calendar({ version: "v3", auth: oauth2 })
+        const { data: calList } = await cal.calendarList.list({ minAccessRole: "reader" })
+        const results = await Promise.allSettled(
+          (calList.items ?? []).map(async (c) => {
+            const { data } = await cal.events.list({
+              calendarId: c.id!,
+              q: keyword,
+              timeMin: sinceDate + "T00:00:00Z",
+              timeMax: todayIso + "T23:59:59Z",
+              singleEvents: true,
+              maxResults: 100,
+            })
+            return (data.items ?? [])
+              .filter((e) => (e.summary ?? "").toLowerCase().includes(keyword))
+              .map((e) => (e.start?.dateTime ?? e.start?.date ?? "").slice(0, 10))
+              .filter(Boolean)
+          })
+        )
+        for (const r of results) {
+          if (r.status === "fulfilled") googleDates.push(...r.value as string[])
+        }
+      }
+    } catch { /* Google Calendar not connected */ }
+
+    // Unique event dates (deduplicate local + Google by calendar date)
+    const localDates = (localEvents ?? []).map((e) => (e.start_at as string).slice(0, 10))
+    const uniqueDates = [...new Set([...localDates, ...googleDates])].filter(Boolean)
+
+    if (uniqueDates.length === 0) continue
+
+    uniqueDates.sort()
+    const latestDate = uniqueDates[uniqueDates.length - 1]
+    const addAmount = Number(rule.amount) * uniqueDates.length
+
+    // Get current investment balance
+    const { data: inv } = await supabase
+      .from("investments")
+      .select("id, current_price, avg_cost")
+      .eq("user_id", user.id)
+      .eq("symbol", rule.symbol)
+      .single()
+
+    if (!inv) continue
+
+    const currentBalance = Number(inv.current_price ?? inv.avg_cost ?? 0)
+    const newBalance = parseFloat((currentBalance + addAmount).toFixed(2))
+
+    const { error: updErr } = await supabase
+      .from("investments")
+      .update({ current_price: newBalance, avg_cost: newBalance, updated_at: new Date().toISOString() })
+      .eq("id", inv.id)
+      .eq("user_id", user.id)
+
+    if (updErr) continue
+
+    await supabase
+      .from("investment_auto_contributions")
+      .update({ last_applied_event_date: latestDate })
+      .eq("id", rule.id)
+      .eq("user_id", user.id)
+
+    totalApplied += uniqueDates.length
+  }
+
+  if (totalApplied > 0) revalidatePath("/investments")
+  return { applied: totalApplied }
+}
+
+export async function upsertAutoContribution(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const symbol = (formData.get("symbol") as string)?.trim().toUpperCase()
+  const amount = parseFloat(formData.get("amount") as string)
+  const keyword = (formData.get("keyword") as string)?.trim().toLowerCase() || "paycheck"
+
+  if (!symbol || isNaN(amount) || amount <= 0) return { error: "Invalid input" }
+
+  const { error } = await supabase
+    .from("investment_auto_contributions")
+    .upsert(
+      { user_id: user.id, symbol, amount, calendar_keyword: keyword },
+      { onConflict: "user_id,symbol" }
+    )
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function deleteAutoContribution(symbol: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const { error } = await supabase
+    .from("investment_auto_contributions")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("symbol", symbol.toUpperCase())
+
+  if (error) return { error: error.message }
+  return { success: true }
 }

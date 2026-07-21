@@ -45,7 +45,7 @@ import {
   Area,
   AreaChart,
 } from "recharts"
-import { upsertInvestment, deleteInvestment, deleteAllInvestments, bulkUpsertInvestments, refreshPrices } from "@/app/investments/actions"
+import { upsertInvestment, deleteInvestment, deleteAllInvestments, bulkUpsertInvestments, refreshPrices, upsertAutoContribution, deleteAutoContribution } from "@/app/investments/actions"
 import { PlaidInvestmentsConnect } from "./plaid-investments-connect"
 import { ConnectedBrokerages } from "./connected-brokerages"
 import { MarketPulse } from "./market-pulse"
@@ -67,6 +67,14 @@ interface Investment {
   sector: string | null
   asset_type: string
   updated_at: string
+}
+
+interface AutoContrib {
+  id: string
+  symbol: string
+  amount: number
+  calendar_keyword: string
+  last_applied_event_date: string | null
 }
 
 const SECTORS = ["Technology", "Healthcare", "Finance", "Energy", "Consumer", "Industrials", "Real Estate", "Utilities", "Materials", "Communication", "Other"]
@@ -191,9 +199,10 @@ interface Props {
   initialInvestments: Investment[]
   prevCloseMap?: Record<string, number>
   initialDayTrades?: DayTrade[]
+  initialAutoContribs?: AutoContrib[]
 }
 
-export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [] }: Props) {
+export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [], initialAutoContribs = [] }: Props) {
   const router = useRouter()
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments)
   useEffect(() => { setInvestments(initialInvestments) }, [initialInvestments])
@@ -209,6 +218,10 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
   const [isRefreshing, startRefreshing] = useTransition()
   const [isImporting, startImporting] = useTransition()
   const [totalBalMode, setTotalBalMode] = useState(false)
+  const [autoContribs, setAutoContribs] = useState<AutoContrib[]>(initialAutoContribs)
+  const [contribAmount, setContribAmount] = useState("100")
+  const [contribKeyword, setContribKeyword] = useState("paycheck")
+  const [isSavingContrib, startSavingContrib] = useTransition()
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Portfolio history for line chart
@@ -237,6 +250,15 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
   }, [investments, historyRange])
 
   useEffect(() => { fetchHistory() }, [fetchHistory])
+
+  // Pre-fill auto-contribution fields when editing a mutual fund
+  useEffect(() => {
+    if (editingInv?.asset_type === "mutual fund") {
+      const existing = autoContribs.find((c) => c.symbol === editingInv.symbol)
+      setContribAmount(existing?.amount?.toString() ?? "100")
+      setContribKeyword(existing?.calendar_keyword ?? "paycheck")
+    }
+  }, [editingInv])
 
   // Auto-refresh prices + chart every 5 min during market hours (M-F 9:30–16:00 ET)
   useEffect(() => {
@@ -341,7 +363,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
     })
   }
 
-  const dialogForm = (inv?: Investment) => (
+  const dialogForm = (inv?: Investment, showAutoContrib?: boolean) => (
     <form onSubmit={handleSubmit} className="space-y-4 mt-2">
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
@@ -409,6 +431,90 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                 {SECTORS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-contribution config — only shown when editing an existing mutual fund */}
+      {showAutoContrib && inv && (
+        <div className="border-t border-border pt-4 space-y-3">
+          <div>
+            <p className="text-xs font-semibold text-foreground">Auto-Contribution</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Automatically add to this balance when a matching event appears on your calendar.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Amount per event ($)</Label>
+              <Input
+                type="number" step="0.01" min="1" placeholder="100"
+                value={contribAmount}
+                onChange={(e) => setContribAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Calendar keyword</Label>
+              <Input
+                placeholder="paycheck"
+                value={contribKeyword}
+                onChange={(e) => setContribKeyword(e.target.value)}
+              />
+            </div>
+          </div>
+          {autoContribs.find((c) => c.symbol === inv.symbol)?.last_applied_event_date && (
+            <p className="text-[11px] text-muted-foreground">
+              Last applied: {autoContribs.find((c) => c.symbol === inv.symbol)!.last_applied_event_date}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1 bg-transparent text-xs"
+              disabled={isSavingContrib}
+              onClick={() => {
+                startSavingContrib(async () => {
+                  const fd = new FormData()
+                  fd.set("symbol", inv.symbol)
+                  fd.set("amount", contribAmount)
+                  fd.set("keyword", contribKeyword)
+                  const result = await upsertAutoContribution(fd)
+                  if (result.error) { toast.error(result.error); return }
+                  setAutoContribs((prev) => {
+                    const idx = prev.findIndex((c) => c.symbol === inv.symbol)
+                    const updated: AutoContrib = {
+                      id: idx >= 0 ? prev[idx].id : "",
+                      symbol: inv.symbol,
+                      amount: parseFloat(contribAmount),
+                      calendar_keyword: contribKeyword,
+                      last_applied_event_date: idx >= 0 ? prev[idx].last_applied_event_date : null,
+                    }
+                    return idx >= 0 ? prev.map((c, i) => i === idx ? updated : c) : [...prev, updated]
+                  })
+                  toast.success("Auto-contribution saved — $" + contribAmount + " per " + contribKeyword)
+                })
+              }}
+            >
+              {isSavingContrib ? "Saving…" : "Save rule"}
+            </Button>
+            {autoContribs.some((c) => c.symbol === inv.symbol) && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => {
+                  startSavingContrib(async () => {
+                    const result = await deleteAutoContribution(inv.symbol)
+                    if (result.error) { toast.error(result.error); return }
+                    setAutoContribs((prev) => prev.filter((c) => c.symbol !== inv.symbol))
+                    toast.success("Auto-contribution removed")
+                  })
+                }}
+              >
+                Remove
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -854,7 +960,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
           <DialogHeader>
             <DialogTitle>Edit {editingInv?.symbol}</DialogTitle>
           </DialogHeader>
-          {editingInv && dialogForm(editingInv)}
+          {editingInv && dialogForm(editingInv, editingInv.asset_type === "mutual fund")}
         </DialogContent>
       </Dialog>
 

@@ -4,6 +4,7 @@ import { InvestmentsContent } from "@/components/investments/investments-content
 import { createClient } from "@/lib/supabase/server"
 import { getUserProfile } from "@/lib/data"
 import type { DayTrade } from "./day-trades-actions"
+import { applyAutoContributions } from "./actions"
 
 
 async function getInvestments() {
@@ -59,9 +60,27 @@ async function getDayTrades(): Promise<DayTrade[]> {
   return (data ?? []) as DayTrade[]
 }
 
+async function getAutoContribs() {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return []
+    const { data } = await supabase
+      .from("investment_auto_contributions")
+      .select("id, symbol, amount, calendar_keyword, last_applied_event_date")
+      .eq("user_id", user.id)
+    return data ?? []
+  } catch {
+    return []
+  }
+}
+
 export default async function InvestmentsPage() {
-  const [investments, user, dayTrades] = await Promise.all([
-    getInvestments(), getUserProfile(), getDayTrades(),
+  // Apply any pending paycheck contributions before loading data
+  try { await applyAutoContributions() } catch { /* table may not exist yet */ }
+
+  const [investments, user, dayTrades, autoContribs] = await Promise.all([
+    getInvestments(), getUserProfile(), getDayTrades(), getAutoContribs(),
   ])
 
   const symbols = investments.map((i) => i.symbol.toUpperCase())
@@ -83,6 +102,7 @@ export default async function InvestmentsPage() {
             initialInvestments={investments}
             prevCloseMap={prevCloseMap}
             initialDayTrades={dayTrades}
+            initialAutoContribs={autoContribs}
           />
         </div>
       </main>
