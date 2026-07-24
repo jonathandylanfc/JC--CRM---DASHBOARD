@@ -292,7 +292,8 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const [batchAccount, setBatchAccount] = useState("")
   const [accountFilter, setAccountFilter] = useState<string>("all")
   const [skippedDupes, setSkippedDupes] = useState(0)
-  const [feePerFill, setFeePerFill] = useState("")
+  const [csvFeePerFill, setCsvFeePerFill] = useState("")
+  const [csvDupeIds, setCsvDupeIds] = useState<string[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
   const csvRef = useRef<HTMLInputElement>(null)
 
@@ -301,44 +302,28 @@ export function DayTradesTracker({ initialTrades }: Props) {
 
   function handleCsvUpload(file: File) {
     const reader = new FileReader()
-    reader.onload = async (ev) => {
+    reader.onload = (ev) => {
       try {
         const text = ev.target?.result as string
         const parsed = parseTradingViewCsv(text)
         if (!parsed.length) { toast.error("No filled trades found in this CSV"); return }
 
         const newTrades: typeof parsed = []
-        const commissionUpdates: Array<{ id: string; commission: number }> = []
+        const dupeIds: string[] = []
 
         for (const t of parsed) {
           const existing = findDuplicate(t, trades)
-          if (existing) {
-            // Backfill commission on existing trade if it was missing
-            const comm = Number(t.commission ?? 0)
-            if (comm > 0 && !existing.commission) {
-              commissionUpdates.push({ id: existing.id, commission: comm })
-            }
-          } else {
-            newTrades.push(t)
-          }
+          if (existing) dupeIds.push(existing.id)
+          else newTrades.push(t)
         }
 
-        // Apply commission backfill silently
-        if (commissionUpdates.length > 0) {
-          await Promise.all(commissionUpdates.map(({ id, commission }) => updateTradeCommission(id, commission)))
-          // Reload from server so useEffect syncs trades state with fresh commission values
-          router.refresh()
-          toast.success(`Updated commission on ${commissionUpdates.length} trade${commissionUpdates.length !== 1 ? "s" : ""} — P&L now shows net of fees`)
-        }
+        // Auto-detect avg commission from CSV
+        const commValues = parsed.map((t) => Number(t.commission ?? 0)).filter((c) => c > 0)
+        const avgComm = commValues.length > 0 ? commValues.reduce((s, c) => s + c, 0) / commValues.length : 0
 
-        const dupes = parsed.length - newTrades.length
-        setSkippedDupes(dupes)
-
-        if (!newTrades.length) {
-          if (commissionUpdates.length === 0) toast.info(`All ${parsed.length} trades already imported — nothing new to add`)
-          return
-        }
-
+        setCsvFeePerFill(avgComm > 0 ? avgComm.toFixed(3) : "")
+        setCsvDupeIds(dupeIds)
+        setSkippedDupes(dupeIds.length)
         setDrafts(newTrades.map(({ _key: _k, ...t }) => t))
         setDraft(null)
         setImagePreview(null)
@@ -357,7 +342,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
     if (file && file.type.startsWith("image/")) handleImageUpload(file)
   }
 
-  const isMultiMode = drafts.length > 0
+  const isMultiMode = drafts.length > 0 || csvDupeIds.length > 0
 
   async function handleImageUpload(file: File) {
     setParsing(true)
@@ -388,6 +373,13 @@ export function DayTradesTracker({ initialTrades }: Props) {
 
   async function handleSaveAll() {
     setSaving(true)
+    const feeToUse = csvFeePerFill !== "" ? Number(csvFeePerFill) : null
+
+    // Update commission on all already-imported duplicates
+    if (csvDupeIds.length > 0 && feeToUse !== null && feeToUse > 0) {
+      await Promise.all(csvDupeIds.map((id) => updateTradeCommission(id, feeToUse)))
+    }
+
     let saved = 0
     for (const d of drafts) {
       if (!d.symbol || !d.action || !d.shares || !d.price || !d.traded_at) continue
@@ -399,13 +391,20 @@ export function DayTradesTracker({ initialTrades }: Props) {
         traded_at: new Date(d.traded_at).toISOString(),
         notes: d.notes ?? null,
         account: batchAccount.trim() || null,
-        commission: Number(d.commission ?? 0) || null,
+        commission: feeToUse,
       })
       if (!result.error && result.trade) { setTrades((prev) => [result.trade!, ...prev]); saved++ }
     }
     setSaving(false)
-    setOpen(false); setDrafts([]); setImagePreview(null); setBatchAccount("")
-    toast.success(`${saved} trade${saved !== 1 ? "s" : ""} saved`)
+    setOpen(false)
+    setDrafts([]); setCsvDupeIds([]); setCsvFeePerFill(""); setImagePreview(null); setBatchAccount("")
+    router.refresh()
+    const updatedMsg = csvDupeIds.length > 0 ? `, updated commission on ${csvDupeIds.length} existing` : ""
+    if (saved > 0 || csvDupeIds.length > 0) {
+      toast.success(`${saved > 0 ? `${saved} trade${saved !== 1 ? "s" : ""} saved` : ""}${updatedMsg}`.replace(/^,\s*/, ""))
+    } else {
+      toast.info("Nothing to save")
+    }
   }
 
   async function handleSave() {
@@ -446,10 +445,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const { trips, openLegs } = computeRoundTrips(filteredTrades)
   const symbolTotals = computeSymbolTotals(trips)
   const grossPnl = symbolTotals.reduce((s, r) => s + r.pnl, 0)
-  const feeOverride = feePerFill !== "" ? Number(feePerFill) : null
-  const totalCommission = feeOverride !== null && feeOverride > 0
-    ? filteredTrades.length * feeOverride
-    : filteredTrades.reduce((s, t) => s + Number(t.commission ?? 0), 0)
+  const totalCommission = filteredTrades.reduce((s, t) => s + Number(t.commission ?? 0), 0)
   const totalPnl = grossPnl - totalCommission
   const wins = trips.filter((t) => t.pnl > 0).length
   const winRate = trips.length > 0 ? Math.round((wins / trips.length) * 100) : null
@@ -552,25 +548,6 @@ export function DayTradesTracker({ initialTrades }: Props) {
                   ))}
                 </div>
               )}
-
-              {/* Fee per fill override */}
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>Fee/fill:</span>
-                <input
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  placeholder={filteredTrades.length > 0 && totalCommission > 0 && feeOverride === null
-                    ? (totalCommission / filteredTrades.length).toFixed(3)
-                    : "0.850"}
-                  value={feePerFill}
-                  onChange={(e) => setFeePerFill(e.target.value)}
-                  className="w-20 h-6 px-2 rounded border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-                {feeOverride !== null && feeOverride > 0 && (
-                  <button onClick={() => setFeePerFill("")} className="text-muted-foreground hover:text-foreground">reset</button>
-                )}
-              </div>
 
               {/* View toggle */}
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -823,10 +800,10 @@ export function DayTradesTracker({ initialTrades }: Props) {
       )}
 
       {/* Dialog */}
-      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setDraft(null); setDrafts([]); setImagePreview(null); setSkippedDupes(0) } }}>
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setDraft(null); setDrafts([]); setCsvDupeIds([]); setCsvFeePerFill(""); setImagePreview(null); setSkippedDupes(0) } }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{isMultiMode ? `Review ${drafts.length} Parsed Trades` : "Log Trade"}</DialogTitle>
+            <DialogTitle>{isMultiMode ? (drafts.length > 0 ? `Review ${drafts.length} Parsed Trade${drafts.length !== 1 ? "s" : ""}` : `Update ${csvDupeIds.length} Existing Trade${csvDupeIds.length !== 1 ? "s" : ""}`) : "Log Trade"}</DialogTitle>
           </DialogHeader>
           {imagePreview && <img src={imagePreview} alt="Trade screenshot" className="w-full rounded-lg max-h-32 object-contain bg-muted" />}
 
@@ -844,9 +821,21 @@ export function DayTradesTracker({ initialTrades }: Props) {
                   {knownAccounts.map((a) => <option key={a} value={a} />)}
                 </datalist>
               </div>
-              {skippedDupes > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Commission per fill</Label>
+                <Input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  placeholder="0.850"
+                  value={csvFeePerFill}
+                  onChange={(e) => setCsvFeePerFill(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Applied to all trades in this import (new and existing). Set to 1.659 to match TradingView's net P&L.</p>
+              </div>
+              {csvDupeIds.length > 0 && (
                 <div className="rounded-md bg-muted/60 border border-border px-3 py-2 text-xs text-muted-foreground">
-                  {skippedDupes} trade{skippedDupes !== 1 ? "s" : ""} already imported — skipped automatically.
+                  {csvDupeIds.length} trade{csvDupeIds.length !== 1 ? "s" : ""} already imported — commission will be updated on those too.
                 </div>
               )}
               <p className="text-xs text-muted-foreground">Review and edit before saving. Remove any trades that look wrong.</p>
@@ -888,8 +877,8 @@ export function DayTradesTracker({ initialTrades }: Props) {
 
               <div className="flex gap-3 pt-1">
                 <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button className="flex-1" onClick={handleSaveAll} disabled={saving || drafts.length === 0}>
-                  {saving ? "Saving…" : `Save ${drafts.length} Trade${drafts.length !== 1 ? "s" : ""}`}
+                <Button className="flex-1" onClick={handleSaveAll} disabled={saving || (drafts.length === 0 && csvDupeIds.length === 0)}>
+                  {saving ? "Saving…" : drafts.length > 0 ? `Save ${drafts.length} Trade${drafts.length !== 1 ? "s" : ""}` : `Update ${csvDupeIds.length} Commission${csvDupeIds.length !== 1 ? "s" : ""}`}
                 </Button>
               </div>
             </div>
