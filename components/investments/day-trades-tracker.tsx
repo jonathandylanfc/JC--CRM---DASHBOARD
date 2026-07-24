@@ -253,7 +253,7 @@ function parseTradingViewCsv(text: string): Array<Partial<DayTrade> & { _key: st
     const qty    = parseFloat(cols[qtyIdx]?.replace(/[^0-9.-]/g, "") ?? "1") || 1
     const rawTime = cols[closeIdx] ?? ""
     const traded_at = rawTime ? new Date(rawTime).toISOString() : new Date().toISOString()
-    const commission = commIdx !== -1 ? (parseFloat(cols[commIdx]?.replace(/[^0-9.-]/g, "") ?? "0") || 0) : 0
+    const commission = commIdx !== -1 ? Math.abs(parseFloat(cols[commIdx]?.replace(/[^0-9.]/g, "") ?? "0") || 0) : 0
     const _key = `${symbol}|${action}|${fillPrice}|${traded_at}`
 
     results.push({ symbol, action: action as "buy" | "sell", shares: qty, price: fillPrice, traded_at, notes: null, commission, _key })
@@ -449,7 +449,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const { trips, openLegs } = computeRoundTrips(filteredTrades)
   const symbolTotals = computeSymbolTotals(trips)
   const grossPnl = symbolTotals.reduce((s, r) => s + r.pnl, 0)
-  const totalCommission = filteredTrades.reduce((s, t) => s + Number(t.commission ?? 0), 0)
+  const totalCommission = filteredTrades.reduce((s, t) => s + Math.abs(Number(t.commission ?? 0)), 0)
   const totalPnl = grossPnl - totalCommission
   const wins = trips.filter((t) => t.pnl > 0).length
   const winRate = trips.length > 0 ? Math.round((wins / trips.length) * 100) : null
@@ -817,7 +817,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
             const draftTrades = draftsToTrades(drafts)
             const { trips: previewTrips } = computeRoundTrips([...filteredTrades, ...draftTrades])
             const gross = computeSymbolTotals(previewTrips).reduce((s, r) => s + r.pnl, 0)
-            const draftCommission = drafts.reduce((s, d) => s + Number((d as Partial<DayTrade> & { commission?: number }).commission ?? 0), 0)
+            const draftCommission = drafts.reduce((s, d) => s + Math.abs(Number((d as Partial<DayTrade> & { commission?: number }).commission ?? 0)), 0)
             const commission = feeNum !== null ? allFillCount * feeNum : totalCommission + draftCommission
             const net = gross - commission
             return (

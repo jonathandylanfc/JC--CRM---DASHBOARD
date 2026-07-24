@@ -21,9 +21,10 @@ export async function saveDayTrade(trade: Omit<DayTrade, "id" | "total">): Promi
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Not authenticated" }
 
+  const sanitized = { ...trade, commission: trade.commission != null ? Math.abs(trade.commission) : null }
   const { data, error } = await supabase
     .from("day_trades")
-    .insert({ user_id: user.id, ...trade })
+    .insert({ user_id: user.id, ...sanitized })
     .select("id, symbol, action, shares, price, total, traded_at, notes, account, commission")
     .single()
 
@@ -38,7 +39,7 @@ export async function updateTradeCommission(id: string, commission: number): Pro
   if (!user) return { error: "Not authenticated" }
   const { error } = await supabase
     .from("day_trades")
-    .update({ commission })
+    .update({ commission: Math.abs(commission) })
     .eq("id", id)
     .eq("user_id", user.id)
   if (error) return { error: error.message }
