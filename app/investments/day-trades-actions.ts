@@ -32,6 +32,19 @@ export async function saveDayTrade(trade: Omit<DayTrade, "id" | "total">): Promi
   return { trade: data as DayTrade }
 }
 
+export async function updateTradeCommission(id: string, commission: number): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { error } = await supabase
+    .from("day_trades")
+    .update({ commission })
+    .eq("id", id)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  return {}
+}
+
 export async function deleteDayTrade(id: string): Promise<{ error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

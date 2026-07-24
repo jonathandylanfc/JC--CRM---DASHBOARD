@@ -11,7 +11,7 @@ import { Upload, Trash2, TrendingUp, TrendingDown, ImageIcon, Loader2, ChevronDo
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { format } from "date-fns"
-import { saveDayTrade, deleteDayTrade, type DayTrade } from "@/app/investments/day-trades-actions"
+import { saveDayTrade, deleteDayTrade, updateTradeCommission, type DayTrade } from "@/app/investments/day-trades-actions"
 
 interface Props {
   initialTrades: DayTrade[]
@@ -272,17 +272,17 @@ function parseTradingViewCsv(text: string): Array<Partial<DayTrade> & { _key: st
   return results
 }
 
-function isDuplicateTrade(t: Partial<DayTrade>, existing: DayTrade[]): boolean {
+function findDuplicate(t: Partial<DayTrade>, existing: DayTrade[]): DayTrade | null {
   const sym = (t.symbol ?? "").toUpperCase()
   const price = Number(t.price)
   const time = new Date(t.traded_at ?? "").getTime()
-  return existing.some(
+  return existing.find(
     (e) =>
       e.symbol.toUpperCase() === sym &&
       e.action === t.action &&
       Math.abs(e.price - price) < 0.02 &&
       Math.abs(new Date(e.traded_at).getTime() - time) < 10000
-  )
+  ) ?? null
 }
 
 export function DayTradesTracker({ initialTrades }: Props) {
@@ -307,18 +307,43 @@ export function DayTradesTracker({ initialTrades }: Props) {
 
   function handleCsvUpload(file: File) {
     const reader = new FileReader()
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const text = ev.target?.result as string
         const parsed = parseTradingViewCsv(text)
         if (!parsed.length) { toast.error("No filled trades found in this CSV"); return }
 
-        const newTrades = parsed.filter((t) => !isDuplicateTrade(t, trades))
+        const newTrades: typeof parsed = []
+        const commissionUpdates: Array<{ id: string; commission: number }> = []
+
+        for (const t of parsed) {
+          const existing = findDuplicate(t, trades)
+          if (existing) {
+            // Backfill commission on existing trade if it was missing
+            const comm = Number(t.commission ?? 0)
+            if (comm > 0 && !existing.commission) {
+              commissionUpdates.push({ id: existing.id, commission: comm })
+            }
+          } else {
+            newTrades.push(t)
+          }
+        }
+
+        // Apply commission backfill silently
+        if (commissionUpdates.length > 0) {
+          await Promise.all(commissionUpdates.map(({ id, commission }) => updateTradeCommission(id, commission)))
+          setTrades((prev) => prev.map((t) => {
+            const upd = commissionUpdates.find((u) => u.id === t.id)
+            return upd ? { ...t, commission: upd.commission } : t
+          }))
+          toast.success(`Updated commission data on ${commissionUpdates.length} existing trade${commissionUpdates.length !== 1 ? "s" : ""}`)
+        }
+
         const dupes = parsed.length - newTrades.length
         setSkippedDupes(dupes)
 
         if (!newTrades.length) {
-          toast.info(`All ${parsed.length} trades already imported — nothing new to add`)
+          if (commissionUpdates.length === 0) toast.info(`All ${parsed.length} trades already imported — nothing new to add`)
           return
         }
 
