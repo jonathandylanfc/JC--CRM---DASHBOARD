@@ -292,6 +292,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const [batchAccount, setBatchAccount] = useState("")
   const [accountFilter, setAccountFilter] = useState<string>("all")
   const [skippedDupes, setSkippedDupes] = useState(0)
+  const [feePerFill, setFeePerFill] = useState("")
   const fileRef = useRef<HTMLInputElement>(null)
   const csvRef = useRef<HTMLInputElement>(null)
 
@@ -445,7 +446,10 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const { trips, openLegs } = computeRoundTrips(filteredTrades)
   const symbolTotals = computeSymbolTotals(trips)
   const grossPnl = symbolTotals.reduce((s, r) => s + r.pnl, 0)
-  const totalCommission = filteredTrades.reduce((s, t) => s + Number(t.commission ?? 0), 0)
+  const feeOverride = feePerFill !== "" ? Number(feePerFill) : null
+  const totalCommission = feeOverride !== null && feeOverride > 0
+    ? filteredTrades.length * feeOverride
+    : filteredTrades.reduce((s, t) => s + Number(t.commission ?? 0), 0)
   const totalPnl = grossPnl - totalCommission
   const wins = trips.filter((t) => t.pnl > 0).length
   const winRate = trips.length > 0 ? Math.round((wins / trips.length) * 100) : null
@@ -548,6 +552,25 @@ export function DayTradesTracker({ initialTrades }: Props) {
                   ))}
                 </div>
               )}
+
+              {/* Fee per fill override */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Fee/fill:</span>
+                <input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  placeholder={filteredTrades.length > 0 && totalCommission > 0 && feeOverride === null
+                    ? (totalCommission / filteredTrades.length).toFixed(3)
+                    : "0.850"}
+                  value={feePerFill}
+                  onChange={(e) => setFeePerFill(e.target.value)}
+                  className="w-20 h-6 px-2 rounded border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+                {feeOverride !== null && feeOverride > 0 && (
+                  <button onClick={() => setFeePerFill("")} className="text-muted-foreground hover:text-foreground">reset</button>
+                )}
+              </div>
 
               {/* View toggle */}
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
