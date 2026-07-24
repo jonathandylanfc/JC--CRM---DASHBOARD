@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Upload, Trash2, TrendingUp, TrendingDown, ImageIcon, Loader2, ChevronDown, ChevronRight, Plus, List } from "lucide-react"
+import { Upload, Trash2, TrendingUp, TrendingDown, ImageIcon, Loader2, ChevronDown, ChevronRight, Plus, List, FileText } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { format } from "date-fns"
@@ -113,6 +113,162 @@ function computeSymbolTotals(trips: RoundTrip[]) {
   return Object.entries(map).map(([symbol, v]) => ({ symbol, ...v }))
 }
 
+function draftsToTrades(drafts: Partial<DayTrade>[]): DayTrade[] {
+  return drafts
+    .filter((d) => d.symbol && d.action && Number(d.shares) > 0 && Number(d.price) > 0 && d.traded_at)
+    .map((d, i) => ({
+      id: `draft-${i}`,
+      symbol: (d.symbol ?? "").toUpperCase(),
+      action: d.action as "buy" | "sell",
+      shares: Number(d.shares),
+      price: Number(d.price),
+      total: Number(d.shares) * Number(d.price),
+      traded_at: new Date(d.traded_at!).toISOString(),
+      notes: d.notes ?? null,
+      account: d.account ?? null,
+    }))
+}
+
+function PnlPreview({ drafts, existingTrades }: { drafts: Partial<DayTrade>[]; existingTrades: DayTrade[] }) {
+  const draftTrades = draftsToTrades(drafts)
+  if (draftTrades.length === 0) return null
+
+  const draftSymbols = new Set(draftTrades.map((t) => t.symbol))
+  // Include existing saved trades for the same symbols so exits pair with saved entries
+  const relatedExisting = existingTrades.filter((t) => draftSymbols.has(t.symbol.toUpperCase()))
+  const allTrades = [...relatedExisting, ...draftTrades]
+
+  const { trips, openLegs } = computeRoundTrips(allTrades)
+  const draftIds = new Set(draftTrades.map((t) => t.id))
+
+  // Only show trips that involve at least one draft trade
+  const relevantTrips = trips.filter((t) => {
+    // Check if any draft trade matches the entry/exit times
+    return draftTrades.some(
+      (d) => d.traded_at === t.openedAt || d.traded_at === t.closedAt
+    )
+  })
+  const relevantOpen = openLegs.filter((l) => draftIds.has(l.id))
+
+  const totalPnl = relevantTrips.reduce((s, t) => s + t.pnl, 0)
+
+  if (relevantTrips.length === 0 && relevantOpen.length === 0) return null
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+      <p className="text-xs font-semibold text-foreground">Live P&L Preview</p>
+
+      {relevantTrips.map((t, i) => {
+        const isUp = t.pnl >= 0
+        const pts = (t.exitPrice - t.entryPrice) * (t.entryAction === "buy" ? 1 : -1)
+        const mult = getMultiplier(t.symbol)
+        return (
+          <div key={i} className={`flex items-center justify-between rounded-md px-2.5 py-2 text-xs ${isUp ? "bg-emerald-500/10 border border-emerald-500/20" : "bg-rose-500/10 border border-rose-500/20"}`}>
+            <div className="flex items-center gap-2">
+              <span className={`font-semibold ${isUp ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                {isUp ? "▲" : "▼"}
+              </span>
+              <span className="font-semibold">{t.symbol}</span>
+              <span className="text-muted-foreground">{t.entryAction === "buy" ? "Long" : "Short"} {t.shares}ct</span>
+              <span className="text-muted-foreground">{currency(t.entryPrice)} → {currency(t.exitPrice)}</span>
+              {mult > 1 && (
+                <span className="text-muted-foreground">({pts >= 0 ? "+" : ""}{pts.toFixed(2)} pts)</span>
+              )}
+            </div>
+            <span className={`font-bold ${isUp ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+              {isUp ? "+" : ""}{currency(t.pnl)}
+            </span>
+          </div>
+        )
+      })}
+
+      {relevantOpen.map((l, i) => (
+        <div key={i} className="flex items-center justify-between rounded-md px-2.5 py-2 text-xs bg-amber-500/10 border border-amber-500/20">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-600 dark:text-amber-400">⚠</span>
+            <span className="font-semibold">{l.symbol}</span>
+            <span className="text-muted-foreground">{l.action.toUpperCase()} {l.shares}ct @ {currency(l.price)}</span>
+          </div>
+          <span className="text-amber-600 dark:text-amber-400 font-medium">No matching {l.action === "buy" ? "sell" : "buy"}</span>
+        </div>
+      ))}
+
+      {relevantTrips.length > 0 && (
+        <div className={`flex items-center justify-between pt-1 border-t border-border text-xs font-semibold`}>
+          <span className="text-muted-foreground">Estimated total</span>
+          <span className={totalPnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+            {totalPnl >= 0 ? "+" : ""}{currency(totalPnl)}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Strip exchange prefix and futures suffix: "CME_MINI:NQ1!" → "NQ", "NASDAQ:AAPL" → "AAPL"
+function parseTvSymbol(raw: string): string {
+  const base = raw.includes(":") ? raw.split(":").pop()! : raw
+  const letters = base.match(/^[A-Za-z]+/)?.[0] ?? raw
+  return letters.toUpperCase()
+}
+
+function parseTradingViewCsv(text: string): Array<Partial<DayTrade> & { _key: string }> {
+  const lines = text.trim().split("\n").filter((l) => l.trim())
+  if (lines.length < 2) throw new Error("CSV appears empty")
+
+  const headers = lines[0].split(",").map((h) => h.replace(/"/g, "").trim().toLowerCase())
+  const col = (names: string[]) => {
+    for (const n of names) {
+      const idx = headers.findIndex((h) => h.includes(n))
+      if (idx !== -1) return idx
+    }
+    return -1
+  }
+
+  const symIdx   = col(["symbol"])
+  const sideIdx  = col(["side"])
+  const qtyIdx   = col(["quantity", "qty"])
+  const fillIdx  = col(["fill price", "fill"])
+  const closeIdx = col(["closing time", "close time", "filled time", "time"])
+
+  if (symIdx === -1 || sideIdx === -1 || qtyIdx === -1 || fillIdx === -1 || closeIdx === -1)
+    throw new Error("Could not find required columns (Symbol, Side, Quantity, Fill price, Closing time)")
+
+  const results: Array<Partial<DayTrade> & { _key: string }> = []
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",").map((c) => c.replace(/"/g, "").trim())
+    const fillPrice = parseFloat(cols[fillIdx]?.replace(/[^0-9.-]/g, "") ?? "")
+    if (!fillPrice || isNaN(fillPrice) || fillPrice <= 0) continue
+
+    const rawSym = cols[symIdx] ?? ""
+    const symbol = parseTvSymbol(rawSym)
+    const side   = (cols[sideIdx] ?? "").toLowerCase()
+    const action = side === "sell" ? "sell" : "buy"
+    const qty    = parseFloat(cols[qtyIdx]?.replace(/[^0-9.-]/g, "") ?? "1") || 1
+    const rawTime = cols[closeIdx] ?? ""
+    const traded_at = rawTime ? new Date(rawTime).toISOString() : new Date().toISOString()
+    const _key = `${symbol}|${action}|${fillPrice}|${traded_at}`
+
+    results.push({ symbol, action: action as "buy" | "sell", shares: qty, price: fillPrice, traded_at, notes: null, _key })
+  }
+
+  return results
+}
+
+function isDuplicateTrade(t: Partial<DayTrade>, existing: DayTrade[]): boolean {
+  const sym = (t.symbol ?? "").toUpperCase()
+  const price = Number(t.price)
+  const time = new Date(t.traded_at ?? "").getTime()
+  return existing.some(
+    (e) =>
+      e.symbol.toUpperCase() === sym &&
+      e.action === t.action &&
+      Math.abs(e.price - price) < 0.02 &&
+      Math.abs(new Date(e.traded_at).getTime() - time) < 10000
+  )
+}
+
 export function DayTradesTracker({ initialTrades }: Props) {
   const [trades, setTrades] = useState<DayTrade[]>(initialTrades)
   const [open, setOpen] = useState(false)
@@ -126,10 +282,40 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const [dragging, setDragging] = useState(false)
   const [batchAccount, setBatchAccount] = useState("")
   const [accountFilter, setAccountFilter] = useState<string>("all")
+  const [skippedDupes, setSkippedDupes] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
+  const csvRef = useRef<HTMLInputElement>(null)
 
   // All known account names from existing trades
   const knownAccounts = [...new Set(trades.map((t) => t.account).filter(Boolean))] as string[]
+
+  function handleCsvUpload(file: File) {
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target?.result as string
+        const parsed = parseTradingViewCsv(text)
+        if (!parsed.length) { toast.error("No filled trades found in this CSV"); return }
+
+        const newTrades = parsed.filter((t) => !isDuplicateTrade(t, trades))
+        const dupes = parsed.length - newTrades.length
+        setSkippedDupes(dupes)
+
+        if (!newTrades.length) {
+          toast.info(`All ${parsed.length} trades already imported — nothing new to add`)
+          return
+        }
+
+        setDrafts(newTrades.map(({ _key: _k, ...t }) => t))
+        setDraft(null)
+        setImagePreview(null)
+        setOpen(true)
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : "Failed to parse CSV")
+      }
+    }
+    reader.readAsText(file)
+  }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault()
@@ -259,9 +445,14 @@ export function DayTradesTracker({ initialTrades }: Props) {
         <div className="flex items-center gap-2">
           <input ref={fileRef} type="file" accept="image/*" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = "" }} />
+          <input ref={csvRef} type="file" accept=".csv,text/csv" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCsvUpload(f); e.target.value = "" }} />
           <Button variant="outline" size="sm" className="gap-2 bg-transparent" onClick={() => fileRef.current?.click()} disabled={parsing}>
             {parsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            {parsing ? "Parsing…" : "Upload Screenshot"}
+            {parsing ? "Parsing…" : "Screenshot"}
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5 bg-transparent" onClick={() => csvRef.current?.click()}>
+            <FileText className="w-4 h-4" /> Import CSV
           </Button>
           <Button variant="outline" size="sm" className="gap-1 bg-transparent" onClick={openManual}>
             <Plus className="w-4 h-4" /> Manual
@@ -552,7 +743,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
       )}
 
       {/* Dialog */}
-      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setDraft(null); setDrafts([]); setImagePreview(null) } }}>
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setDraft(null); setDrafts([]); setImagePreview(null); setSkippedDupes(0) } }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{isMultiMode ? `Review ${drafts.length} Parsed Trades` : "Log Trade"}</DialogTitle>
@@ -573,6 +764,11 @@ export function DayTradesTracker({ initialTrades }: Props) {
                   {knownAccounts.map((a) => <option key={a} value={a} />)}
                 </datalist>
               </div>
+              {skippedDupes > 0 && (
+                <div className="rounded-md bg-muted/60 border border-border px-3 py-2 text-xs text-muted-foreground">
+                  {skippedDupes} trade{skippedDupes !== 1 ? "s" : ""} already imported — skipped automatically.
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">Review and edit before saving. Remove any trades that look wrong.</p>
               {drafts.map((d, i) => (
                 <div key={i} className="rounded-lg border border-border p-3 space-y-2">
@@ -608,6 +804,8 @@ export function DayTradesTracker({ initialTrades }: Props) {
                   </div>
                 </div>
               ))}
+              <PnlPreview drafts={drafts} existingTrades={trades} />
+
               <div className="flex gap-3 pt-1">
                 <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setOpen(false)}>Cancel</Button>
                 <Button className="flex-1" onClick={handleSaveAll} disabled={saving || drafts.length === 0}>
