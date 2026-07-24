@@ -12,6 +12,7 @@ export interface DayTrade {
   total: number
   traded_at: string
   notes: string | null
+  account: string | null
 }
 
 export async function saveDayTrade(trade: Omit<DayTrade, "id" | "total">): Promise<{ trade?: DayTrade; error?: string }> {
@@ -22,7 +23,7 @@ export async function saveDayTrade(trade: Omit<DayTrade, "id" | "total">): Promi
   const { data, error } = await supabase
     .from("day_trades")
     .insert({ user_id: user.id, ...trade })
-    .select("id, symbol, action, shares, price, total, traded_at, notes")
+    .select("id, symbol, action, shares, price, total, traded_at, notes, account")
     .single()
 
   if (error) return { error: error.message }

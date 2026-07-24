@@ -124,7 +124,12 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const [draft, setDraft] = useState<Partial<DayTrade> | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [batchAccount, setBatchAccount] = useState("")
+  const [accountFilter, setAccountFilter] = useState<string>("all")
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // All known account names from existing trades
+  const knownAccounts = [...new Set(trades.map((t) => t.account).filter(Boolean))] as string[]
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault()
@@ -174,11 +179,12 @@ export function DayTradesTracker({ initialTrades }: Props) {
         price: Number(d.price),
         traded_at: new Date(d.traded_at).toISOString(),
         notes: d.notes ?? null,
+        account: batchAccount.trim() || null,
       })
       if (!result.error && result.trade) { setTrades((prev) => [result.trade!, ...prev]); saved++ }
     }
     setSaving(false)
-    setOpen(false); setDrafts([]); setImagePreview(null)
+    setOpen(false); setDrafts([]); setImagePreview(null); setBatchAccount("")
     toast.success(`${saved} trade${saved !== 1 ? "s" : ""} saved`)
   }
 
@@ -194,6 +200,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
       price: Number(draft.price),
       traded_at: new Date(draft.traded_at).toISOString(),
       notes: draft.notes ?? null,
+      account: draft.account?.trim() || null,
     })
     setSaving(false)
     if (result.error) { toast.error(result.error); return }
@@ -214,7 +221,8 @@ export function DayTradesTracker({ initialTrades }: Props) {
     setImagePreview(null); setOpen(true)
   }
 
-  const { trips, openLegs } = computeRoundTrips(trades)
+  const filteredTrades = accountFilter === "all" ? trades : trades.filter((t) => t.account === accountFilter)
+  const { trips, openLegs } = computeRoundTrips(filteredTrades)
   const symbolTotals = computeSymbolTotals(trips)
   const totalPnl = symbolTotals.reduce((s, r) => s + r.pnl, 0)
   const wins = trips.filter((t) => t.pnl > 0).length
@@ -287,6 +295,26 @@ export function DayTradesTracker({ initialTrades }: Props) {
             </div>
           ) : (
             <>
+              {/* Account filter */}
+              {knownAccounts.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs text-muted-foreground">Account:</span>
+                  {["all", ...knownAccounts].map((acct) => (
+                    <button
+                      key={acct}
+                      onClick={() => setAccountFilter(acct)}
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors border ${
+                        accountFilter === acct
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
+                      }`}
+                    >
+                      {acct === "all" ? "All accounts" : acct}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* View toggle */}
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <button onClick={() => setShowOrders(false)} className={`px-2.5 py-1 rounded-md transition-colors ${!showOrders ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
@@ -447,14 +475,15 @@ export function DayTradesTracker({ initialTrades }: Props) {
                 <div className="rounded-xl border border-border overflow-hidden">
                   {/* Mobile card layout */}
                   <div className="sm:hidden divide-y divide-border/50">
-                    {[...trades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => (
+                    {[...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => (
                       <div key={t.id} className="px-4 py-3 flex items-start justify-between gap-3">
                         <div className="space-y-1 min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-semibold text-sm">{t.symbol}</span>
                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.action === "buy" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"}`}>
                               {t.action.toUpperCase()}
                             </span>
+                            {t.account && <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground border border-border">{t.account}</span>}
                           </div>
                           <div className="text-sm text-muted-foreground">
                             {t.shares} × {currency(t.price)} = <span className="font-medium text-foreground">{currency(t.total)}</span>
@@ -481,11 +510,12 @@ export function DayTradesTracker({ initialTrades }: Props) {
                         <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Price</th>
                         <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Total</th>
                         <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Time</th>
+                        {knownAccounts.length > 0 && <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Account</th>}
                         <th className="px-2 py-2.5" />
                       </tr>
                     </thead>
                     <tbody>
-                      {[...trades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => (
+                      {[...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => (
                         <tr key={t.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors">
                           <td className="px-4 py-2.5 font-semibold">{t.symbol}</td>
                           <td className="px-4 py-2.5">
@@ -500,6 +530,11 @@ export function DayTradesTracker({ initialTrades }: Props) {
                             {format(new Date(t.traded_at), "MMM d, h:mm a")}
                             {t.notes && <span className="block opacity-60 truncate max-w-[120px]">{t.notes}</span>}
                           </td>
+                          {knownAccounts.length > 0 && (
+                            <td className="px-4 py-2.5">
+                              {t.account && <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground border border-border">{t.account}</span>}
+                            </td>
+                          )}
                           <td className="px-2 py-2.5">
                             <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => handleDelete(t.id)}>
                               <Trash2 className="w-3.5 h-3.5" />
@@ -526,6 +561,18 @@ export function DayTradesTracker({ initialTrades }: Props) {
 
           {isMultiMode && (
             <div className="space-y-3 mt-1">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Account (applies to all trades in this batch)</Label>
+                <Input
+                  list="known-accounts"
+                  placeholder="e.g. Webull, Tastytrade, Robinhood"
+                  value={batchAccount}
+                  onChange={(e) => setBatchAccount(e.target.value)}
+                />
+                <datalist id="known-accounts">
+                  {knownAccounts.map((a) => <option key={a} value={a} />)}
+                </datalist>
+              </div>
               <p className="text-xs text-muted-foreground">Review and edit before saving. Remove any trades that look wrong.</p>
               {drafts.map((d, i) => (
                 <div key={i} className="rounded-lg border border-border p-3 space-y-2">
@@ -586,6 +633,18 @@ export function DayTradesTracker({ initialTrades }: Props) {
                 <div className="space-y-1.5"><Label>Fill Price</Label><Input type="number" step="0.01" value={draft.price ?? ""} onChange={(e) => setDraft((d) => ({ ...d, price: parseFloat(e.target.value) }))} placeholder="28845.75" /></div>
               </div>
               <div className="space-y-1.5"><Label>Date & Time</Label><Input type="datetime-local" value={draft.traded_at ? draft.traded_at.slice(0, 16) : ""} onChange={(e) => setDraft((d) => ({ ...d, traded_at: e.target.value }))} /></div>
+              <div className="space-y-1.5">
+                <Label>Account <span className="text-muted-foreground">(optional)</span></Label>
+                <Input
+                  list="known-accounts-manual"
+                  value={draft.account ?? ""}
+                  onChange={(e) => setDraft((d) => ({ ...d, account: e.target.value }))}
+                  placeholder="e.g. Webull, Tastytrade"
+                />
+                <datalist id="known-accounts-manual">
+                  {knownAccounts.map((a) => <option key={a} value={a} />)}
+                </datalist>
+              </div>
               <div className="space-y-1.5"><Label>Notes <span className="text-muted-foreground">(optional)</span></Label><Input value={draft.notes ?? ""} onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))} placeholder="Entry price, fees, etc." /></div>
               {draft.shares && draft.price && <p className="text-sm text-muted-foreground">Total: <span className="font-semibold text-foreground">{currency(Number(draft.shares) * Number(draft.price))}</span></p>}
               <div className="flex gap-3">
