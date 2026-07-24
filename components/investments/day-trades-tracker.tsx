@@ -815,10 +815,14 @@ export function DayTradesTracker({ initialTrades }: Props) {
             const allFillCount = csvDupeIds.length + drafts.length
             const feeNum = csvFeePerFill !== "" ? Number(csvFeePerFill) : null
             const draftTrades = draftsToTrades(drafts)
-            const { trips: previewTrips } = computeRoundTrips([...filteredTrades, ...draftTrades])
+            // Only include trades from this CSV (existing dupes + new drafts), not the entire DB history
+            const csvDupeSet = new Set(csvDupeIds)
+            const csvExistingTrades = filteredTrades.filter((t) => csvDupeSet.has(t.id))
+            const { trips: previewTrips } = computeRoundTrips([...csvExistingTrades, ...draftTrades])
             const gross = computeSymbolTotals(previewTrips).reduce((s, r) => s + r.pnl, 0)
             const draftCommission = drafts.reduce((s, d) => s + Math.abs(Number((d as Partial<DayTrade> & { commission?: number }).commission ?? 0)), 0)
-            const commission = feeNum !== null ? allFillCount * feeNum : totalCommission + draftCommission
+            const existingDupeCommission = csvExistingTrades.reduce((s, t) => s + Math.abs(Number(t.commission ?? 0)), 0)
+            const commission = feeNum !== null ? allFillCount * feeNum : existingDupeCommission + draftCommission
             const net = gross - commission
             return (
               <div className="space-y-3 mt-1">
