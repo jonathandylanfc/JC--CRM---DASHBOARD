@@ -205,6 +205,7 @@ interface Props {
 export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [], initialAutoContribs = [] }: Props) {
   const router = useRouter()
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments)
+  useEffect(() => { window.scrollTo(0, 0) }, [])
   useEffect(() => { setInvestments(initialInvestments) }, [initialInvestments])
   const [open, setOpen] = useState(false)
   const [editingInv, setEditingInv] = useState<Investment | null>(null)

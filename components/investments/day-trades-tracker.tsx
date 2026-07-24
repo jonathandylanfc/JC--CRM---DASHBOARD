@@ -94,8 +94,11 @@ function computeRoundTrips(trades: DayTrade[]): { trips: RoundTrip[]; openLegs: 
     }
 
     // Remaining unmatched legs = open positions
-    for (const o of [...openBuys, ...openSells]) {
-      openLegs.push({ ...symTrades[0], shares: o.shares, price: o.price })
+    for (const o of openBuys) {
+      openLegs.push({ ...symTrades[0], action: "buy", shares: o.shares, price: o.price, traded_at: o.traded_at })
+    }
+    for (const o of openSells) {
+      openLegs.push({ ...symTrades[0], action: "sell", shares: o.shares, price: o.price, traded_at: o.traded_at })
     }
   }
 
@@ -526,6 +529,29 @@ export function DayTradesTracker({ initialTrades }: Props) {
                 }
                 const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a))
                 return (
+                  <>
+                  {openLegs.length > 0 && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+                      <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                        ⚠ {openLegs.length} unmatched leg{openLegs.length !== 1 ? "s" : ""} — missing a closing trade
+                      </p>
+                      {openLegs.map((leg, i) => (
+                        <div key={i} className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded-full font-medium ${leg.action === "buy" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"}`}>
+                              {leg.action.toUpperCase()}
+                            </span>
+                            <span className="font-semibold">{leg.symbol}</span>
+                            <span className="text-muted-foreground">{leg.shares} ct @ {currency(leg.price)}</span>
+                          </div>
+                          <span className="text-muted-foreground">{format(new Date(leg.traded_at), "MMM d, h:mm a")}</span>
+                        </div>
+                      ))}
+                      <p className="text-xs text-amber-600/70 dark:text-amber-400/70">
+                        Add a matching {openLegs.some(l => l.action === "buy") ? "sell" : "buy"} to complete the round trip.
+                      </p>
+                    </div>
+                  )}
                   <div className="rounded-xl border border-border overflow-hidden">
                     {/* Mobile card layout */}
                     <div className="sm:hidden divide-y divide-border/50">
@@ -578,12 +604,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
                           </div>
                         )
                       })}
-                      {openLegs.length > 0 && (
-                        <div className="px-4 py-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/5">
-                          {openLegs.length} open leg{openLegs.length !== 1 ? "s" : ""} (no matching close yet)
-                        </div>
-                      )}
-                    </div>
+                      </div>
 
                     {/* Desktop table */}
                     <table className="hidden sm:table w-full text-sm">
@@ -648,16 +669,10 @@ export function DayTradesTracker({ initialTrades }: Props) {
                             )),
                           ]
                         })}
-                        {openLegs.length > 0 && (
-                          <tr className="bg-amber-500/5 border-t border-amber-500/20">
-                            <td colSpan={6} className="px-4 py-2 text-xs text-amber-600 dark:text-amber-400">
-                              {openLegs.length} open leg{openLegs.length !== 1 ? "s" : ""} (no matching close yet)
-                            </td>
-                          </tr>
-                        )}
                       </tbody>
                     </table>
                   </div>
+                  </>
                 )
               })()}
 
