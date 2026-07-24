@@ -54,7 +54,7 @@ async function getDayTrades(): Promise<DayTrade[]> {
   if (!user) return []
   const { data } = await supabase
     .from("day_trades")
-    .select("id, symbol, action, shares, price, total, traded_at, notes")
+    .select("id, symbol, action, shares, price, total, traded_at, notes, account")
     .eq("user_id", user.id)
     .order("traded_at", { ascending: false })
   return (data ?? []) as DayTrade[]
