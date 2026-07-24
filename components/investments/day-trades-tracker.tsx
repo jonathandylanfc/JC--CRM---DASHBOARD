@@ -44,7 +44,9 @@ interface RoundTrip {
   entryPrice: number
   exitPrice: number
   shares: number
-  pnl: number
+  grossPnl: number
+  commission: number
+  pnl: number  // net (after commission)
   openedAt: string
   closedAt: string
 }
@@ -64,32 +66,41 @@ function computeRoundTrips(trades: DayTrade[]): { trips: RoundTrip[]; openLegs: 
     const sorted = [...symTrades].sort((a, b) => new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime())
     const mult = getMultiplier(symbol)
 
-    const openBuys: Array<{ shares: number; price: number; traded_at: string }> = []
-    const openSells: Array<{ shares: number; price: number; traded_at: string }> = []
+    const openBuys: Array<{ shares: number; price: number; traded_at: string; commission: number }> = []
+    const openSells: Array<{ shares: number; price: number; traded_at: string; commission: number }> = []
 
     for (const t of sorted) {
+      const tComm = Number(t.commission ?? 0)
       if (t.action === "buy") {
         // Close any open shorts first
         let rem = t.shares
+        let remComm = tComm
         while (rem > 0 && openSells.length > 0) {
           const open = openSells[0]
           const matched = Math.min(rem, open.shares)
-          trips.push({ symbol, entryAction: "sell", entryPrice: open.price, exitPrice: t.price, shares: matched, pnl: matched * (open.price - t.price) * mult, openedAt: open.traded_at, closedAt: t.traded_at })
-          open.shares -= matched; rem -= matched
+          const ratio = matched / t.shares
+          const grossPnl = matched * (open.price - t.price) * mult
+          const commission = open.commission + remComm * ratio
+          trips.push({ symbol, entryAction: "sell", entryPrice: open.price, exitPrice: t.price, shares: matched, grossPnl, commission, pnl: grossPnl - commission, openedAt: open.traded_at, closedAt: t.traded_at })
+          open.shares -= matched; open.commission = 0; rem -= matched; remComm -= remComm * ratio
           if (open.shares <= 0) openSells.shift()
         }
-        if (rem > 0) openBuys.push({ shares: rem, price: t.price, traded_at: t.traded_at })
+        if (rem > 0) openBuys.push({ shares: rem, price: t.price, traded_at: t.traded_at, commission: remComm })
       } else {
         // Close any open longs first
         let rem = t.shares
+        let remComm = tComm
         while (rem > 0 && openBuys.length > 0) {
           const open = openBuys[0]
           const matched = Math.min(rem, open.shares)
-          trips.push({ symbol, entryAction: "buy", entryPrice: open.price, exitPrice: t.price, shares: matched, pnl: matched * (t.price - open.price) * mult, openedAt: open.traded_at, closedAt: t.traded_at })
-          open.shares -= matched; rem -= matched
+          const ratio = matched / t.shares
+          const grossPnl = matched * (t.price - open.price) * mult
+          const commission = open.commission + remComm * ratio
+          trips.push({ symbol, entryAction: "buy", entryPrice: open.price, exitPrice: t.price, shares: matched, grossPnl, commission, pnl: grossPnl - commission, openedAt: open.traded_at, closedAt: t.traded_at })
+          open.shares -= matched; open.commission = 0; rem -= matched; remComm -= remComm * ratio
           if (open.shares <= 0) openBuys.shift()
         }
-        if (rem > 0) openSells.push({ shares: rem, price: t.price, traded_at: t.traded_at })
+        if (rem > 0) openSells.push({ shares: rem, price: t.price, traded_at: t.traded_at, commission: remComm })
       }
     }
 
@@ -233,6 +244,7 @@ function parseTradingViewCsv(text: string): Array<Partial<DayTrade> & { _key: st
   const qtyIdx   = col(["quantity", "qty"])
   const fillIdx  = col(["fill price", "fill"])
   const closeIdx = col(["closing time", "close time", "filled time", "time"])
+  const commIdx  = col(["commission", "comm", "fee"])
 
   if (symIdx === -1 || sideIdx === -1 || qtyIdx === -1 || fillIdx === -1 || closeIdx === -1)
     throw new Error("Could not find required columns (Symbol, Side, Quantity, Fill price, Closing time)")
@@ -251,9 +263,10 @@ function parseTradingViewCsv(text: string): Array<Partial<DayTrade> & { _key: st
     const qty    = parseFloat(cols[qtyIdx]?.replace(/[^0-9.-]/g, "") ?? "1") || 1
     const rawTime = cols[closeIdx] ?? ""
     const traded_at = rawTime ? new Date(rawTime).toISOString() : new Date().toISOString()
+    const commission = commIdx !== -1 ? (parseFloat(cols[commIdx]?.replace(/[^0-9.-]/g, "") ?? "0") || 0) : 0
     const _key = `${symbol}|${action}|${fillPrice}|${traded_at}`
 
-    results.push({ symbol, action: action as "buy" | "sell", shares: qty, price: fillPrice, traded_at, notes: null, _key })
+    results.push({ symbol, action: action as "buy" | "sell", shares: qty, price: fillPrice, traded_at, notes: null, commission, _key })
   }
 
   return results
@@ -369,6 +382,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
         traded_at: new Date(d.traded_at).toISOString(),
         notes: d.notes ?? null,
         account: batchAccount.trim() || null,
+        commission: Number(d.commission ?? 0) || null,
       })
       if (!result.error && result.trade) { setTrades((prev) => [result.trade!, ...prev]); saved++ }
     }
@@ -390,6 +404,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
       traded_at: new Date(draft.traded_at).toISOString(),
       notes: draft.notes ?? null,
       account: draft.account?.trim() || null,
+      commission: null,
     })
     setSaving(false)
     if (result.error) { toast.error(result.error); return }
@@ -582,9 +597,12 @@ export function DayTradesTracker({ initialTrades }: Props) {
                                     </span>
                                     <span className="text-xs text-muted-foreground">{t.shares} ct</span>
                                   </div>
-                                  <span className={`font-semibold text-sm ${t.pnl > 0 ? "text-emerald-500" : t.pnl < 0 ? "text-rose-500" : "text-muted-foreground"}`}>
-                                    {t.pnl >= 0 ? "+" : ""}{currency(t.pnl)}
-                                  </span>
+                                  <div className="text-right">
+                                    <span className={`font-semibold text-sm ${t.pnl > 0 ? "text-emerald-500" : t.pnl < 0 ? "text-rose-500" : "text-muted-foreground"}`}>
+                                      {t.pnl >= 0 ? "+" : ""}{currency(t.pnl)}
+                                    </span>
+                                    {t.commission > 0 && <div className="text-xs text-muted-foreground">-{currency(t.commission)} fees</div>}
+                                  </div>
                                 </div>
                                 <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                                   <span className="text-foreground">{currency(t.entryPrice)}</span>
@@ -658,8 +676,11 @@ export function DayTradesTracker({ initialTrades }: Props) {
                                   {t.pnl >= 0 ? "+" : ""}{currency(t.pnl)}
                                   {getMultiplier(t.symbol) > 1 && (
                                     <div className="text-xs font-normal text-muted-foreground">
-                                      {t.pnl >= 0 ? "+" : ""}{((t.exitPrice - t.entryPrice) * (t.entryAction === "buy" ? 1 : -1)).toFixed(2)} pts
+                                      {((t.exitPrice - t.entryPrice) * (t.entryAction === "buy" ? 1 : -1) >= 0) ? "+" : ""}{((t.exitPrice - t.entryPrice) * (t.entryAction === "buy" ? 1 : -1)).toFixed(2)} pts
                                     </div>
+                                  )}
+                                  {t.commission > 0 && (
+                                    <div className="text-xs font-normal text-muted-foreground">-{currency(t.commission)} fees</div>
                                   )}
                                 </td>
                                 <td className="px-4 py-2.5 text-muted-foreground text-xs">

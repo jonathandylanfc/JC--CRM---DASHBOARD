@@ -204,8 +204,31 @@ interface Props {
 
 export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [], initialAutoContribs = [] }: Props) {
   const router = useRouter()
+
+  // Take full control of scroll restoration — browser auto-restore misfires on this page
+  useEffect(() => {
+    const KEY = "scroll-investments"
+    window.history.scrollRestoration = "manual"
+    const saved = sessionStorage.getItem(KEY)
+    if (saved !== null) {
+      const y = +saved
+      sessionStorage.removeItem(KEY)
+      requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)))
+    }
+    const save = () => sessionStorage.setItem(KEY, String(window.scrollY))
+    window.addEventListener("beforeunload", save)
+    return () => {
+      window.removeEventListener("beforeunload", save)
+      window.history.scrollRestoration = "auto"
+    }
+  }, [])
+
+  const refreshKeepScroll = useCallback(() => {
+    const y = window.scrollY
+    router.refresh()
+    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)))
+  }, [router])
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments)
-  useEffect(() => { window.scrollTo(0, 0) }, [])
   useEffect(() => { setInvestments(initialInvestments) }, [initialInvestments])
   const [open, setOpen] = useState(false)
   const [editingInv, setEditingInv] = useState<Investment | null>(null)
@@ -275,7 +298,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
     if (!isMarketOpen()) return
     const interval = setInterval(async () => {
       await refreshPrices()
-      router.refresh()
+      refreshKeepScroll()
       fetchHistory()
     }, 5 * 60 * 1000) // every 5 minutes
     return () => clearInterval(interval)
@@ -318,7 +341,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       toast.success(`Imported ${result.count} holding${result.count !== 1 ? "s" : ""}`)
       setCsvOpen(false)
       setCsvPreview(null)
-      router.refresh()
+      refreshKeepScroll()
     })
   }
 
@@ -327,7 +350,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       const result = await refreshPrices()
       if ("error" in result) { toast.error(result.error); return }
       toast.success(`Updated prices for ${result.updated} holding${result.updated !== 1 ? "s" : ""}`)
-      router.refresh()
+      refreshKeepScroll()
     })
   }
 
@@ -350,7 +373,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       setOpen(false)
       setEditingInv(null)
       setTotalBalMode(false)
-      router.refresh()
+      refreshKeepScroll()
     })
   }
 
@@ -360,7 +383,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       if (result.error) { toast.error(result.error); return }
       setInvestments((prev) => prev.filter((i) => i.id !== id))
       setConfirmDeleteId(null)
-      router.refresh()
+      refreshKeepScroll()
     })
   }
 
@@ -1001,7 +1024,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                     if (result.error) { toast.error(result.error); return }
                     toast.success("All holdings deleted")
                     setConfirmDeleteAll(false)
-                    router.refresh()
+                    refreshKeepScroll()
                   })
                 }}
               >
