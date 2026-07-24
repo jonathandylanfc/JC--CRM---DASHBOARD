@@ -856,6 +856,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       ) : (
         <div className="space-y-2">
           {investments.map((inv) => {
+            const isMutualFund = inv.asset_type === "mutual fund"
             const price = inv.current_price ?? inv.avg_cost
             const value = inv.shares * price
             const cost = inv.shares * inv.avg_cost
@@ -863,8 +864,8 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
             const gainPct = cost > 0 ? (gain / cost) * 100 : 0
             const hasPrice = inv.current_price != null
 
-            // Today's change vs previous trading day close
-            const prevClose = prevCloseMap[inv.symbol.toUpperCase()]
+            // Today's change — skip for mutual funds (balance accounts have no meaningful intraday data)
+            const prevClose = !isMutualFund ? prevCloseMap[inv.symbol.toUpperCase()] : undefined
             const todayChange = hasPrice && prevClose ? inv.current_price! - prevClose : null
             const todayChangePct = todayChange != null && prevClose ? (todayChange / prevClose) * 100 : null
             const todayChangeTotal = todayChange != null ? todayChange * inv.shares : null
@@ -883,8 +884,10 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                     </div>
                     {inv.name && <p className="text-xs text-muted-foreground truncate">{inv.name}</p>}
                     <p className="text-xs text-muted-foreground">
-                      {inv.shares} shares · avg {currency(inv.avg_cost)}
-                      {hasPrice && <> · now {currency(inv.current_price!)}</>}
+                      {isMutualFund
+                        ? <>Balance · manually managed</>
+                        : <>{inv.shares} shares · avg {currency(inv.avg_cost)}{hasPrice && <> · now {currency(inv.current_price!)}</>}</>
+                      }
                     </p>
                     {/* Today's intraday change */}
                     {todayChange != null && todayChangePct != null && (
@@ -901,11 +904,17 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                   </div>
                   <div className="text-right shrink-0">
                     <p className="font-semibold text-sm">{currency(value)}</p>
-                    <p className={`text-xs font-medium flex items-center justify-end gap-0.5 ${gain >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-                      {gain >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      {gain >= 0 ? "+" : ""}{currency(gain)} ({pct(gainPct)})
-                    </p>
-                    {!hasPrice && <p className="text-[10px] text-muted-foreground">no price data</p>}
+                    {isMutualFund ? (
+                      <p className="text-[10px] text-muted-foreground">manual balance</p>
+                    ) : (
+                      <>
+                        <p className={`text-xs font-medium flex items-center justify-end gap-0.5 ${gain >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                          {gain >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {gain >= 0 ? "+" : ""}{currency(gain)} ({pct(gainPct)})
+                        </p>
+                        {!hasPrice && <p className="text-[10px] text-muted-foreground">no price data</p>}
+                      </>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                     <Button
