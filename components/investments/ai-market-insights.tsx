@@ -50,8 +50,9 @@ export function AiMarketInsights() {
 
   useEffect(() => { loadInsights() }, [])
 
-  // Scroll to bottom whenever messages change
+  // Scroll to bottom when new messages arrive (skip initial mount)
   useEffect(() => {
+    if (!messages.length) return
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, chatLoading])
 

@@ -294,6 +294,8 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const [skippedDupes, setSkippedDupes] = useState(0)
   const [csvFeePerFill, setCsvFeePerFill] = useState("")
   const [csvDupeIds, setCsvDupeIds] = useState<string[]>([])
+  const [showDraftOrders, setShowDraftOrders] = useState(false)
+  const [showPnlPreview, setShowPnlPreview] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const csvRef = useRef<HTMLInputElement>(null)
 
@@ -398,7 +400,9 @@ export function DayTradesTracker({ initialTrades }: Props) {
     setSaving(false)
     setOpen(false)
     setDrafts([]); setCsvDupeIds([]); setCsvFeePerFill(""); setImagePreview(null); setBatchAccount("")
+    const scrollY = window.scrollY
     router.refresh()
+    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, scrollY)))
     const updatedMsg = csvDupeIds.length > 0 ? `, updated commission on ${csvDupeIds.length} existing` : ""
     if (saved > 0 || csvDupeIds.length > 0) {
       toast.success(`${saved > 0 ? `${saved} trade${saved !== 1 ? "s" : ""} saved` : ""}${updatedMsg}`.replace(/^,\s*/, ""))
@@ -800,89 +804,138 @@ export function DayTradesTracker({ initialTrades }: Props) {
       )}
 
       {/* Dialog */}
-      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setDraft(null); setDrafts([]); setCsvDupeIds([]); setCsvFeePerFill(""); setImagePreview(null); setSkippedDupes(0) } }}>
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setDraft(null); setDrafts([]); setCsvDupeIds([]); setCsvFeePerFill(""); setImagePreview(null); setSkippedDupes(0); setShowDraftOrders(false); setShowPnlPreview(false) } }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{isMultiMode ? (drafts.length > 0 ? `Review ${drafts.length} Parsed Trade${drafts.length !== 1 ? "s" : ""}` : `Update ${csvDupeIds.length} Existing Trade${csvDupeIds.length !== 1 ? "s" : ""}`) : "Log Trade"}</DialogTitle>
           </DialogHeader>
           {imagePreview && <img src={imagePreview} alt="Trade screenshot" className="w-full rounded-lg max-h-32 object-contain bg-muted" />}
 
-          {isMultiMode && (
-            <div className="space-y-3 mt-1">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Account (applies to all trades in this batch)</Label>
-                <Input
-                  list="known-accounts"
-                  placeholder="e.g. Webull, Tastytrade, Robinhood"
-                  value={batchAccount}
-                  onChange={(e) => setBatchAccount(e.target.value)}
-                />
-                <datalist id="known-accounts">
-                  {knownAccounts.map((a) => <option key={a} value={a} />)}
-                </datalist>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Commission per fill</Label>
-                <Input
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  placeholder="0.850"
-                  value={csvFeePerFill}
-                  onChange={(e) => setCsvFeePerFill(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">Applied to all trades in this import (new and existing). Set to 1.659 to match TradingView's net P&L.</p>
-              </div>
-              {csvDupeIds.length > 0 && (
-                <div className="rounded-md bg-muted/60 border border-border px-3 py-2 text-xs text-muted-foreground">
-                  {csvDupeIds.length} trade{csvDupeIds.length !== 1 ? "s" : ""} already imported — commission will be updated on those too.
+          {isMultiMode && (() => {
+            const allFillCount = csvDupeIds.length + drafts.length
+            const feeNum = csvFeePerFill !== "" ? Number(csvFeePerFill) : null
+            const draftTrades = draftsToTrades(drafts)
+            const { trips: previewTrips } = computeRoundTrips([...filteredTrades, ...draftTrades])
+            const gross = computeSymbolTotals(previewTrips).reduce((s, r) => s + r.pnl, 0)
+            const draftCommission = drafts.reduce((s, d) => s + Number((d as Partial<DayTrade> & { commission?: number }).commission ?? 0), 0)
+            const commission = feeNum !== null ? allFillCount * feeNum : totalCommission + draftCommission
+            const net = gross - commission
+            return (
+              <div className="space-y-3 mt-1">
+                {/* Account */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Account (applies to all new trades)</Label>
+                  <Input
+                    list="known-accounts"
+                    placeholder="e.g. Webull, Tastytrade, Robinhood"
+                    value={batchAccount}
+                    onChange={(e) => setBatchAccount(e.target.value)}
+                  />
+                  <datalist id="known-accounts">
+                    {knownAccounts.map((a) => <option key={a} value={a} />)}
+                  </datalist>
                 </div>
-              )}
-              <p className="text-xs text-muted-foreground">Review and edit before saving. Remove any trades that look wrong.</p>
-              {drafts.map((d, i) => (
-                <div key={i} className="rounded-lg border border-border p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${d.action === "buy" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"}`}>
-                        {(d.action ?? "buy").toUpperCase()}
-                      </span>
-                      <Input className="h-7 w-24 text-sm font-semibold" value={d.symbol ?? ""} onChange={(e) => setDrafts((prev) => prev.map((x, j) => j === i ? { ...x, symbol: e.target.value.toUpperCase() } : x))} />
-                      <Select value={d.action ?? "buy"} onValueChange={(v) => setDrafts((prev) => prev.map((x, j) => j === i ? { ...x, action: v as "buy" | "sell" } : x))}>
-                        <SelectTrigger className="h-7 w-20 text-xs"><SelectValue /></SelectTrigger>
-                        <SelectContent><SelectItem value="buy">Buy</SelectItem><SelectItem value="sell">Sell</SelectItem></SelectContent>
-                      </Select>
-                    </div>
-                    <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-destructive" onClick={() => setDrafts((prev) => prev.filter((_, j) => j !== i))}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="space-y-1"><Label className="text-xs">Qty</Label><Input className="h-7 text-sm" type="number" value={d.shares ?? ""} onChange={(e) => setDrafts((prev) => prev.map((x, j) => j === i ? { ...x, shares: parseFloat(e.target.value) } : x))} /></div>
-                    <div className="space-y-1"><Label className="text-xs">Price</Label><Input className="h-7 text-sm" type="number" step="0.01" value={d.price ?? ""} onChange={(e) => setDrafts((prev) => prev.map((x, j) => j === i ? { ...x, price: parseFloat(e.target.value) } : x))} /></div>
-                    <div className="space-y-1"><Label className="text-xs">Total</Label><p className="h-7 flex items-center text-sm font-medium">{d.shares && d.price ? currency(Number(d.shares) * Number(d.price)) : "—"}</p></div>
-                  </div>
-                  <div className="space-y-1"><Label className="text-xs">Date & Time</Label><Input className="h-7 text-sm" type="datetime-local" value={d.traded_at ? d.traded_at.slice(0, 16) : ""} onChange={(e) => setDrafts((prev) => prev.map((x, j) => j === i ? { ...x, traded_at: e.target.value } : x))} /></div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Thesis / Notes</Label>
-                    <Textarea
-                      className="text-xs resize-none min-h-[52px]"
-                      placeholder="What was your thesis for this trade?"
-                      value={d.notes ?? ""}
-                      onChange={(e) => setDrafts((prev) => prev.map((x, j) => j === i ? { ...x, notes: e.target.value } : x))}
-                    />
-                  </div>
-                </div>
-              ))}
-              <PnlPreview drafts={drafts} existingTrades={trades} />
 
-              <div className="flex gap-3 pt-1">
-                <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button className="flex-1" onClick={handleSaveAll} disabled={saving || (drafts.length === 0 && csvDupeIds.length === 0)}>
-                  {saving ? "Saving…" : drafts.length > 0 ? `Save ${drafts.length} Trade${drafts.length !== 1 ? "s" : ""}` : `Update ${csvDupeIds.length} Commission${csvDupeIds.length !== 1 ? "s" : ""}`}
-                </Button>
+                {/* Commission + live P&L summary */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Commission per fill</Label>
+                  <Input
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    placeholder="0.850"
+                    value={csvFeePerFill}
+                    onChange={(e) => setCsvFeePerFill(e.target.value)}
+                  />
+                </div>
+                <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{allFillCount} fills × {feeNum !== null ? `$${feeNum.toFixed(3)}` : "fee"}</span>
+                    <span>−{currency(commission)} fees</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Gross P&L</span>
+                    <span className={`font-medium ${gross >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                      {gross >= 0 ? "+" : ""}{currency(gross)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-border pt-1.5">
+                    <span className="text-xs font-semibold">Net P&L</span>
+                    <span className={`text-base font-bold ${net >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                      {net >= 0 ? "+" : ""}{currency(net)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Dupe notice */}
+                {csvDupeIds.length > 0 && (
+                  <div className="rounded-md bg-muted/60 border border-border px-3 py-2 text-xs text-muted-foreground">
+                    {csvDupeIds.length} trade{csvDupeIds.length !== 1 ? "s" : ""} already imported — commission will be updated on those too.
+                  </div>
+                )}
+
+                {/* Collapsible orders list */}
+                {drafts.length > 0 && (
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold bg-muted/40 hover:bg-muted/60 transition-colors"
+                      onClick={() => setShowDraftOrders((v) => !v)}
+                    >
+                      <span>{drafts.length} new order{drafts.length !== 1 ? "s" : ""} to import</span>
+                      {showDraftOrders ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                    </button>
+                    {showDraftOrders && (
+                      <div className="divide-y divide-border/40 max-h-52 overflow-y-auto">
+                        {drafts.map((d, i) => (
+                          <div key={i} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/20">
+                            <span className={`shrink-0 px-1.5 py-0.5 rounded-full font-medium ${d.action === "buy" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"}`}>
+                              {(d.action ?? "buy").toUpperCase()}
+                            </span>
+                            <span className="font-semibold w-10 shrink-0">{d.symbol}</span>
+                            <span className="text-muted-foreground shrink-0">{d.shares}ct</span>
+                            <span className="font-medium">{currency(Number(d.price))}</span>
+                            <span className="text-muted-foreground ml-auto shrink-0 text-[11px]">
+                              {d.traded_at ? format(new Date(d.traded_at), "MMM d, h:mm a") : "—"}
+                            </span>
+                            <Button variant="ghost" size="icon" className="w-5 h-5 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => setDrafts((prev) => prev.filter((_, j) => j !== i))}>
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Collapsible P&L preview */}
+                {drafts.length > 0 && (
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold bg-muted/40 hover:bg-muted/60 transition-colors"
+                      onClick={() => setShowPnlPreview((v) => !v)}
+                    >
+                      <span>Round-trip preview</span>
+                      {showPnlPreview ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                    </button>
+                    {showPnlPreview && (
+                      <div className="p-3">
+                        <PnlPreview drafts={drafts} existingTrades={trades} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-1">
+                  <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button className="flex-1" onClick={handleSaveAll} disabled={saving || (drafts.length === 0 && csvDupeIds.length === 0)}>
+                    {saving ? "Saving…" : drafts.length > 0 ? `Save ${drafts.length} Trade${drafts.length !== 1 ? "s" : ""}` : `Update ${csvDupeIds.length} Commission${csvDupeIds.length !== 1 ? "s" : ""}`}
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {!isMultiMode && draft && (
             <div className="space-y-4 mt-1">
