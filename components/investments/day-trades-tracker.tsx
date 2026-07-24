@@ -45,9 +45,7 @@ interface RoundTrip {
   entryPrice: number
   exitPrice: number
   shares: number
-  grossPnl: number
-  commission: number
-  pnl: number  // net (after commission)
+  pnl: number  // gross P&L (commissions deducted at summary level)
   openedAt: string
   closedAt: string
 }
@@ -67,41 +65,32 @@ function computeRoundTrips(trades: DayTrade[]): { trips: RoundTrip[]; openLegs: 
     const sorted = [...symTrades].sort((a, b) => new Date(a.traded_at).getTime() - new Date(b.traded_at).getTime())
     const mult = getMultiplier(symbol)
 
-    const openBuys: Array<{ shares: number; price: number; traded_at: string; commission: number }> = []
-    const openSells: Array<{ shares: number; price: number; traded_at: string; commission: number }> = []
+    const openBuys: Array<{ shares: number; price: number; traded_at: string }> = []
+    const openSells: Array<{ shares: number; price: number; traded_at: string }> = []
 
     for (const t of sorted) {
-      const tComm = Number(t.commission ?? 0)
       if (t.action === "buy") {
-        // Close any open shorts first
         let rem = t.shares
-        let remComm = tComm
         while (rem > 0 && openSells.length > 0) {
           const open = openSells[0]
           const matched = Math.min(rem, open.shares)
-          const ratio = matched / t.shares
-          const grossPnl = matched * (open.price - t.price) * mult
-          const commission = open.commission + remComm * ratio
-          trips.push({ symbol, entryAction: "sell", entryPrice: open.price, exitPrice: t.price, shares: matched, grossPnl, commission, pnl: grossPnl - commission, openedAt: open.traded_at, closedAt: t.traded_at })
-          open.shares -= matched; open.commission = 0; rem -= matched; remComm -= remComm * ratio
+          const pnl = matched * (open.price - t.price) * mult
+          trips.push({ symbol, entryAction: "sell", entryPrice: open.price, exitPrice: t.price, shares: matched, pnl, openedAt: open.traded_at, closedAt: t.traded_at })
+          open.shares -= matched; rem -= matched
           if (open.shares <= 0) openSells.shift()
         }
-        if (rem > 0) openBuys.push({ shares: rem, price: t.price, traded_at: t.traded_at, commission: remComm })
+        if (rem > 0) openBuys.push({ shares: rem, price: t.price, traded_at: t.traded_at })
       } else {
-        // Close any open longs first
         let rem = t.shares
-        let remComm = tComm
         while (rem > 0 && openBuys.length > 0) {
           const open = openBuys[0]
           const matched = Math.min(rem, open.shares)
-          const ratio = matched / t.shares
-          const grossPnl = matched * (t.price - open.price) * mult
-          const commission = open.commission + remComm * ratio
-          trips.push({ symbol, entryAction: "buy", entryPrice: open.price, exitPrice: t.price, shares: matched, grossPnl, commission, pnl: grossPnl - commission, openedAt: open.traded_at, closedAt: t.traded_at })
-          open.shares -= matched; open.commission = 0; rem -= matched; remComm -= remComm * ratio
+          const pnl = matched * (t.price - open.price) * mult
+          trips.push({ symbol, entryAction: "buy", entryPrice: open.price, exitPrice: t.price, shares: matched, pnl, openedAt: open.traded_at, closedAt: t.traded_at })
+          open.shares -= matched; rem -= matched
           if (open.shares <= 0) openBuys.shift()
         }
-        if (rem > 0) openSells.push({ shares: rem, price: t.price, traded_at: t.traded_at, commission: remComm })
+        if (rem > 0) openSells.push({ shares: rem, price: t.price, traded_at: t.traded_at })
       }
     }
 
@@ -455,7 +444,9 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const filteredTrades = accountFilter === "all" ? trades : trades.filter((t) => t.account === accountFilter)
   const { trips, openLegs } = computeRoundTrips(filteredTrades)
   const symbolTotals = computeSymbolTotals(trips)
-  const totalPnl = symbolTotals.reduce((s, r) => s + r.pnl, 0)
+  const grossPnl = symbolTotals.reduce((s, r) => s + r.pnl, 0)
+  const totalCommission = filteredTrades.reduce((s, t) => s + Number(t.commission ?? 0), 0)
+  const totalPnl = grossPnl - totalCommission
   const wins = trips.filter((t) => t.pnl > 0).length
   const winRate = trips.length > 0 ? Math.round((wins / trips.length) * 100) : null
 
@@ -477,9 +468,16 @@ export function DayTradesTracker({ initialTrades }: Props) {
           {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           Day Trades
           {trips.length > 0 && (
-            <span className={`text-sm font-medium ml-1 ${totalPnl > 0 ? "text-emerald-500" : totalPnl < 0 ? "text-rose-500" : "text-muted-foreground"}`}>
-              {totalPnl >= 0 ? "+" : ""}{currency(totalPnl)}
-            </span>
+            <>
+              <span className={`text-sm font-medium ml-1 ${totalPnl > 0 ? "text-emerald-500" : totalPnl < 0 ? "text-rose-500" : "text-muted-foreground"}`}>
+                {totalPnl >= 0 ? "+" : ""}{currency(totalPnl)}
+              </span>
+              {totalCommission > 0 && (
+                <span className="text-xs text-muted-foreground ml-1">
+                  (gross {grossPnl >= 0 ? "+" : ""}{currency(grossPnl)} − {currency(totalCommission)} fees)
+                </span>
+              )}
+            </>
           )}
           {winRate !== null && (
             <span className="text-xs text-muted-foreground ml-1">
@@ -628,7 +626,6 @@ export function DayTradesTracker({ initialTrades }: Props) {
                                     <span className={`font-semibold text-sm ${t.pnl > 0 ? "text-emerald-500" : t.pnl < 0 ? "text-rose-500" : "text-muted-foreground"}`}>
                                       {t.pnl >= 0 ? "+" : ""}{currency(t.pnl)}
                                     </span>
-                                    {t.commission > 0 && <div className="text-xs text-muted-foreground">-{currency(t.commission)} fees</div>}
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -705,9 +702,6 @@ export function DayTradesTracker({ initialTrades }: Props) {
                                     <div className="text-xs font-normal text-muted-foreground">
                                       {((t.exitPrice - t.entryPrice) * (t.entryAction === "buy" ? 1 : -1) >= 0) ? "+" : ""}{((t.exitPrice - t.entryPrice) * (t.entryAction === "buy" ? 1 : -1)).toFixed(2)} pts
                                     </div>
-                                  )}
-                                  {t.commission > 0 && (
-                                    <div className="text-xs font-normal text-muted-foreground">-{currency(t.commission)} fees</div>
                                   )}
                                 </td>
                                 <td className="px-4 py-2.5 text-muted-foreground text-xs">
