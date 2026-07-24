@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -286,7 +287,10 @@ function findDuplicate(t: Partial<DayTrade>, existing: DayTrade[]): DayTrade | n
 }
 
 export function DayTradesTracker({ initialTrades }: Props) {
+  const router = useRouter()
   const [trades, setTrades] = useState<DayTrade[]>(initialTrades)
+  // Sync trades state when server re-fetches (e.g. after commission backfill + router.refresh)
+  useEffect(() => { setTrades(initialTrades) }, [initialTrades])
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(true)
   const [parsing, setParsing] = useState(false)
@@ -332,11 +336,9 @@ export function DayTradesTracker({ initialTrades }: Props) {
         // Apply commission backfill silently
         if (commissionUpdates.length > 0) {
           await Promise.all(commissionUpdates.map(({ id, commission }) => updateTradeCommission(id, commission)))
-          setTrades((prev) => prev.map((t) => {
-            const upd = commissionUpdates.find((u) => u.id === t.id)
-            return upd ? { ...t, commission: upd.commission } : t
-          }))
-          toast.success(`Updated commission data on ${commissionUpdates.length} existing trade${commissionUpdates.length !== 1 ? "s" : ""}`)
+          // Reload from server so useEffect syncs trades state with fresh commission values
+          router.refresh()
+          toast.success(`Updated commission on ${commissionUpdates.length} trade${commissionUpdates.length !== 1 ? "s" : ""} — P&L now shows net of fees`)
         }
 
         const dupes = parsed.length - newTrades.length
