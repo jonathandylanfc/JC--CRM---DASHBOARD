@@ -18,7 +18,7 @@ import {
   getLatestBriefing,
   getUpcomingCalendarEvents,
 } from "@/lib/data"
-import { getSpendingChallenges } from "@/app/finance/spending-challenge-actions"
+import { getSpendingChallenges, getLinkedAccounts } from "@/app/finance/spending-challenge-actions"
 import { SpendingChallengeCard } from "@/components/dashboard/spending-challenge-card"
 
 export default async function DashboardPage() {
@@ -41,6 +41,7 @@ export default async function DashboardPage() {
     latestBriefing,
     upcomingEvents,
     spendingChallenges,
+    plaidAccounts,
   ] = await Promise.all([
     getTaskStats(),
     getRecentTasks(),
@@ -56,6 +57,7 @@ export default async function DashboardPage() {
     getLatestBriefing(),
     getUpcomingCalendarEvents(),
     getSpendingChallenges(),
+    getLinkedAccounts(),
   ])
 
   return (
@@ -76,7 +78,7 @@ export default async function DashboardPage() {
             <MorningBriefingCard briefing={latestBriefing} />
             <UpcomingEventsCard events={upcomingEvents} />
 
-            <SpendingChallengeCard initialChallenges={spendingChallenges} />
+            <SpendingChallengeCard initialChallenges={spendingChallenges} plaidAccounts={plaidAccounts} />
 
             <DashboardSections
               taskStats={taskStats}
