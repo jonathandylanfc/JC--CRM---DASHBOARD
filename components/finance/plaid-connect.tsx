@@ -13,7 +13,7 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog"
-import { Loader2, RefreshCw, Trash2, Building2, Plus } from "lucide-react"
+import { Loader2, RefreshCw, Trash2, Building2, Plus, Pencil } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
 
@@ -66,6 +66,50 @@ function ConnectButton({ onSuccess }: { onSuccess: (publicToken: string, institu
     >
       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
       Connect Bank
+    </Button>
+  )
+}
+
+function UpdateButton({ itemId, onSuccess }: { itemId: string; onSuccess: () => void }) {
+  const [linkToken, setLinkToken] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [ready, setReady] = useState(false)
+
+  const { open, ready: plaidReady } = usePlaidLink({
+    token: linkToken ?? "",
+    onSuccess: () => onSuccess(),
+  })
+
+  useEffect(() => {
+    if (linkToken && plaidReady) { setReady(true); setLoading(false) }
+  }, [linkToken, plaidReady])
+
+  useEffect(() => {
+    if (ready) open()
+  }, [ready, open])
+
+  function handleClick() {
+    setLoading(true)
+    fetch("/api/plaid/create-link-token-update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_id: itemId }),
+    })
+      .then((r) => r.json())
+      .then((d) => { if (d.link_token) setLinkToken(d.link_token); else setLoading(false) })
+      .catch(() => setLoading(false))
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="w-8 h-8"
+      onClick={handleClick}
+      disabled={loading}
+      title="Update accounts / re-authorize"
+    >
+      {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Pencil className="w-3.5 h-3.5" />}
     </Button>
   )
 }
@@ -180,6 +224,14 @@ export function PlaidConnect({ onSync }: Props) {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    <UpdateButton
+                      itemId={item.item_id}
+                      onSuccess={async () => {
+                        toast.success("Re-authorized — syncing new accounts…")
+                        await handleSync(item.item_id)
+                        await fetchItems()
+                      }}
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
