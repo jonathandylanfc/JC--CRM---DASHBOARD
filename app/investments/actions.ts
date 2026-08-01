@@ -369,6 +369,39 @@ export async function upsertAutoContribution(formData: FormData) {
   return { success: true }
 }
 
+export async function buyMoreShares(id: string, additionalShares: number, pricePerShare: number): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const { data: inv } = await supabase
+    .from("investments")
+    .select("shares, avg_cost")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single()
+
+  if (!inv) return { error: "Investment not found" }
+
+  const newShares = inv.shares + additionalShares
+  const newAvgCost = (inv.shares * inv.avg_cost + additionalShares * pricePerShare) / newShares
+
+  const { error } = await supabase
+    .from("investments")
+    .update({
+      shares: parseFloat(newShares.toFixed(6)),
+      avg_cost: parseFloat(newAvgCost.toFixed(4)),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("user_id", user.id)
+
+  if (error) return { error: error.message }
+  revalidatePath("/investments")
+  revalidatePath("/")
+  return {}
+}
+
 export async function deleteAutoContribution(symbol: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

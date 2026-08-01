@@ -31,6 +31,7 @@ import {
   Pencil,
   AlertTriangle,
   BarChart2,
+  ShoppingCart,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -45,7 +46,7 @@ import {
   Area,
   AreaChart,
 } from "recharts"
-import { upsertInvestment, deleteInvestment, deleteAllInvestments, bulkUpsertInvestments, refreshPrices, upsertAutoContribution, deleteAutoContribution } from "@/app/investments/actions"
+import { upsertInvestment, deleteInvestment, deleteAllInvestments, bulkUpsertInvestments, refreshPrices, upsertAutoContribution, deleteAutoContribution, buyMoreShares } from "@/app/investments/actions"
 import { PlaidInvestmentsConnect } from "./plaid-investments-connect"
 import { ConnectedBrokerages } from "./connected-brokerages"
 import { MarketPulse } from "./market-pulse"
@@ -242,6 +243,10 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
   const [isRefreshing, startRefreshing] = useTransition()
   const [isImporting, startImporting] = useTransition()
   const [totalBalMode, setTotalBalMode] = useState(false)
+  const [buyMoreTarget, setBuyMoreTarget] = useState<Investment | null>(null)
+  const [buyMoreShares_, setBuyMoreShares] = useState("")
+  const [buyMorePrice, setBuyMorePrice] = useState("")
+  const [isBuyingMore, startBuyingMore] = useTransition()
   const [autoContribs, setAutoContribs] = useState<AutoContrib[]>(initialAutoContribs)
   const [contribAmount, setContribAmount] = useState("100")
   const [contribKeyword, setContribKeyword] = useState("paycheck")
@@ -941,6 +946,17 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                     )}
                   </div>
                   <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                    {!isMutualFund && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-7 h-7 text-muted-foreground hover:text-emerald-600"
+                        title="Buy more shares"
+                        onClick={() => { setBuyMoreTarget(inv); setBuyMoreShares(""); setBuyMorePrice("") }}
+                      >
+                        <ShoppingCart className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -986,6 +1002,84 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
           />
         </div>
       </div>
+
+      {/* Buy More dialog */}
+      <Dialog open={!!buyMoreTarget} onOpenChange={(o) => { if (!o) setBuyMoreTarget(null) }}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Buy More {buyMoreTarget?.symbol}</DialogTitle>
+          </DialogHeader>
+          {buyMoreTarget && (() => {
+            const addShares = parseFloat(buyMoreShares_) || 0
+            const addPrice = parseFloat(buyMorePrice) || 0
+            const newTotal = buyMoreTarget.shares + addShares
+            const newAvg = addShares > 0 && addPrice > 0
+              ? (buyMoreTarget.shares * buyMoreTarget.avg_cost + addShares * addPrice) / newTotal
+              : buyMoreTarget.avg_cost
+            return (
+              <div className="space-y-3 mt-1">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Additional shares</Label>
+                  <Input
+                    type="number"
+                    step="0.0001"
+                    min="0.0001"
+                    placeholder="e.g. 7.712"
+                    value={buyMoreShares_}
+                    onChange={(e) => setBuyMoreShares(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Price per share ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    placeholder="e.g. 229.51"
+                    value={buyMorePrice}
+                    onChange={(e) => setBuyMorePrice(e.target.value)}
+                  />
+                </div>
+                {addShares > 0 && addPrice > 0 && (
+                  <div className="rounded-md bg-muted/50 p-3 text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">New total shares</span>
+                      <span className="font-semibold">{newTotal.toFixed(4)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">New avg cost</span>
+                      <span className="font-semibold">${newAvg.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Was</span>
+                      <span className="text-muted-foreground">{buyMoreTarget.shares.toFixed(4)} sh @ ${buyMoreTarget.avg_cost.toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-3 pt-1">
+                  <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setBuyMoreTarget(null)}>Cancel</Button>
+                  <Button
+                    className="flex-1"
+                    disabled={isBuyingMore || addShares <= 0 || addPrice <= 0}
+                    onClick={() => {
+                      startBuyingMore(async () => {
+                        const res = await buyMoreShares(buyMoreTarget.id, addShares, addPrice)
+                        if (res.error) { toast.error(res.error); return }
+                        toast.success(`Added ${addShares} shares of ${buyMoreTarget.symbol}`)
+                        setBuyMoreTarget(null)
+                        refreshKeepScroll()
+                      })
+                    }}
+                  >
+                    {isBuyingMore ? "Saving…" : "Add Shares"}
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Edit dialog */}
       <Dialog open={!!editingInv} onOpenChange={(o) => { if (!o) { setEditingInv(null); setTotalBalMode(false) } }}>
