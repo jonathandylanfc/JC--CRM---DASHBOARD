@@ -186,6 +186,36 @@ export async function POST(req: NextRequest) {
   const todayDateStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
   const tomorrowDateStr = new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
 
+  // Fetch high-impact economic calendar (ForexFactory public feed)
+  let economicCalendarContext = ""
+  try {
+    const ffRes = await fetch("https://nfs.faireconomy.media/ff_calendar_thisweek.json", {
+      signal: AbortSignal.timeout(5000),
+      headers: { "User-Agent": "Mozilla/5.0" },
+    })
+    if (ffRes.ok) {
+      const ffData: Array<{ date: string; time: string; country: string; title: string; impact: string; forecast?: string; previous?: string }> = await ffRes.json()
+      const highImpact = ffData.filter(
+        (e) => e.date?.slice(0, 10) === todayDateStr && e.country === "USD" && e.impact === "High"
+      )
+      const medImpact = ffData.filter(
+        (e) => e.date?.slice(0, 10) === todayDateStr && e.country === "USD" && e.impact === "Medium"
+      )
+      const lines: string[] = []
+      for (const e of highImpact) {
+        lines.push(`🔴 ${e.time} ET: ${e.title}${e.forecast ? ` — forecast: ${e.forecast}, prev: ${e.previous}` : ""}`)
+      }
+      for (const e of medImpact.slice(0, 4)) {
+        lines.push(`🟡 ${e.time} ET: ${e.title}${e.forecast ? ` — forecast: ${e.forecast}` : ""}`)
+      }
+      if (lines.length) {
+        economicCalendarContext = `\n\nECONOMIC CALENDAR TODAY (USD):\n${lines.join("\n")}`
+      } else {
+        economicCalendarContext = `\n\nECONOMIC CALENDAR TODAY: No high-impact USD events scheduled.`
+      }
+    }
+  } catch { /* skip */ }
+
   const [newsResult, qqqResult, vixResult, earningsResult] = await Promise.allSettled([
     avKey
       ? fetch(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&sort=LATEST&limit=30&apikey=${avKey}`, { signal: AbortSignal.timeout(7000) })
@@ -309,20 +339,20 @@ export async function POST(req: NextRequest) {
     model: "claude-haiku-4-5",
     max_tokens: 1400,
     system: `You are a concise personal finance assistant writing a morning market briefing email.
-Today is ${today}. Be tight, actionable, and direct. Structure your response in these 6 sections:
+Today is ${today}. Be tight, actionable, and direct. Structure your response in these 7 sections:
 
 1. WEATHER & DAY AHEAD — One line on today's weather (if provided), then 1-2 sentences previewing the day based on their tasks and calendar events.
-2. NQ OUTLOOK — This is the most important section. The user day-trades NQ1/NQ futures (Nasdaq-100 e-mini). Using the QQQ pre-market data and VIX provided, interpret what it means for NQ futures today. Give concrete directional bias (bullish/bearish/choppy), key levels to watch (round numbers, yesterday's high/low if inferable), and whether the VIX suggests a trending or mean-reverting day. Call out any NQ component earnings happening today or tomorrow and how they could move the index. Be specific — a trader is reading this before the open.
-3. YOUR INVESTMENTS — The user also holds Apple (AAPL) stock long-term. Summarize any AAPL-specific news or pre-market moves. Note if AAPL earnings are today/tomorrow.
-4. MARKET INTEL — Based on the live news provided, call out 3-4 other notable things to watch: sector moves, macro events, other big movers. For each: one line on why it matters today.
-5. YOUR TASKS TODAY — List their tasks due today (if any). If none, skip this section.
-6. QUICK TIP — One sharp, actionable NQ trading or finance insight relevant to today's market conditions.
+2. NQ OUTLOOK — This is the most important section. The user day-trades NQ1 (Nasdaq-100 E-mini futures, $20/point, 10:1 leverage). Using the QQQ pre-market data and VIX provided, give: (a) concrete directional bias for today — bullish/bearish/choppy and why; (b) key price levels to watch; (c) whether VIX suggests a trending or mean-reverting session; (d) any NQ component earnings today/tomorrow and their likely index impact. Be specific — a futures trader is reading this before the open.
+3. ECONOMIC CALENDAR — Based on the economic events provided: list every high-impact event today with its scheduled time. For each, explain in one sentence what a hot vs cool print means for NQ. If no events: say "No major macro events today — tape will trade on technicals and news flow." Always note: Fed decisions crush or rally NQ (rates up = NQ down), CPI/PCE hot = NQ sells off, NFP strong = mixed (good economy but Fed may stay hawkish), GDP miss = NQ drops.
+4. MARKET INTEL — Based on the live news: call out 3-4 notable things to watch today. For each: one line on why it matters for NQ.
+5. YOUR TASKS TODAY — List their tasks due today (if any). If none, skip this section entirely.
+6. QUICK TIP — One sharp, actionable NQ trading insight relevant to today's specific conditions (VIX level, economic events, trend).
 
 Use plain text, no markdown. Separate sections with a blank line and label in ALL CAPS.
 Start with a one-line greeting. Sign off as "JDpro AI — Your Morning Briefing".`,
     messages: [{
       role: "user",
-      content: `My portfolio:\n${portfolioContext}${weatherContext}${nqContext}${tasksContext}${eventsContext}${newsContext}\n\nWrite my morning briefing for ${today}.`,
+      content: `My portfolio:\n${portfolioContext}${weatherContext}${nqContext}${economicCalendarContext}${tasksContext}${eventsContext}${newsContext}\n\nWrite my morning briefing for ${today}.`,
     }],
   })
 
@@ -376,31 +406,68 @@ Start with a one-line greeting. Sign off as "JDpro AI — Your Morning Briefing"
           <p style="margin:0;font-size:14px;line-height:1.7;color:#374151;white-space:pre-line;">${aiText}</p>
         </div>
 
-        ${investments.length > 0 ? `
-        <!-- Portfolio snapshot -->
-        <h2 style="font-size:15px;font-weight:600;margin:0 0 12px;color:#111827;">Your Portfolio</h2>
-        <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
+        <!-- NQ Futures Cheat Sheet -->
+        <h2 style="font-size:15px;font-weight:600;margin:0 0 12px;color:#111827;">⚡ NQ Futures Quick Reference</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
           <thead>
-            <tr style="background:#f3f4f6;">
-              <th style="padding:8px 12px;text-align:left;color:#6b7280;font-weight:600;">Symbol</th>
-              <th style="padding:8px 12px;text-align:left;color:#6b7280;font-weight:600;">Shares</th>
-              <th style="padding:8px 12px;text-align:left;color:#6b7280;font-weight:600;">Price</th>
-              <th style="padding:8px 12px;text-align:left;color:#6b7280;font-weight:600;">Return</th>
-              <th style="padding:8px 12px;text-align:right;color:#6b7280;font-weight:600;">Value</th>
+            <tr style="background:#1e1b4b;">
+              <th style="padding:8px 12px;text-align:left;color:#c7d2fe;font-weight:600;">Contract</th>
+              <th style="padding:8px 12px;text-align:left;color:#c7d2fe;font-weight:600;">1 Point</th>
+              <th style="padding:8px 12px;text-align:left;color:#c7d2fe;font-weight:600;">1 Tick (0.25pt)</th>
+              <th style="padding:8px 12px;text-align:left;color:#c7d2fe;font-weight:600;">Margin ~</th>
             </tr>
           </thead>
-          <tbody>${holdingRows}</tbody>
-          <tfoot>
-            <tr style="background:#f9fafb;">
-              <td colspan="4" style="padding:10px 12px;font-weight:700;">Total Portfolio</td>
-              <td style="padding:10px 12px;text-align:right;font-weight:700;font-size:15px;">${currency(totalValue)}</td>
+          <tbody>
+            <tr style="background:#f8fafc;border-bottom:1px solid #e5e7eb;">
+              <td style="padding:8px 12px;font-weight:700;">NQ (E-mini)</td>
+              <td style="padding:8px 12px;color:#16a34a;font-weight:600;">$20</td>
+              <td style="padding:8px 12px;">$5</td>
+              <td style="padding:8px 12px;">~$59k</td>
             </tr>
-          </tfoot>
+            <tr style="background:#fff;border-bottom:1px solid #e5e7eb;">
+              <td style="padding:8px 12px;font-weight:700;">MNQ (Micro)</td>
+              <td style="padding:8px 12px;color:#16a34a;font-weight:600;">$2</td>
+              <td style="padding:8px 12px;">$0.50</td>
+              <td style="padding:8px 12px;">~$5.9k</td>
+            </tr>
+          </tbody>
         </table>
-        <p style="font-size:12px;color:#9ca3af;margin:0 0 24px;">
-          All-time gain: <strong style="color:${totalGain >= 0 ? "#16a34a" : "#dc2626"}">${totalGain >= 0 ? "+" : ""}${currency(totalGain)} (${pct(totalGainPct)})</strong>
-        </p>
-        ` : ""}
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:24px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+          <thead>
+            <tr style="background:#1e1b4b;">
+              <th style="padding:8px 12px;text-align:left;color:#c7d2fe;font-weight:600;">News Type</th>
+              <th style="padding:8px 12px;text-align:left;color:#c7d2fe;font-weight:600;">Hot / Strong Print</th>
+              <th style="padding:8px 12px;text-align:left;color:#c7d2fe;font-weight:600;">Cool / Weak Print</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background:#f8fafc;border-bottom:1px solid #e5e7eb;">
+              <td style="padding:7px 12px;font-weight:600;">Fed Rate Decision</td>
+              <td style="padding:7px 12px;color:#dc2626;">Hike → NQ drops</td>
+              <td style="padding:7px 12px;color:#16a34a;">Cut → NQ rips</td>
+            </tr>
+            <tr style="background:#fff;border-bottom:1px solid #e5e7eb;">
+              <td style="padding:7px 12px;font-weight:600;">CPI / PCE Inflation</td>
+              <td style="padding:7px 12px;color:#dc2626;">High inflation → NQ sells</td>
+              <td style="padding:7px 12px;color:#16a34a;">Cool → NQ pumps</td>
+            </tr>
+            <tr style="background:#f8fafc;border-bottom:1px solid #e5e7eb;">
+              <td style="padding:7px 12px;font-weight:600;">NFP Jobs (1st Fri)</td>
+              <td style="padding:7px 12px;color:#f59e0b;">Strong → mixed (Fed hawkish)</td>
+              <td style="padding:7px 12px;color:#dc2626;">Weak → recession fear</td>
+            </tr>
+            <tr style="background:#fff;border-bottom:1px solid #e5e7eb;">
+              <td style="padding:7px 12px;font-weight:600;">GDP</td>
+              <td style="padding:7px 12px;color:#16a34a;">Beat → NQ up</td>
+              <td style="padding:7px 12px;color:#dc2626;">Miss → NQ drops</td>
+            </tr>
+            <tr style="background:#f8fafc;">
+              <td style="padding:7px 12px;font-weight:600;">Big Tech Earnings</td>
+              <td style="padding:7px 12px;color:#16a34a;">Beat → 100-300pt spike</td>
+              <td style="padding:7px 12px;color:#dc2626;">Miss → 100-300pt drop</td>
+            </tr>
+          </tbody>
+        </table>
 
         <div style="text-align:center;margin-top:8px;">
           <a href="${process.env.NEXT_PUBLIC_APP_URL ?? "https://jdpro.app"}/investments"
