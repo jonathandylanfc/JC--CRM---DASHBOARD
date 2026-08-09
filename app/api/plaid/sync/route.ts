@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
 
         // Detect internal transfers (credit card payments, account-to-account moves, P2P)
         const isTransferCategory = category === "transfer"
-        const isTransferTitle = /payment\s+(to|from)\s+(crd|chk|checking|savings|credit)|mobile banking payment|credit card payment|transfer\s+(to|from)|from\s+chk|to\s+crd|zelle|venmo|cash\s*app|paypal\s+transfer/i.test(title)
+        const isTransferTitle = /payment\s+(to|from)\s+(crd|chk|checking|savings|credit)|mobile banking payment|credit card payment|transfer\s+(to|from)|from\s+chk|to\s+crd/i.test(title)
         const txType = (isTransferCategory || isTransferTitle) ? "transfer" : (isIncome ? "income" : "expense")
 
         toInsert.push({
