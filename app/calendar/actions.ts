@@ -1,0 +1,41 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { createClient } from "@/lib/supabase/server"
+
+export async function updatePaySettings(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const hourlyRateRaw = formData.get("hourly_rate") as string
+  const payPeriod = (formData.get("pay_period") as string) || "biweekly"
+  const shiftKeyword = (formData.get("shift_keyword") as string)?.trim() || "Work"
+  const taxRateRaw = formData.get("tax_rate") as string
+  const periodStartDate = (formData.get("pay_period_start_date") as string) || null
+
+  const hourlyRate = hourlyRateRaw ? parseFloat(hourlyRateRaw) : null
+  const taxRate = taxRateRaw ? parseFloat(taxRateRaw) : 25
+
+  if (hourlyRate !== null && (isNaN(hourlyRate) || hourlyRate < 0)) {
+    return { error: "Invalid hourly rate" }
+  }
+  if (isNaN(taxRate) || taxRate < 0 || taxRate > 100) {
+    return { error: "Tax rate must be 0–100" }
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      hourly_rate: hourlyRate,
+      pay_period: payPeriod,
+      shift_keyword: shiftKeyword,
+      tax_rate: taxRate,
+      pay_period_start_date: periodStartDate || null,
+    })
+    .eq("id", user.id)
+
+  if (error) return { error: error.message }
+  revalidatePath("/calendar")
+  return { success: true }
+}

@@ -564,3 +564,45 @@ export async function getUpcomingCalendarEvents(): Promise<Array<{ id: string; t
     .limit(10)
   return data ?? []
 }
+
+export async function getPaySettings() {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return null
+  const { data } = await supabase
+    .from("profiles")
+    .select("hourly_rate, pay_period, shift_keyword, tax_rate, pay_period_start_date")
+    .eq("id", userId)
+    .single()
+  if (!data) return null
+  return {
+    hourly_rate: data.hourly_rate != null ? Number(data.hourly_rate) : null,
+    pay_period: (data.pay_period as string) ?? "biweekly",
+    shift_keyword: (data.shift_keyword as string) ?? "Work",
+    tax_rate: data.tax_rate != null ? Number(data.tax_rate) : 25,
+    pay_period_start_date: (data.pay_period_start_date as string) ?? null,
+  }
+}
+
+export async function getShiftsForPayPeriod(
+  periodStart: string,
+  periodEnd: string,
+  keyword: string
+): Promise<Array<{ id: string; title: string; start_at: string; end_at: string | null; all_day: boolean }>> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const { data } = await supabase
+    .from("local_calendar_events")
+    .select("id, title, start_at, end_at, all_day")
+    .eq("user_id", userId)
+    .gte("start_at", periodStart)
+    .lte("start_at", periodEnd)
+    .ilike("title", `%${keyword}%`)
+    .order("start_at", { ascending: true })
+  return (data ?? []).map((e) => ({
+    id: e.id as string,
+    title: e.title as string,
+    start_at: e.start_at as string,
+    end_at: e.end_at as string | null,
+    all_day: e.all_day as boolean,
+  }))
+}
