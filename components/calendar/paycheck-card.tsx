@@ -78,13 +78,72 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
   const fetchShifts = useCallback(async (offset: number) => {
     setFetching(true)
     try {
+      // 1. Pay settings + local DB shifts
       const res = await fetch(`/api/calendar/paycheck-shifts?offset=${offset}`)
       if (!res.ok) return
       const data = await res.json()
       setPaySettings(data.paySettings)
-      setShifts(data.shifts ?? [])
-      setPeriodStart(data.periodStart ?? "")
-      setPeriodEnd(data.periodEnd ?? "")
+
+      const pStart: string = data.periodStart ?? ""
+      const pEnd: string = data.periodEnd ?? ""
+      setPeriodStart(pStart)
+      setPeriodEnd(pEnd)
+
+      if (!pStart || !pEnd || !data.paySettings?.hourly_rate) {
+        setShifts(data.shifts ?? [])
+        return
+      }
+
+      const kw = (data.paySettings.shift_keyword ?? "work").toLowerCase()
+      const excKw = (data.paySettings.shift_exclude_keyword ?? "").toLowerCase().trim()
+      const periodStartMs = new Date(pStart).getTime()
+      const periodEndMs = new Date(pEnd).getTime()
+
+      function matchesKeyword(title: string): boolean {
+        const t = title.toLowerCase()
+        if (!t.includes(kw)) return false
+        if (excKw && t.includes(excKw)) return false
+        return true
+      }
+
+      function inPeriod(start: string | null | undefined): boolean {
+        if (!start) return false
+        const ms = new Date(start).getTime()
+        return ms >= periodStartMs && ms <= periodEndMs
+      }
+
+      // 2. Also fetch Google + iCloud events (they cover ~30 days back + 60 days forward)
+      const [gRes, caldavRes] = await Promise.all([
+        fetch("/api/calendar/events"),
+        fetch("/api/calendar/caldav"),
+      ])
+      const gData = gRes.ok ? await gRes.json() : {}
+      const caldavData = caldavRes.ok ? await caldavRes.json() : {}
+
+      type RawEvent = { id?: string | null; title: string; start: string | null; end?: string | null; allDay?: boolean }
+      const externalShifts: Shift[] = [
+        ...(gData.events ?? []) as RawEvent[],
+        ...(caldavData.events ?? []) as RawEvent[],
+      ]
+        .filter((e) => inPeriod(e.start) && matchesKeyword(e.title))
+        .map((e) => ({
+          id: e.id ?? `ext-${e.start}`,
+          title: e.title,
+          start_at: e.start!,
+          end_at: e.end ?? null,
+          all_day: e.allDay ?? false,
+        }))
+
+      // 3. Merge local + external, dedup by title+date
+      const seen = new Set<string>()
+      const merged = [...(data.shifts ?? []), ...externalShifts].filter((s: Shift) => {
+        const key = `${s.title.toLowerCase()}|${s.start_at.slice(0, 10)}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      setShifts(merged.sort((a: Shift, b: Shift) => a.start_at.localeCompare(b.start_at)))
     } finally {
       setFetching(false)
     }
