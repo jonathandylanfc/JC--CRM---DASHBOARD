@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getPaySettings, getShiftsForPayPeriod } from "@/lib/data"
 import { computeCurrentPayPeriod } from "@/lib/pay-period"
 import { format } from "date-fns"
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const offset = parseInt(req.nextUrl.searchParams.get("offset") ?? "0", 10)
   const paySettings = await getPaySettings()
 
   if (!paySettings?.hourly_rate) {
@@ -12,7 +13,8 @@ export async function GET() {
 
   const { start, end } = computeCurrentPayPeriod(
     paySettings.pay_period,
-    paySettings.pay_period_start_date
+    paySettings.pay_period_start_date,
+    isNaN(offset) ? 0 : offset
   )
   const periodStart = format(start, "yyyy-MM-dd") + "T00:00:00"
   const periodEnd = format(end, "yyyy-MM-dd") + "T23:59:59"
