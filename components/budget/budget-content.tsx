@@ -26,7 +26,7 @@ import {
 import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown } from "lucide-react"
 import { format, addMonths, subMonths, parseISO, differenceInDays } from "date-fns"
 import { toast } from "sonner"
-import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution } from "@/app/budget/actions"
+import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel } from "@/app/budget/actions"
 
 interface BudgetCategory {
   id: string
@@ -262,6 +262,16 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     }
   )
 
+  // Seed from spreadsheet
+  const [isSeedingBudget, startSeedBudget] = useTransition()
+  function handleSeedBudget() {
+    startSeedBudget(async () => {
+      const result = await seedBudgetFromExcel()
+      if (result.error) toast.error(result.error)
+      else { toast.success("Budget loaded from your spreadsheet!"); router.refresh() }
+    })
+  }
+
   // Onboarding selection
   const [onboardingSelected, setOnboardingSelected] = useState<Set<string>>(new Set())
   const [isOnboarding, startOnboarding] = useTransition()
@@ -485,6 +495,88 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">budget lines</p>
         </Card>
       </div>
+
+      {/* Surplus Advisor */}
+      {(() => {
+        if (monthlyIncome === 0) return null
+        const totalExpenses = Object.values(expensesByCategory).reduce((s, v) => s + v, 0)
+        const surplus = monthlyIncome - totalExpenses
+
+        // Savings goals with manual monthly targets that are not yet fully contributed this month
+        const pendingGoals = savingsGoals.filter((goal) => {
+          if (!goal.monthly_contribution_type || !goal.monthly_contribution_value) return false
+          if (goal.linked_account || goal.linked_category) return false // auto-tracked, skip
+          const target = goal.monthly_contribution_type === "percentage"
+            ? (monthlyIncome * goal.monthly_contribution_value) / 100
+            : goal.monthly_contribution_value
+          const logged = monthlyGoalContributions[goal.id] ?? 0
+          return logged < target * 0.99 // 1% tolerance for rounding
+        })
+
+        const totalPendingSavings = pendingGoals.reduce((sum, goal) => {
+          const target = goal.monthly_contribution_type === "percentage"
+            ? (monthlyIncome * (goal.monthly_contribution_value ?? 0)) / 100
+            : (goal.monthly_contribution_value ?? 0)
+          const logged = monthlyGoalContributions[goal.id] ?? 0
+          return sum + Math.max(0, target - logged)
+        }, 0)
+
+        const netAfterSavings = surplus - totalPendingSavings
+
+        if (surplus <= 0 && pendingGoals.length === 0) return null
+
+        const isPositive = surplus > 0
+
+        return (
+          <div className={`rounded-lg border-l-4 p-4 ${isPositive ? "border-l-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800" : "border-l-amber-500 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800"}`}>
+            <div className="flex items-start gap-3">
+              <PiggyBank className={`w-5 h-5 shrink-0 mt-0.5 ${isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`} />
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                  <p className={`font-semibold text-sm ${isPositive ? "text-emerald-800 dark:text-emerald-300" : "text-amber-800 dark:text-amber-300"}`}>
+                    {isPositive ? `${currency(surplus)} available this month` : `${currency(Math.abs(surplus))} over on expenses`}
+                  </p>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground tabular-nums">
+                    <span>Income: <span className="font-medium text-foreground">{currency(monthlyIncome)}</span></span>
+                    <span>Spent: <span className="font-medium text-foreground">{currency(totalExpenses)}</span></span>
+                  </div>
+                </div>
+
+                {pendingGoals.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">Savings contributions still needed this month:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {pendingGoals.map((goal) => {
+                        const target = goal.monthly_contribution_type === "percentage"
+                          ? (monthlyIncome * (goal.monthly_contribution_value ?? 0)) / 100
+                          : (goal.monthly_contribution_value ?? 0)
+                        const logged = monthlyGoalContributions[goal.id] ?? 0
+                        const needed = target - logged
+                        return (
+                          <span key={goal.id} className="text-xs px-2 py-0.5 rounded-full bg-background border border-border font-medium">
+                            {goal.name}: {currency(needed)}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {isPositive && (
+                  <p className={`text-xs ${isPositive ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}>
+                    {pendingGoals.length > 0
+                      ? netAfterSavings > 0
+                        ? `After logging ${currency(totalPendingSavings)} in contributions, sweep the remaining ${currency(netAfterSavings)} into your HYSA.`
+                        : `Log ${currency(totalPendingSavings)} in savings contributions — you're on track with no leftover.`
+                      : `All monthly goals met — sweep the full ${currency(surplus)} into your HYSA as extra savings.`
+                    }
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Overspend alert banner */}
       {(() => {
@@ -964,6 +1056,25 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               >
                 {isOnboarding ? "Adding…" : `Add ${onboardingSelected.size > 0 ? onboardingSelected.size : ""} categor${onboardingSelected.size === 1 ? "y" : "ies"}`}
               </Button>
+            </div>
+
+            <div className="mt-4 pt-4 border-t space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 border-t border-border" />
+                <span className="text-xs text-muted-foreground">or import from your monthly budget</span>
+                <div className="flex-1 border-t border-border" />
+              </div>
+              <Button
+                variant="outline"
+                className="w-full gap-2 bg-transparent"
+                onClick={handleSeedBudget}
+                disabled={isSeedingBudget}
+              >
+                {isSeedingBudget ? "Importing…" : "Load my $2,200/mo Budget + Savings Goals"}
+              </Button>
+              <p className="text-[11px] text-muted-foreground text-center">
+                Pre-fills your 10 spending categories and 4 savings goals (HYSA, Sinking Fund, Roth IRA, Acorns/Webull) from your spreadsheet.
+              </p>
             </div>
           </Card>
         ) : (

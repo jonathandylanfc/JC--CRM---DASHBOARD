@@ -272,6 +272,54 @@ export async function deleteSavingsGoal(id: string) {
   return { success: true }
 }
 
+export async function seedBudgetFromExcel() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const { count } = await supabase
+    .from("budget_categories")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id)
+
+  if ((count ?? 0) > 0) return { error: "Budget categories already exist — clear them first if you want to reimport." }
+
+  const categories = [
+    { name: "Car Payment",       type: "fixed" as const, value: 441,  sort_order: 0, is_catchall: false, is_goal_mode: false },
+    { name: "Extra Car Payment", type: "fixed" as const, value: 100,  sort_order: 1, is_catchall: false, is_goal_mode: true  },
+    { name: "Gas",               type: "fixed" as const, value: 200,  sort_order: 2, is_catchall: false, is_goal_mode: false },
+    { name: "Transportation",    type: "fixed" as const, value: 175,  sort_order: 3, is_catchall: false, is_goal_mode: false },
+    { name: "Car Insurance",     type: "fixed" as const, value: 8,    sort_order: 4, is_catchall: false, is_goal_mode: false },
+    { name: "Food",              type: "fixed" as const, value: 175,  sort_order: 5, is_catchall: false, is_goal_mode: false },
+    { name: "Subscriptions",     type: "fixed" as const, value: 75,   sort_order: 6, is_catchall: false, is_goal_mode: false },
+    { name: "Shopping",          type: "fixed" as const, value: 100,  sort_order: 7, is_catchall: false, is_goal_mode: false },
+    { name: "Entertainment",     type: "fixed" as const, value: 75,   sort_order: 8, is_catchall: false, is_goal_mode: false },
+    { name: "Misc Essentials",   type: "fixed" as const, value: 75,   sort_order: 9, is_catchall: true,  is_goal_mode: false },
+  ]
+
+  const { error: catError } = await supabase
+    .from("budget_categories")
+    .insert(categories.map((c) => ({ ...c, user_id: user.id })))
+
+  if (catError) return { error: catError.message }
+
+  const goals = [
+    { name: "HYSA Emergency Fund", target_amount: 13200, current_amount: 0, color: "#10b981", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 200 },
+    { name: "Sinking Fund",        target_amount: 1200,  current_amount: 0, color: "#f59e0b", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 100 },
+    { name: "Roth IRA 2026",       target_amount: 7500,  current_amount: 0, color: "#8b5cf6", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 300 },
+    { name: "Acorns / Webull",     target_amount: 1200,  current_amount: 0, color: "#3b82f6", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 100 },
+  ]
+
+  const { error: goalError } = await supabase
+    .from("savings_goals")
+    .insert(goals.map((g) => ({ ...g, user_id: user.id })))
+
+  if (goalError) return { error: goalError.message }
+
+  revalidatePath("/budget")
+  return { success: true }
+}
+
 export async function setPaydayDay(day: number) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
