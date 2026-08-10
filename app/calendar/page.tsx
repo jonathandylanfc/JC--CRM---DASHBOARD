@@ -2,29 +2,13 @@ import { SidebarServer as Sidebar } from "@/components/dashboard/sidebar-server"
 import { Header } from "@/components/dashboard/header"
 import { CalendarContent } from "@/components/calendar/calendar-content"
 import { PaycheckCard } from "@/components/calendar/paycheck-card"
-import { getUserProfile, getPaySettings, getShiftsForPayPeriod } from "@/lib/data"
-import { computeCurrentPayPeriod } from "@/lib/pay-period"
-import { format } from "date-fns"
+import { getUserProfile, getPaySettings } from "@/lib/data"
 
 export default async function CalendarPage() {
   const [user, paySettings] = await Promise.all([
     getUserProfile(),
     getPaySettings(),
   ])
-
-  let shifts: Awaited<ReturnType<typeof getShiftsForPayPeriod>> = []
-  let periodStart = ""
-  let periodEnd = ""
-
-  if (paySettings?.hourly_rate) {
-    const { start, end } = computeCurrentPayPeriod(
-      paySettings.pay_period,
-      paySettings.pay_period_start_date
-    )
-    periodStart = format(start, "yyyy-MM-dd") + "T00:00:00"
-    periodEnd = format(end, "yyyy-MM-dd") + "T23:59:59"
-    shifts = await getShiftsForPayPeriod(periodStart, periodEnd, paySettings.shift_keyword)
-  }
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -38,12 +22,7 @@ export default async function CalendarPage() {
           user={user ?? undefined}
         />
         <div className="mt-6">
-          <PaycheckCard
-            paySettings={paySettings}
-            shifts={shifts}
-            periodStart={periodStart}
-            periodEnd={periodEnd}
-          />
+          <PaycheckCard initialPaySettings={paySettings} />
           <CalendarContent />
         </div>
       </main>

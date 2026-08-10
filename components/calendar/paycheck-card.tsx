@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { DollarSign, Settings, Clock, ChevronDown, ChevronUp } from "lucide-react"
+import { DollarSign, Settings, Clock, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
 import { format, parseISO } from "date-fns"
 import { formatPayPeriodRange } from "@/lib/pay-period"
 import { updatePaySettings } from "@/app/calendar/actions"
@@ -42,10 +42,7 @@ interface PaySettings {
 }
 
 interface PaycheckCardProps {
-  paySettings: PaySettings | null
-  shifts: Shift[]
-  periodStart: string
-  periodEnd: string
+  initialPaySettings: PaySettings | null
 }
 
 function hoursFromShift(shift: Shift): number {
@@ -55,18 +52,52 @@ function hoursFromShift(shift: Shift): number {
   return Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60))
 }
 
-export function PaycheckCard({ paySettings, shifts, periodStart, periodEnd }: PaycheckCardProps) {
+export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
   const router = useRouter()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [isPending, startTransition] = useTransition()
 
-  // Settings form state
-  const [hourlyRate, setHourlyRate] = useState(paySettings?.hourly_rate?.toString() ?? "")
-  const [payPeriod, setPayPeriod] = useState(paySettings?.pay_period ?? "biweekly")
-  const [shiftKeyword, setShiftKeyword] = useState(paySettings?.shift_keyword ?? "Work")
-  const [taxRate, setTaxRate] = useState(paySettings?.tax_rate?.toString() ?? "25")
-  const [periodStartDate, setPeriodStartDate] = useState(paySettings?.pay_period_start_date ?? "")
+  // Live data fetched client-side
+  const [paySettings, setPaySettings] = useState<PaySettings | null>(initialPaySettings)
+  const [shifts, setShifts] = useState<Shift[]>([])
+  const [periodStart, setPeriodStart] = useState("")
+  const [periodEnd, setPeriodEnd] = useState("")
+  const [fetching, setFetching] = useState(true)
+
+  // Settings form state — seeded from initial props
+  const [hourlyRate, setHourlyRate] = useState(initialPaySettings?.hourly_rate?.toString() ?? "")
+  const [payPeriod, setPayPeriod] = useState(initialPaySettings?.pay_period ?? "biweekly")
+  const [shiftKeyword, setShiftKeyword] = useState(initialPaySettings?.shift_keyword ?? "Work")
+  const [taxRate, setTaxRate] = useState(initialPaySettings?.tax_rate?.toString() ?? "25")
+  const [periodStartDate, setPeriodStartDate] = useState(initialPaySettings?.pay_period_start_date ?? "")
+
+  const fetchShifts = useCallback(async () => {
+    setFetching(true)
+    try {
+      const res = await fetch("/api/calendar/paycheck-shifts")
+      if (!res.ok) return
+      const data = await res.json()
+      setPaySettings(data.paySettings)
+      setShifts(data.shifts ?? [])
+      setPeriodStart(data.periodStart ?? "")
+      setPeriodEnd(data.periodEnd ?? "")
+    } finally {
+      setFetching(false)
+    }
+  }, [])
+
+  // Fetch on mount
+  useEffect(() => {
+    fetchShifts()
+  }, [fetchShifts])
+
+  // Re-fetch whenever CalendarContent mutates local events
+  useEffect(() => {
+    const handler = () => fetchShifts()
+    window.addEventListener("localShiftsChanged", handler)
+    return () => window.removeEventListener("localShiftsChanged", handler)
+  }, [fetchShifts])
 
   const isConfigured = paySettings?.hourly_rate != null && paySettings.hourly_rate > 0
 
@@ -93,6 +124,7 @@ export function PaycheckCard({ paySettings, shifts, periodStart, periodEnd }: Pa
       } else {
         toast.success("Pay settings saved")
         setSettingsOpen(false)
+        await fetchShifts()
         router.refresh()
       }
     })
@@ -128,7 +160,12 @@ export function PaycheckCard({ paySettings, shifts, periodStart, periodEnd }: Pa
 
         {!collapsed && (
           <CardContent className="px-4 pb-4 pt-0">
-            {!isConfigured ? (
+            {fetching && !isConfigured ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-1">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading…
+              </div>
+            ) : !isConfigured ? (
               <div className="flex items-center justify-between">
                 <p className="text-sm text-muted-foreground">
                   Set your hourly rate to estimate pay from calendar shifts.
@@ -139,15 +176,18 @@ export function PaycheckCard({ paySettings, shifts, periodStart, periodEnd }: Pa
               </div>
             ) : (
               <>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Pay period: <span className="font-medium text-foreground">{periodLabel}</span>
-                  {" · "}
-                  Looking for &ldquo;{paySettings!.shift_keyword}&rdquo; events
-                </p>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs text-muted-foreground">
+                    Pay period: <span className="font-medium text-foreground">{periodLabel}</span>
+                    {" · "}
+                    &ldquo;{paySettings!.shift_keyword}&rdquo; shifts
+                  </p>
+                  {fetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                </div>
 
                 {shifts.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-1">
-                    No &ldquo;{paySettings!.shift_keyword}&rdquo; shifts found this pay period in your app calendar.
+                    No &ldquo;{paySettings!.shift_keyword}&rdquo; shifts this pay period.
                   </p>
                 ) : (
                   <div className="space-y-1 mb-3">
@@ -160,7 +200,7 @@ export function PaycheckCard({ paySettings, shifts, periodStart, periodEnd }: Pa
                             {" "}
                             <span className="text-foreground">{shift.title}</span>
                           </span>
-                          <span className="flex items-center gap-1 text-muted-foreground">
+                          <span className="flex items-center gap-1 text-muted-foreground tabular-nums">
                             <Clock className="h-3 w-3" />
                             {hrs > 0 ? `${hrs.toFixed(1)} hrs` : "—"}
                           </span>
@@ -173,11 +213,11 @@ export function PaycheckCard({ paySettings, shifts, periodStart, periodEnd }: Pa
                 <div className="border-t pt-3 space-y-1.5">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Total Hours</span>
-                    <span className="font-medium">{totalHours.toFixed(1)} hrs</span>
+                    <span className="font-medium tabular-nums">{totalHours.toFixed(1)} hrs</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Est. Gross</span>
-                    <span className="font-semibold text-green-600 dark:text-green-400">
+                    <span className="font-semibold text-green-600 dark:text-green-400 tabular-nums">
                       ${grossPay.toFixed(2)}
                     </span>
                   </div>
@@ -185,10 +225,10 @@ export function PaycheckCard({ paySettings, shifts, periodStart, periodEnd }: Pa
                     <span className="text-muted-foreground">
                       Est. Net <span className="text-xs">(~{paySettings!.tax_rate}% tax)</span>
                     </span>
-                    <span className="font-medium">${netPay.toFixed(2)}</span>
+                    <span className="font-medium tabular-nums">${netPay.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-xs text-muted-foreground pt-0.5">
-                    <span>Rate: ${paySettings!.hourly_rate!.toFixed(2)}/hr</span>
+                    <span>${paySettings!.hourly_rate!.toFixed(2)}/hr</span>
                     <span className="capitalize">{paySettings!.pay_period}</span>
                   </div>
                 </div>
