@@ -96,8 +96,6 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
 
       const kw = (data.paySettings.shift_keyword ?? "work").toLowerCase()
       const excKw = (data.paySettings.shift_exclude_keyword ?? "").toLowerCase().trim()
-      const periodStartMs = new Date(pStart).getTime()
-      const periodEndMs = new Date(pEnd).getTime()
 
       function matchesKeyword(title: string): boolean {
         const t = title.toLowerCase()
@@ -108,8 +106,10 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
 
       function inPeriod(start: string | null | undefined): boolean {
         if (!start) return false
-        const ms = new Date(start).getTime()
-        return ms >= periodStartMs && ms <= periodEndMs
+        // Compare by date string (YYYY-MM-DD) to avoid timezone mismatches
+        // between all-day events ("2026-07-25") and timed events ("2026-07-25T08:00:00-05:00")
+        const dateStr = start.slice(0, 10)
+        return dateStr >= pStart.slice(0, 10) && dateStr <= pEnd.slice(0, 10)
       }
 
       // 2. Also fetch Google + iCloud events (they cover ~30 days back + 60 days forward)
