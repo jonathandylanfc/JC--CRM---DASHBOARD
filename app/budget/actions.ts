@@ -25,11 +25,12 @@ export async function createBudgetCategory(formData: FormData) {
   const is_catchall = formData.get("is_catchall") === "true"
   const is_goal_mode = formData.get("is_goal_mode") === "true"
   const linked_account = (formData.get("linked_account") as string) || null
+  const transfer_keywords = (formData.get("transfer_keywords") as string)?.trim().toLowerCase() || null
 
   const { data, error } = await supabase
     .from("budget_categories")
-    .insert({ user_id: user.id, name, type, value, sort_order: count ?? 0, is_catchall, linked_account, is_goal_mode })
-    .select("id, name, type, value, sort_order, is_catchall, linked_account")
+    .insert({ user_id: user.id, name, type, value, sort_order: count ?? 0, is_catchall, linked_account, is_goal_mode, transfer_keywords })
+    .select("id, name, type, value, sort_order, is_catchall, linked_account, transfer_keywords")
     .single()
 
   if (error) return { error: error.message }
@@ -54,13 +55,14 @@ export async function updateBudgetCategory(id: string, formData: FormData) {
   const is_catchall = formData.get("is_catchall") === "true"
   const is_goal_mode = formData.get("is_goal_mode") === "true"
   const linked_account = (formData.get("linked_account") as string) || null
+  const transfer_keywords = (formData.get("transfer_keywords") as string)?.trim().toLowerCase() || null
 
   const { data, error } = await supabase
     .from("budget_categories")
-    .update({ name, type, value, is_catchall, linked_account, is_goal_mode })
+    .update({ name, type, value, is_catchall, linked_account, is_goal_mode, transfer_keywords })
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, name, type, value, sort_order, is_catchall, linked_account")
+    .select("id, name, type, value, sort_order, is_catchall, linked_account, transfer_keywords")
     .single()
 
   if (error) return { error: error.message }
@@ -200,9 +202,10 @@ export async function createSavingsGoal(formData: FormData) {
   const linked_category = (formData.get("linked_category") as string) || null
   const linked_account = (formData.get("linked_account") as string) || null
   const tracking_start_date = (formData.get("tracking_start_date") as string) || null
+  const transfer_keywords = (formData.get("transfer_keywords") as string)?.trim().toLowerCase() || null
   const { data, error } = await supabase
     .from("savings_goals")
-    .insert({ user_id: user.id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account, tracking_start_date })
+    .insert({ user_id: user.id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account, tracking_start_date, transfer_keywords })
     .select()
     .single()
   if (error) return { error: error.message }
@@ -226,9 +229,10 @@ export async function updateSavingsGoal(id: string, formData: FormData) {
   const linked_category = (formData.get("linked_category") as string) || null
   const linked_account = (formData.get("linked_account") as string) || null
   const tracking_start_date = (formData.get("tracking_start_date") as string) || null
+  const transfer_keywords = (formData.get("transfer_keywords") as string)?.trim().toLowerCase() || null
   const { error } = await supabase
     .from("savings_goals")
-    .update({ name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account, tracking_start_date })
+    .update({ name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account, tracking_start_date, transfer_keywords })
     .eq("id", id)
     .eq("user_id", user.id)
   if (error) return { error: error.message }
@@ -272,6 +276,41 @@ export async function deleteSavingsGoal(id: string) {
   return { success: true }
 }
 
+export async function assignTransferToGoal(goalId: string, transactionTitle: string, amount: number) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const { data: goal } = await supabase
+    .from("savings_goals")
+    .select("current_amount, target_amount, transfer_keywords")
+    .eq("id", goalId)
+    .eq("user_id", user.id)
+    .single()
+
+  if (!goal) return { error: "Goal not found" }
+
+  // Log the contribution
+  const newAmount = Math.min(Number(goal.current_amount) + amount, Number(goal.target_amount))
+  const keyword = transactionTitle.toLowerCase().trim()
+  const existing = (goal.transfer_keywords ?? "").split(",").map((k: string) => k.trim()).filter(Boolean)
+  const updatedKeywords = [...new Set([...existing, keyword])].join(",")
+
+  const [updateResult, logResult] = await Promise.all([
+    supabase.from("savings_goals")
+      .update({ current_amount: newAmount, transfer_keywords: updatedKeywords })
+      .eq("id", goalId)
+      .eq("user_id", user.id),
+    supabase.from("goal_contributions")
+      .insert({ user_id: user.id, goal_id: goalId, amount }),
+  ])
+
+  if (updateResult.error) return { error: updateResult.error.message }
+  if (logResult.error) return { error: logResult.error.message }
+  revalidatePath("/budget")
+  return { success: true }
+}
+
 export async function seedBudgetFromExcel() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -285,16 +324,16 @@ export async function seedBudgetFromExcel() {
   if ((count ?? 0) > 0) return { error: "Budget categories already exist — clear them first if you want to reimport." }
 
   const categories = [
-    { name: "Car Payment",       type: "fixed" as const, value: 441,  sort_order: 0, is_catchall: false, is_goal_mode: false },
-    { name: "Extra Car Payment", type: "fixed" as const, value: 100,  sort_order: 1, is_catchall: false, is_goal_mode: true  },
-    { name: "Gas",               type: "fixed" as const, value: 200,  sort_order: 2, is_catchall: false, is_goal_mode: false },
-    { name: "Transportation",    type: "fixed" as const, value: 175,  sort_order: 3, is_catchall: false, is_goal_mode: false },
-    { name: "Car Insurance",     type: "fixed" as const, value: 8,    sort_order: 4, is_catchall: false, is_goal_mode: false },
-    { name: "Food",              type: "fixed" as const, value: 175,  sort_order: 5, is_catchall: false, is_goal_mode: false },
-    { name: "Subscriptions",     type: "fixed" as const, value: 75,   sort_order: 6, is_catchall: false, is_goal_mode: false },
-    { name: "Shopping",          type: "fixed" as const, value: 100,  sort_order: 7, is_catchall: false, is_goal_mode: false },
-    { name: "Entertainment",     type: "fixed" as const, value: 75,   sort_order: 8, is_catchall: false, is_goal_mode: false },
-    { name: "Misc Essentials",   type: "fixed" as const, value: 75,   sort_order: 9, is_catchall: true,  is_goal_mode: false },
+    { name: "Car Payment",       type: "fixed" as const, value: 441,  sort_order: 0, is_catchall: false, is_goal_mode: false, transfer_keywords: "honda" },
+    { name: "Extra Car Payment", type: "fixed" as const, value: 100,  sort_order: 1, is_catchall: false, is_goal_mode: true,  transfer_keywords: null },
+    { name: "Gas",               type: "fixed" as const, value: 200,  sort_order: 2, is_catchall: false, is_goal_mode: false, transfer_keywords: null },
+    { name: "Transportation",    type: "fixed" as const, value: 175,  sort_order: 3, is_catchall: false, is_goal_mode: false, transfer_keywords: null },
+    { name: "Car Insurance",     type: "fixed" as const, value: 8,    sort_order: 4, is_catchall: false, is_goal_mode: false, transfer_keywords: null },
+    { name: "Food",              type: "fixed" as const, value: 175,  sort_order: 5, is_catchall: false, is_goal_mode: false, transfer_keywords: null },
+    { name: "Subscriptions",     type: "fixed" as const, value: 75,   sort_order: 6, is_catchall: false, is_goal_mode: false, transfer_keywords: null },
+    { name: "Shopping",          type: "fixed" as const, value: 100,  sort_order: 7, is_catchall: false, is_goal_mode: false, transfer_keywords: null },
+    { name: "Entertainment",     type: "fixed" as const, value: 75,   sort_order: 8, is_catchall: false, is_goal_mode: false, transfer_keywords: null },
+    { name: "Misc Essentials",   type: "fixed" as const, value: 75,   sort_order: 9, is_catchall: true,  is_goal_mode: false, transfer_keywords: null },
   ]
 
   const { error: catError } = await supabase
@@ -304,10 +343,10 @@ export async function seedBudgetFromExcel() {
   if (catError) return { error: catError.message }
 
   const goals = [
-    { name: "HYSA Emergency Fund", target_amount: 13200, current_amount: 0, color: "#10b981", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 200 },
-    { name: "Sinking Fund",        target_amount: 1200,  current_amount: 0, color: "#f59e0b", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 100 },
-    { name: "Roth IRA 2026",       target_amount: 7500,  current_amount: 0, color: "#8b5cf6", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 300 },
-    { name: "Acorns / Webull",     target_amount: 1200,  current_amount: 0, color: "#3b82f6", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 100 },
+    { name: "HYSA Emergency Fund", target_amount: 13200, current_amount: 0, color: "#10b981", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 200, transfer_keywords: null },
+    { name: "Sinking Fund",        target_amount: 1200,  current_amount: 0, color: "#f59e0b", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 100, transfer_keywords: null },
+    { name: "Roth IRA 2026",       target_amount: 7500,  current_amount: 0, color: "#8b5cf6", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 300, transfer_keywords: null },
+    { name: "Acorns / Webull",     target_amount: 1200,  current_amount: 0, color: "#3b82f6", monthly_contribution_type: "fixed" as const, monthly_contribution_value: 100, transfer_keywords: "acorns,webull" },
   ]
 
   const { error: goalError } = await supabase

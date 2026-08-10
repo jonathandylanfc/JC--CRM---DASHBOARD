@@ -252,7 +252,7 @@ export async function getBudgetCategories() {
   if (!userId) return []
   const { data } = await supabase
     .from("budget_categories")
-    .select("id, name, type, value, sort_order, rollover, is_catchall, linked_account, is_goal_mode")
+    .select("id, name, type, value, sort_order, rollover, is_catchall, linked_account, is_goal_mode, transfer_keywords")
     .eq("user_id", userId)
     .order("sort_order", { ascending: true })
   return data ?? []
@@ -304,7 +304,7 @@ export async function getSavingsGoals() {
   if (!userId) return []
   const { data } = await supabase
     .from("savings_goals")
-    .select("id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account, tracking_start_date")
+    .select("id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account, tracking_start_date, transfer_keywords")
     .eq("user_id", userId)
     .order("created_at", { ascending: true })
   return data ?? []
@@ -368,6 +368,23 @@ export async function getMonthlyExpenseTransactions(month?: string) {
     .lte("date", monthEnd)
     .order("date", { ascending: false })
   return data ?? []
+}
+
+export async function getMonthlyTransferTransactions(month?: string): Promise<Array<{ id: string; title: string; amount: number; date: string }>> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const base = month ? new Date(month + "-02") : new Date()
+  const monthStart = format(startOfMonth(base), "yyyy-MM-dd")
+  const monthEnd = format(endOfMonth(base), "yyyy-MM-dd")
+  const { data } = await supabase
+    .from("transactions")
+    .select("id, title, amount, date")
+    .eq("user_id", userId)
+    .eq("type", "transfer")
+    .gte("date", monthStart)
+    .lte("date", monthEnd)
+    .order("date", { ascending: false })
+  return (data ?? []).map((tx) => ({ ...tx, amount: Number(tx.amount) }))
 }
 
 export async function getMonthlyExpensesByCategory(month?: string): Promise<Record<string, number>> {

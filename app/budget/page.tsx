@@ -6,6 +6,7 @@ import {
   getMonthlyFinanceSummary,
   getMonthlyExpensesByCategory,
   getMonthlyExpenseTransactions,
+  getMonthlyTransferTransactions,
   getUserProfile,
   getSavingsGoals,
   getMonthlyAccountGrowth,
@@ -28,7 +29,7 @@ export default async function BudgetPage({
   const currentMonthDate = new Date(currentMonth + "-02")
   const lastMonth = format(subMonths(currentMonthDate, 1), "yyyy-MM")
 
-  const [categories, financeSummary, expensesByCategory, monthlyTransactions, lastMonthExpenses, savingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, user] = await Promise.all([
+  const [categories, financeSummary, expensesByCategory, monthlyTransactions, lastMonthExpenses, savingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, monthlyTransferTransactions, user] = await Promise.all([
     getBudgetCategories(),
     getMonthlyFinanceSummary(currentMonth),
     getMonthlyExpensesByCategory(currentMonth),
@@ -40,6 +41,7 @@ export default async function BudgetPage({
     getMonthlyGoalContributions(currentMonth),
     getAllTimeCategoryTotals(),
     getAllTimeAccountGrowth(),
+    getMonthlyTransferTransactions(currentMonth),
     getUserProfile(),
   ])
 
@@ -67,6 +69,7 @@ export default async function BudgetPage({
             monthlyGoalContributions={monthlyGoalContributions}
             allTimeCategoryTotals={allTimeCategoryTotals}
             allTimeAccountGrowth={allTimeAccountGrowth}
+            monthlyTransferTransactions={monthlyTransferTransactions}
             currentMonth={currentMonth}
           />
         </div>

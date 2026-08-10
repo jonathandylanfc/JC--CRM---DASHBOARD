@@ -26,7 +26,7 @@ import {
 import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown } from "lucide-react"
 import { format, addMonths, subMonths, parseISO, differenceInDays } from "date-fns"
 import { toast } from "sonner"
-import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel } from "@/app/budget/actions"
+import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal } from "@/app/budget/actions"
 
 interface BudgetCategory {
   id: string
@@ -38,6 +38,7 @@ interface BudgetCategory {
   is_catchall: boolean
   linked_account: string | null
   is_goal_mode: boolean
+  transfer_keywords: string | null
 }
 
 interface SavingsGoal {
@@ -52,6 +53,14 @@ interface SavingsGoal {
   linked_category: string | null
   linked_account: string | null
   tracking_start_date: string | null
+  transfer_keywords: string | null
+}
+
+interface TransferTx {
+  id: string
+  title: string
+  amount: number
+  date: string
 }
 
 interface MonthlyTransaction {
@@ -74,6 +83,7 @@ interface BudgetContentProps {
   monthlyGoalContributions: Record<string, number>
   allTimeCategoryTotals: Array<{ category: string; amount: number; date: string }>
   allTimeAccountGrowth: Record<string, number>
+  monthlyTransferTransactions: TransferTx[]
   currentMonth: string // "yyyy-MM"
 }
 
@@ -130,7 +140,7 @@ const ONBOARDING_GROUPS = [
   },
 ]
 
-export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, currentMonth }: BudgetContentProps) {
+export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, monthlyTransferTransactions, currentMonth }: BudgetContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -150,6 +160,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const [goalLinkedCategories, setGoalLinkedCategories] = useState<Set<string>>(new Set())
   const [goalLinkedAccount, setGoalLinkedAccount] = useState("")
   const [goalTrackingStart, setGoalTrackingStart] = useState("")
+  const [goalTransferKeywords, setGoalTransferKeywords] = useState("")
   const [isSavingGoal, startSavingGoal] = useTransition()
   const [deleteGoalId, setDeleteGoalId] = useState<string | null>(null)
 
@@ -160,6 +171,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setGoalLinkedCategories(new Set())
     setGoalLinkedAccount("")
     setGoalTrackingStart(new Date().toISOString().slice(0, 10))
+    setGoalTransferKeywords("")
     setGoalDialogOpen(true)
   }
   function openEditGoal(g: SavingsGoal) {
@@ -173,6 +185,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     setGoalLinkedCategories(new Set((g.linked_category?.split(",").filter(Boolean) ?? []).filter((n) => existingCatNames.has(n))))
     setGoalLinkedAccount(g.linked_account ?? "")
     setGoalTrackingStart(g.tracking_start_date ?? new Date().toISOString().slice(0, 10))
+    setGoalTransferKeywords(g.transfer_keywords ?? "")
     setGoalDialogOpen(true)
   }
   function handleGoalSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -189,6 +202,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     fd.set("linked_category", [...goalLinkedCategories].join(","))
     fd.set("linked_account", goalLinkedAccount)
     fd.set("tracking_start_date", goalTrackingStart || "")
+    fd.set("transfer_keywords", goalTransferKeywords.trim().toLowerCase())
     startSavingGoal(async () => {
       if (editingGoal) {
         await updateSavingsGoal(editingGoal.id, fd)
@@ -261,6 +275,59 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       return state
     }
   )
+
+  // Transfer assignment state
+  const [assignTransferOpen, setAssignTransferOpen] = useState<TransferTx | null>(null)
+  const [isAssigningTransfer, startAssigningTransfer] = useTransition()
+
+  function handleAssignTransfer(tx: TransferTx, goalId: string) {
+    startAssigningTransfer(async () => {
+      const result = await assignTransferToGoal(goalId, tx.title, tx.amount)
+      if (result.error) toast.error(result.error)
+      else {
+        toast.success(`${currency(tx.amount)} logged + future "${tx.title}" transfers auto-matched`)
+        setAssignTransferOpen(null)
+        router.refresh()
+      }
+    })
+  }
+
+  // Keyword matching: which transfers match which goals / categories
+  const { transferMatchedGoals, transferMatchedCategories, unmatchedTransfers } = useMemo(() => {
+    function kwMatch(keywords: string | null, title: string): boolean {
+      if (!keywords) return false
+      const t = title.toLowerCase()
+      return keywords.split(",").map((k) => k.trim()).filter(Boolean).some((kw) => t.includes(kw))
+    }
+
+    const matchedTxIds = new Set<string>()
+    const transferMatchedGoals: Record<string, number> = {}
+    const transferMatchedCategories: Record<string, number> = {}
+
+    for (const tx of monthlyTransferTransactions) {
+      // Check goals first
+      for (const goal of savingsGoals) {
+        if (kwMatch(goal.transfer_keywords, tx.title)) {
+          transferMatchedGoals[goal.id] = (transferMatchedGoals[goal.id] ?? 0) + tx.amount
+          matchedTxIds.add(tx.id)
+          break
+        }
+      }
+      if (matchedTxIds.has(tx.id)) continue
+      // Check budget categories
+      for (const cat of categories) {
+        if (kwMatch(cat.transfer_keywords, tx.title)) {
+          const key = cat.name.toLowerCase()
+          transferMatchedCategories[key] = (transferMatchedCategories[key] ?? 0) + tx.amount
+          matchedTxIds.add(tx.id)
+          break
+        }
+      }
+    }
+
+    const unmatchedTransfers = monthlyTransferTransactions.filter((tx) => !matchedTxIds.has(tx.id))
+    return { transferMatchedGoals, transferMatchedCategories, unmatchedTransfers }
+  }, [monthlyTransferTransactions, savingsGoals, categories])
 
   // Seed from spreadsheet
   const [isSeedingBudget, startSeedBudget] = useTransition()
@@ -502,14 +569,14 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
         const totalExpenses = Object.values(expensesByCategory).reduce((s, v) => s + v, 0)
         const surplus = monthlyIncome - totalExpenses
 
-        // Savings goals with manual monthly targets that are not yet fully contributed this month
+        // Savings goals with monthly targets that are not yet fully contributed this month
         const pendingGoals = savingsGoals.filter((goal) => {
           if (!goal.monthly_contribution_type || !goal.monthly_contribution_value) return false
           if (goal.linked_account || goal.linked_category) return false // auto-tracked, skip
           const target = goal.monthly_contribution_type === "percentage"
             ? (monthlyIncome * goal.monthly_contribution_value) / 100
             : goal.monthly_contribution_value
-          const logged = monthlyGoalContributions[goal.id] ?? 0
+          const logged = (monthlyGoalContributions[goal.id] ?? 0) + (transferMatchedGoals[goal.id] ?? 0)
           return logged < target * 0.99 // 1% tolerance for rounding
         })
 
@@ -517,7 +584,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           const target = goal.monthly_contribution_type === "percentage"
             ? (monthlyIncome * (goal.monthly_contribution_value ?? 0)) / 100
             : (goal.monthly_contribution_value ?? 0)
-          const logged = monthlyGoalContributions[goal.id] ?? 0
+          const logged = (monthlyGoalContributions[goal.id] ?? 0) + (transferMatchedGoals[goal.id] ?? 0)
           return sum + Math.max(0, target - logged)
         }, 0)
 
@@ -550,7 +617,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                         const target = goal.monthly_contribution_type === "percentage"
                           ? (monthlyIncome * (goal.monthly_contribution_value ?? 0)) / 100
                           : (goal.monthly_contribution_value ?? 0)
-                        const logged = monthlyGoalContributions[goal.id] ?? 0
+                        const logged = (monthlyGoalContributions[goal.id] ?? 0) + (transferMatchedGoals[goal.id] ?? 0)
                         const needed = target - logged
                         return (
                           <span key={goal.id} className="text-xs px-2 py-0.5 rounded-full bg-background border border-border font-medium">
@@ -668,11 +735,12 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
 
               // This month's actual contribution
               // linked_account → monthly net inflow; linked_categories → sum of monthly spending; else logged
-              const monthlyActual = goal.linked_account
+              const monthlyActual = (goal.linked_account
                 ? Math.max(0, accountGrowth[goal.linked_account] ?? 0)
                 : linkedCats.length > 0
                 ? linkedCats.reduce((sum, cat) => sum + (expensesByCategory[cat.toLowerCase()] ?? 0), 0)
-                : (monthlyGoalContributions[goal.id] ?? 0)
+                : (monthlyGoalContributions[goal.id] ?? 0))
+                + (transferMatchedGoals[goal.id] ?? 0)
 
               const monthlyPct = monthlyTarget && monthlyTarget > 0 ? Math.min((monthlyActual / monthlyTarget) * 100, 100) : null
 
@@ -928,6 +996,18 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
             )}
 
             <div className="space-y-1.5">
+              <Label htmlFor="goal-transfer-kw">Auto-detect from transfers <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                id="goal-transfer-kw"
+                name="transfer_keywords"
+                placeholder="e.g. acorns, fidelity, ally savings"
+                value={goalTransferKeywords}
+                onChange={(e) => setGoalTransferKeywords(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">Comma-separated keywords from your transfer transaction titles. Matching transfers count as contributions automatically.</p>
+            </div>
+
+            <div className="space-y-1.5">
               <Label>Color</Label>
               <div className="flex gap-2 flex-wrap">
                 {GOAL_COLORS.map((c) => (
@@ -1088,9 +1168,10 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 : 0
               const budgeted = baseBudget + rolloverAmount
 
-              const actual = cat.is_catchall
+              const actual = (cat.is_catchall
                 ? catchallSpending
-                : (expensesByCategory[cat.name.toLowerCase()] ?? 0)
+                : (expensesByCategory[cat.name.toLowerCase()] ?? 0))
+                + (transferMatchedCategories[cat.name.toLowerCase()] ?? 0)
               const pct = budgeted > 0 ? Math.min((actual / budgeted) * 100, 100) : 0
               // Goal mode: red = haven't hit target, green = at or over target
               const over = cat.is_goal_mode ? false : (actual > budgeted && budgeted > 0)
@@ -1255,6 +1336,91 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           </div>
         )}
       </div>
+
+      {/* Transfer Review */}
+      {monthlyTransferTransactions.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <MoveRight className="w-5 h-5 text-primary" />
+            Transfer Transactions
+            {unmatchedTransfers.length > 0 && (
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
+                {unmatchedTransfers.length} unassigned
+              </span>
+            )}
+          </h2>
+          <div className="space-y-2">
+            {monthlyTransferTransactions.map((tx) => {
+              const matchedGoal = savingsGoals.find((g) => {
+                if (!g.transfer_keywords) return false
+                const t = tx.title.toLowerCase()
+                return g.transfer_keywords.split(",").map((k) => k.trim()).filter(Boolean).some((kw) => t.includes(kw))
+              })
+              const matchedCat = categories.find((c) => {
+                if (!c.transfer_keywords) return false
+                const t = tx.title.toLowerCase()
+                return c.transfer_keywords.split(",").map((k) => k.trim()).filter(Boolean).some((kw) => t.includes(kw))
+              })
+              const isMatched = !!(matchedGoal || matchedCat)
+
+              return (
+                <div key={tx.id} className={`flex items-center justify-between gap-3 p-3 rounded-lg border text-sm ${isMatched ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/10" : "border-border"}`}>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-foreground truncate">{tx.title}</p>
+                    <p className="text-xs text-muted-foreground">{format(new Date(tx.date + "T12:00:00"), "MMM d")}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-semibold tabular-nums text-foreground">{currency(tx.amount)}</span>
+                    {isMatched ? (
+                      <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium whitespace-nowrap">
+                        ✓ {matchedGoal?.name ?? matchedCat?.name}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setAssignTransferOpen(tx)}
+                        className="text-xs text-primary underline underline-offset-2 hover:opacity-70 whitespace-nowrap"
+                      >
+                        Assign →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Assign transfer dialog */}
+      {assignTransferOpen && (
+        <Dialog open={!!assignTransferOpen} onOpenChange={(o) => { if (!o) setAssignTransferOpen(null) }}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Assign transfer to a goal</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-muted-foreground -mt-1">
+              <span className="font-medium text-foreground">{assignTransferOpen.title}</span> · {currency(assignTransferOpen.amount)} · {format(new Date(assignTransferOpen.date + "T12:00:00"), "MMM d")}
+            </p>
+            <p className="text-xs text-muted-foreground">This will log the contribution and auto-match future transfers with the same title.</p>
+            <div className="space-y-1.5 mt-1 max-h-64 overflow-y-auto">
+              {savingsGoals.map((goal) => (
+                <button
+                  key={goal.id}
+                  disabled={isAssigningTransfer}
+                  onClick={() => handleAssignTransfer(assignTransferOpen, goal.id)}
+                  className="w-full flex items-center justify-between gap-3 p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-all text-left"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: goal.color }} />
+                    <span className="text-sm font-medium">{goal.name}</span>
+                  </div>
+                  <MoveRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                </button>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Assign transaction dialog */}
       {(() => {
@@ -1486,6 +1652,17 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               >
                 <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${formCatchall ? "translate-x-4" : "translate-x-0"}`} />
               </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="cat-transfer-kw">Auto-detect from transfers <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                id="cat-transfer-kw"
+                name="transfer_keywords"
+                defaultValue={editingCategory?.transfer_keywords ?? ""}
+                placeholder="e.g. honda, car payment"
+              />
+              <p className="text-xs text-muted-foreground">Transfers matching these keywords count toward this category's budget (e.g. "honda" catches your car payment).</p>
             </div>
 
             {formError && <p className="text-sm text-destructive">{formError}</p>}
