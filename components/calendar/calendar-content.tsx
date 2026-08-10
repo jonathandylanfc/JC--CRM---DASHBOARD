@@ -243,6 +243,7 @@ export function CalendarContent() {
       setSchedulePreview(null)
       setParsedShifts([])
       fetchAll(true)
+      window.dispatchEvent(new CustomEvent("localShiftsChanged"))
     } finally {
       setAddingShifts(false)
     }
@@ -542,6 +543,7 @@ export function CalendarContent() {
       setEvLocation(""); setEvNotes(""); setEvAllDay(false); setEvColor("#10b981")
       setEvCalendarId("local")
       fetchAll(true)
+      window.dispatchEvent(new CustomEvent("localShiftsChanged"))
     } finally {
       setSavingEvent(false)
     }
@@ -555,6 +557,7 @@ export function CalendarContent() {
     })
     toast.success(`"${title}" deleted`)
     fetchAll(true)
+    window.dispatchEvent(new CustomEvent("localShiftsChanged"))
   }
 
   async function handleRemoveIcs(id: string, name: string) {
