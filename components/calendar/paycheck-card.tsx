@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { DollarSign, Settings, Clock, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
+import { DollarSign, Settings, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { format, parseISO } from "date-fns"
 import { formatPayPeriodRange } from "@/lib/pay-period"
 import { updatePaySettings } from "@/app/calendar/actions"
@@ -65,6 +65,7 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
   const [periodStart, setPeriodStart] = useState("")
   const [periodEnd, setPeriodEnd] = useState("")
   const [fetching, setFetching] = useState(true)
+  const [periodOffset, setPeriodOffset] = useState(0)
 
   // Settings form state — seeded from initial props
   const [hourlyRate, setHourlyRate] = useState(initialPaySettings?.hourly_rate?.toString() ?? "")
@@ -74,10 +75,10 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
   const [taxRate, setTaxRate] = useState(initialPaySettings?.tax_rate?.toString() ?? "25")
   const [periodStartDate, setPeriodStartDate] = useState(initialPaySettings?.pay_period_start_date ?? "")
 
-  const fetchShifts = useCallback(async () => {
+  const fetchShifts = useCallback(async (offset: number) => {
     setFetching(true)
     try {
-      const res = await fetch("/api/calendar/paycheck-shifts")
+      const res = await fetch(`/api/calendar/paycheck-shifts?offset=${offset}`)
       if (!res.ok) return
       const data = await res.json()
       setPaySettings(data.paySettings)
@@ -89,17 +90,17 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
     }
   }, [])
 
-  // Fetch on mount
+  // Fetch on mount and whenever offset changes
   useEffect(() => {
-    fetchShifts()
-  }, [fetchShifts])
+    fetchShifts(periodOffset)
+  }, [fetchShifts, periodOffset])
 
   // Re-fetch whenever CalendarContent mutates local events
   useEffect(() => {
-    const handler = () => fetchShifts()
+    const handler = () => fetchShifts(periodOffset)
     window.addEventListener("localShiftsChanged", handler)
     return () => window.removeEventListener("localShiftsChanged", handler)
-  }, [fetchShifts])
+  }, [fetchShifts, periodOffset])
 
   const isConfigured = paySettings?.hourly_rate != null && paySettings.hourly_rate > 0
 
@@ -127,7 +128,7 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
       } else {
         toast.success("Pay settings saved")
         setSettingsOpen(false)
-        await fetchShifts()
+        await fetchShifts(periodOffset)
         router.refresh()
       }
     })
@@ -180,14 +181,29 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
             ) : (
               <>
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs text-muted-foreground">
-                    Pay period: <span className="font-medium text-foreground">{periodLabel}</span>
-                    {" · "}
-                    &ldquo;{paySettings!.shift_keyword}&rdquo; shifts
-                    {paySettings!.shift_exclude_keyword && (
-                      <span className="text-destructive/70"> (excl. &ldquo;{paySettings!.shift_exclude_keyword}&rdquo;)</span>
-                    )}
-                  </p>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setPeriodOffset((o) => o - 1)}
+                      className="p-0.5 rounded hover:bg-muted transition-colors"
+                      title="Previous period"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{periodLabel}</span>
+                      {periodOffset < 0 && <span className="text-muted-foreground"> · past</span>}
+                      {paySettings!.shift_exclude_keyword && (
+                        <span className="text-destructive/70"> · excl. &ldquo;{paySettings!.shift_exclude_keyword}&rdquo;</span>
+                      )}
+                    </p>
+                    <button
+                      onClick={() => setPeriodOffset((o) => Math.min(0, o + 1))}
+                      className={`p-0.5 rounded hover:bg-muted transition-colors ${periodOffset >= 0 ? "opacity-30 pointer-events-none" : ""}`}
+                      title="Next period"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                  </div>
                   {fetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                 </div>
 
