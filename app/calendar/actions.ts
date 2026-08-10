@@ -11,6 +11,7 @@ export async function updatePaySettings(formData: FormData) {
   const hourlyRateRaw = formData.get("hourly_rate") as string
   const payPeriod = (formData.get("pay_period") as string) || "biweekly"
   const shiftKeyword = (formData.get("shift_keyword") as string)?.trim() || "Work"
+  const shiftExcludeKeyword = (formData.get("shift_exclude_keyword") as string)?.trim() || null
   const taxRateRaw = formData.get("tax_rate") as string
   const periodStartDate = (formData.get("pay_period_start_date") as string) || null
 
@@ -30,6 +31,7 @@ export async function updatePaySettings(formData: FormData) {
       hourly_rate: hourlyRate,
       pay_period: payPeriod,
       shift_keyword: shiftKeyword,
+      shift_exclude_keyword: shiftExcludeKeyword,
       tax_rate: taxRate,
       pay_period_start_date: periodStartDate || null,
     })

@@ -37,6 +37,7 @@ interface PaySettings {
   hourly_rate: number | null
   pay_period: string
   shift_keyword: string
+  shift_exclude_keyword: string | null
   tax_rate: number
   pay_period_start_date: string | null
 }
@@ -69,6 +70,7 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
   const [hourlyRate, setHourlyRate] = useState(initialPaySettings?.hourly_rate?.toString() ?? "")
   const [payPeriod, setPayPeriod] = useState(initialPaySettings?.pay_period ?? "biweekly")
   const [shiftKeyword, setShiftKeyword] = useState(initialPaySettings?.shift_keyword ?? "Work")
+  const [shiftExcludeKeyword, setShiftExcludeKeyword] = useState(initialPaySettings?.shift_exclude_keyword ?? "")
   const [taxRate, setTaxRate] = useState(initialPaySettings?.tax_rate?.toString() ?? "25")
   const [periodStartDate, setPeriodStartDate] = useState(initialPaySettings?.pay_period_start_date ?? "")
 
@@ -114,6 +116,7 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
     fd.set("hourly_rate", hourlyRate)
     fd.set("pay_period", payPeriod)
     fd.set("shift_keyword", shiftKeyword)
+    fd.set("shift_exclude_keyword", shiftExcludeKeyword)
     fd.set("tax_rate", taxRate)
     fd.set("pay_period_start_date", periodStartDate)
 
@@ -181,6 +184,9 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
                     Pay period: <span className="font-medium text-foreground">{periodLabel}</span>
                     {" · "}
                     &ldquo;{paySettings!.shift_keyword}&rdquo; shifts
+                    {paySettings!.shift_exclude_keyword && (
+                      <span className="text-destructive/70"> (excl. &ldquo;{paySettings!.shift_exclude_keyword}&rdquo;)</span>
+                    )}
                   </p>
                   {fetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                 </div>
@@ -287,15 +293,28 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="shift_keyword">Shift Event Keyword</Label>
+              <Label htmlFor="shift_keyword">Count shifts whose title contains</Label>
               <Input
                 id="shift_keyword"
                 placeholder="Work"
                 value={shiftKeyword}
                 onChange={(e) => setShiftKeyword(e.target.value)}
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="shift_exclude_keyword">
+                Exclude if title also contains
+                <span className="text-muted-foreground font-normal"> (optional)</span>
+              </Label>
+              <Input
+                id="shift_exclude_keyword"
+                placeholder="e.g. a coworker's name"
+                value={shiftExcludeKeyword}
+                onChange={(e) => setShiftExcludeKeyword(e.target.value)}
+              />
               <p className="text-xs text-muted-foreground">
-                Calendar events whose title contains this word count as shifts.
+                Use this to skip another person&apos;s schedule that shares the same keyword.
               </p>
             </div>
 

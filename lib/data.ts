@@ -570,7 +570,7 @@ export async function getPaySettings() {
   if (!userId) return null
   const { data } = await supabase
     .from("profiles")
-    .select("hourly_rate, pay_period, shift_keyword, tax_rate, pay_period_start_date")
+    .select("hourly_rate, pay_period, shift_keyword, shift_exclude_keyword, tax_rate, pay_period_start_date")
     .eq("id", userId)
     .single()
   if (!data) return null
@@ -578,6 +578,7 @@ export async function getPaySettings() {
     hourly_rate: data.hourly_rate != null ? Number(data.hourly_rate) : null,
     pay_period: (data.pay_period as string) ?? "biweekly",
     shift_keyword: (data.shift_keyword as string) ?? "Work",
+    shift_exclude_keyword: (data.shift_exclude_keyword as string) ?? null,
     tax_rate: data.tax_rate != null ? Number(data.tax_rate) : 25,
     pay_period_start_date: (data.pay_period_start_date as string) ?? null,
   }
@@ -586,11 +587,12 @@ export async function getPaySettings() {
 export async function getShiftsForPayPeriod(
   periodStart: string,
   periodEnd: string,
-  keyword: string
+  keyword: string,
+  excludeKeyword?: string | null
 ): Promise<Array<{ id: string; title: string; start_at: string; end_at: string | null; all_day: boolean }>> {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return []
-  const { data } = await supabase
+  let query = supabase
     .from("local_calendar_events")
     .select("id, title, start_at, end_at, all_day")
     .eq("user_id", userId)
@@ -598,6 +600,10 @@ export async function getShiftsForPayPeriod(
     .lte("start_at", periodEnd)
     .ilike("title", `%${keyword}%`)
     .order("start_at", { ascending: true })
+  if (excludeKeyword?.trim()) {
+    query = query.not("title", "ilike", `%${excludeKeyword.trim()}%`)
+  }
+  const { data } = await query
   return (data ?? []).map((e) => ({
     id: e.id as string,
     title: e.title as string,
