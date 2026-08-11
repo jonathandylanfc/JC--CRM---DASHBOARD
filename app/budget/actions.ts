@@ -26,11 +26,12 @@ export async function createBudgetCategory(formData: FormData) {
   const is_goal_mode = formData.get("is_goal_mode") === "true"
   const linked_account = (formData.get("linked_account") as string) || null
   const transfer_keywords = (formData.get("transfer_keywords") as string)?.trim().toLowerCase() || null
+  const category_aliases = (formData.get("category_aliases") as string)?.trim().toLowerCase() || null
 
   const { data, error } = await supabase
     .from("budget_categories")
-    .insert({ user_id: user.id, name, type, value, sort_order: count ?? 0, is_catchall, linked_account, is_goal_mode, transfer_keywords })
-    .select("id, name, type, value, sort_order, is_catchall, linked_account, transfer_keywords")
+    .insert({ user_id: user.id, name, type, value, sort_order: count ?? 0, is_catchall, linked_account, is_goal_mode, transfer_keywords, category_aliases })
+    .select("id, name, type, value, sort_order, is_catchall, linked_account, transfer_keywords, category_aliases")
     .single()
 
   if (error) return { error: error.message }
@@ -56,13 +57,14 @@ export async function updateBudgetCategory(id: string, formData: FormData) {
   const is_goal_mode = formData.get("is_goal_mode") === "true"
   const linked_account = (formData.get("linked_account") as string) || null
   const transfer_keywords = (formData.get("transfer_keywords") as string)?.trim().toLowerCase() || null
+  const category_aliases = (formData.get("category_aliases") as string)?.trim().toLowerCase() || null
 
   const { data, error } = await supabase
     .from("budget_categories")
-    .update({ name, type, value, is_catchall, linked_account, is_goal_mode, transfer_keywords })
+    .update({ name, type, value, is_catchall, linked_account, is_goal_mode, transfer_keywords, category_aliases })
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, name, type, value, sort_order, is_catchall, linked_account, transfer_keywords")
+    .select("id, name, type, value, sort_order, is_catchall, linked_account, transfer_keywords, category_aliases")
     .single()
 
   if (error) return { error: error.message }

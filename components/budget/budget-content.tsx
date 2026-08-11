@@ -39,6 +39,14 @@ interface BudgetCategory {
   linked_account: string | null
   is_goal_mode: boolean
   transfer_keywords: string | null
+  category_aliases: string | null
+}
+
+function getCatKeys(cat: BudgetCategory): string[] {
+  return [
+    cat.name.toLowerCase(),
+    ...(cat.category_aliases?.split(",").map(a => a.trim().toLowerCase()).filter(Boolean) ?? []),
+  ]
 }
 
 interface SavingsGoal {
@@ -485,7 +493,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
     // Catch-all spending = total expenses minus what's claimed by named (non-catchall) categories
     const namedSpending = categories
       .filter((c) => !c.is_catchall)
-      .reduce((sum, c) => sum + (expensesByCategory[c.name.toLowerCase()] ?? 0), 0)
+      .reduce((sum, c) => sum + getCatKeys(c).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0), 0)
     const totalExpenses = Object.values(expensesByCategory).reduce((s, v) => s + v, 0)
     const catchallSpending = Math.max(0, totalExpenses - namedSpending)
 
@@ -649,12 +657,12 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       {(() => {
         const overCats = categories.filter((cat) => {
           const budgeted = budgetedAmount(cat, monthlyIncome)
-          const actual = cat.is_catchall ? catchallSpending : (expensesByCategory[cat.name.toLowerCase()] ?? 0)
+          const actual = cat.is_catchall ? catchallSpending : getCatKeys(cat).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0)
           return budgeted > 0 && actual > budgeted
         })
         const warnCats = categories.filter((cat) => {
           const budgeted = budgetedAmount(cat, monthlyIncome)
-          const actual = cat.is_catchall ? catchallSpending : (expensesByCategory[cat.name.toLowerCase()] ?? 0)
+          const actual = cat.is_catchall ? catchallSpending : getCatKeys(cat).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0)
           const pct = budgeted > 0 ? actual / budgeted : 0
           return budgeted > 0 && pct >= 0.8 && actual <= budgeted
         })
@@ -1056,12 +1064,12 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           const rolloverCats = categories.filter((cat) => {
             if (!cat.rollover) return false
             const base = budgetedAmount(cat, monthlyIncome)
-            const lastActual = lastMonthExpenses[cat.name.toLowerCase()] ?? 0
+            const lastActual = getCatKeys(cat).reduce((s, k) => s + (lastMonthExpenses[k] ?? 0), 0)
             return base > lastActual
           })
           const totalRollover = rolloverCats.reduce((sum, cat) => {
             const base = budgetedAmount(cat, monthlyIncome)
-            const lastActual = lastMonthExpenses[cat.name.toLowerCase()] ?? 0
+            const lastActual = getCatKeys(cat).reduce((s, k) => s + (lastMonthExpenses[k] ?? 0), 0)
             return sum + Math.max(0, base - lastActual)
           }, 0)
           if (rolloverCats.length === 0 || totalRollover === 0) return null
@@ -1162,7 +1170,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
             {categories.map((cat) => {
               const baseBudget = budgetedAmount(cat, monthlyIncome)
               // Rollover: surplus from last month adds to this month's budget (current month only)
-              const lastMonthActual = lastMonthExpenses[cat.name.toLowerCase()] ?? 0
+              const lastMonthActual = getCatKeys(cat).reduce((s, k) => s + (lastMonthExpenses[k] ?? 0), 0)
               const rolloverAmount = (cat.rollover && isCurrentMonth)
                 ? Math.max(0, baseBudget - lastMonthActual)
                 : 0
@@ -1170,7 +1178,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
 
               const actual = (cat.is_catchall
                 ? catchallSpending
-                : (expensesByCategory[cat.name.toLowerCase()] ?? 0))
+                : getCatKeys(cat).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0))
                 + (transferMatchedCategories[cat.name.toLowerCase()] ?? 0)
               const pct = budgeted > 0 ? Math.min((actual / budgeted) * 100, 100) : 0
               // Goal mode: red = haven't hit target, green = at or over target
@@ -1181,12 +1189,12 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               const goalPartial = cat.is_goal_mode && pct >= 50 && !goalMet && !goalNoTarget
               const goalShort = cat.is_goal_mode && pct < 50 && !goalNoTarget
 
-              // Catch-all shows all transactions not claimed by other named categories
-              const namedCatNames = new Set(categories.filter((c) => !c.is_catchall).map((c) => c.name.toLowerCase()))
+              // Catch-all shows all transactions not claimed by other named categories (including aliases)
+              const namedCatNames = new Set(categories.filter((c) => !c.is_catchall).flatMap(getCatKeys))
               const catTxs = cat.is_catchall
                 ? monthlyTransactions.filter((tx) => !namedCatNames.has(tx.category.toLowerCase()))
                 : monthlyTransactions.filter(
-                (tx) => tx.category.toLowerCase() === cat.name.toLowerCase()
+                (tx) => getCatKeys(cat).includes(tx.category.toLowerCase())
               )
               const isExpanded = expandedIds.has(cat.id)
               const momDelta = actual - lastMonthActual
@@ -1663,6 +1671,16 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 placeholder="e.g. honda, car payment"
               />
               <p className="text-xs text-muted-foreground">Separate multiple keywords with commas — any match counts (e.g. "honda, car payment" catches either).</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cat-aliases">Also count transactions from these categories <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                id="cat-aliases"
+                name="category_aliases"
+                defaultValue={editingCategory?.category_aliases ?? ""}
+                placeholder="e.g. shopping, food"
+              />
+              <p className="text-xs text-muted-foreground">Comma-separated transaction category names that should count toward this budget slot (e.g. "shopping" rolls Costco purchases in here).</p>
             </div>
 
             {formError && <p className="text-sm text-destructive">{formError}</p>}
