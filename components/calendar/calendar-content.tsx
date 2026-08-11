@@ -83,7 +83,14 @@ const COLOR_OPTIONS = [
 function formatEventTime(e: CalEvent) {
   if (e.allDay) return "All day"
   if (!e.start) return ""
-  return format(parseISO(e.start), "h:mm a")
+  const startStr = format(parseISO(e.start), "h:mm a")
+  if (e.end) {
+    try {
+      const endStr = format(parseISO(e.end), "h:mm a")
+      return `${startStr} – ${endStr}`
+    } catch { /* fall through */ }
+  }
+  return startStr
 }
 
 export function CalendarContent() {
@@ -153,14 +160,16 @@ export function CalendarContent() {
       fd.append("type", scheduleType)
       fd.append("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone)
       const res = await fetch("/api/calendar/parse-schedule", { method: "POST", body: fd })
-      const data = await res.json()
-      if (data.error) { setParseError(data.error); return }
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) { setParseError(data.error ?? "Something went wrong. Please try again."); return }
       if (!data.events?.length) { setParseError(scheduleType === "sports" ? "No games found in this image. Try a clearer screenshot." : "No shifts found in this image. Try a clearer screenshot."); return }
       setParsedShifts(data.events.map((e: { title: string; date: string; start_time?: string; end_time?: string; notes?: string }) => ({ ...e, selected: true })))
       // Auto-select primary Google Calendar if connected
       const primary = calendarSources.find((c) => c.source === "google" && c.name === "JC")
         ?? calendarSources.find((c) => c.source === "google")
       if (primary?.id) setSelectedCalendarId(primary.id)
+    } catch {
+      setParseError("Something went wrong. Please try again.")
     } finally {
       setParsing(false)
     }
