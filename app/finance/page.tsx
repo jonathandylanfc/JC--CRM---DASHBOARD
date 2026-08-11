@@ -55,7 +55,7 @@ export default async function FinancePage() {
         />
         <div className="mt-6 space-y-6">
           {unreviewedTransactions.length > 0 && (
-            <TransactionReview transactions={unreviewedTransactions} />
+            <TransactionReview transactions={unreviewedTransactions} budgetCategories={budgetCategories} />
           )}
           <FinanceContent
             initialTransactions={transactions}

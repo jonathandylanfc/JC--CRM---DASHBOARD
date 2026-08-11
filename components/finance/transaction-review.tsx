@@ -22,15 +22,28 @@ interface Transaction {
   snoozed_until: string | null
 }
 
+interface BudgetCategory {
+  id: string
+  name: string
+}
+
 interface Props {
   transactions: Transaction[]
+  budgetCategories?: BudgetCategory[]
 }
 
 function currency(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n)
 }
 
-export function TransactionReview({ transactions }: Props) {
+const GROCERY_RE = /grocer|food|shoppin|walmart|target|market|superm/i
+const GAS_RE = /\bgas\b|fuel|\bcar\b|auto|vehicle|transport/i
+
+function bestCat(cats: BudgetCategory[], re: RegExp, fallback: string) {
+  return cats.find(c => re.test(c.name))?.name ?? fallback
+}
+
+export function TransactionReview({ transactions, budgetCategories = [] }: Props) {
   const router = useRouter()
   const [expanded, setExpanded] = useState(true)
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
@@ -213,24 +226,27 @@ export function TransactionReview({ transactions }: Props) {
                   </div>
 
                   {/* Costco disambiguation row */}
-                  {isCostcoAmbiguous && (
+                  {isCostcoAmbiguous && (() => {
+                    const groceryCat = bestCat(budgetCategories, GROCERY_RE, "Shopping")
+                    const gasCat = bestCat(budgetCategories, GAS_RE, "Car")
+                    return (
                     <div className="flex items-center gap-2 pl-12">
                       <span className="text-xs text-muted-foreground shrink-0">Costco — groceries or gas?</span>
                       <Button
                         size="sm"
                         className="h-7 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                        onClick={() => handleApproveWithCategory(tx.id, "Shopping")}
+                        onClick={() => handleApproveWithCategory(tx.id, groceryCat)}
                         disabled={isPending}
                       >
-                        🛒 Groceries
+                        🛒 {groceryCat}
                       </Button>
                       <Button
                         size="sm"
                         className="h-7 px-2.5 text-xs bg-sky-600 hover:bg-sky-700 text-white"
-                        onClick={() => handleApproveWithCategory(tx.id, "Car")}
+                        onClick={() => handleApproveWithCategory(tx.id, gasCat)}
                         disabled={isPending}
                       >
-                        ⛽ Gas
+                        ⛽ {gasCat}
                       </Button>
                       <Button
                         variant="outline"
@@ -244,7 +260,8 @@ export function TransactionReview({ transactions }: Props) {
                         <span className="hidden sm:inline">Later</span>
                       </Button>
                     </div>
-                  )}
+                    )
+                  })()}
                 </div>
               )
             })}
