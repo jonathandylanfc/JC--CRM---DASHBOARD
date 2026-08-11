@@ -881,7 +881,7 @@ export function CalendarContent() {
 
         const all = [...calUpcoming]
           .sort((a, b) => a.date.localeCompare(b.date))
-          .slice(0, 8)
+          .slice(0, 30)
 
         if (!all.length) return null
         return (
