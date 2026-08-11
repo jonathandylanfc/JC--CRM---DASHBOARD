@@ -8,6 +8,7 @@ interface BudgetCategory {
   type: string
   value: number
   is_catchall?: boolean
+  is_goal_mode?: boolean
   linked_account?: string | null
   rollover?: boolean
 }
@@ -47,6 +48,7 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
     .slice(0, 3)
 
   const overBudget = expenseCats.filter((c) => {
+    if (c.is_goal_mode) return false
     const spent = expensesByCategory[c.name.toLowerCase()] ?? 0
     return spent > c.dollarValue
   })

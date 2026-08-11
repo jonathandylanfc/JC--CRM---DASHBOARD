@@ -26,7 +26,7 @@ export async function GET() {
 
   const { data: budgetCats } = await supabase
     .from("budget_categories")
-    .select("id, name, type, value")
+    .select("id, name, type, value, is_goal_mode")
     .eq("user_id", user.id)
 
   const { data: monthlyIncomeTx } = await supabase
@@ -54,6 +54,7 @@ export async function GET() {
   }
 
   for (const cat of budgetCats ?? []) {
+    if (cat.is_goal_mode) continue
     const budget = cat.type === "percentage"
       ? (monthlyIncome * cat.value) / 100
       : cat.value
