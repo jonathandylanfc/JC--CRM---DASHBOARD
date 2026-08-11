@@ -304,10 +304,6 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
                     </span>
                     <span className="font-medium tabular-nums">${netPay.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-xs text-muted-foreground pt-0.5">
-                    <span>${paySettings!.hourly_rate!.toFixed(2)}/hr</span>
-                    <span className="capitalize">{paySettings!.pay_period}</span>
-                  </div>
                   {payDate && (
                     <div className="flex justify-between text-xs pt-0.5">
                       <span className="text-muted-foreground">Pay date</span>
