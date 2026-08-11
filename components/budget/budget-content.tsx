@@ -303,7 +303,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   }
 
   // Keyword matching: which transfers match which goals / categories
-  const { transferMatchedGoals, transferMatchedCategories, unmatchedTransfers } = useMemo(() => {
+  const { transferMatchedGoals, transferMatchedCategories, unmatchedTransfers, visibleTransferTxs } = useMemo(() => {
     function kwMatch(keywords: string | null, title: string): boolean {
       if (!keywords) return false
       const t = title.toLowerCase()
