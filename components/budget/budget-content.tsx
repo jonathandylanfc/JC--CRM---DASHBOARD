@@ -1318,7 +1318,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                           </Button>
                         </div>
                       ) : (
-                      <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1">
                         <Button
                           variant="ghost" size="icon"
                           className={`w-7 h-7 ${cat.rollover ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
