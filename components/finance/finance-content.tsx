@@ -488,24 +488,47 @@ export function FinanceContent({
       name: string
       amount: number
       category: string
+      billingCycle: "monthly" | "yearly"
       nextBillingDate: string
       latestTx: Transaction
       occurrences: number
     }> = []
     for (const [, txs] of groups) {
-      const hasKeyword = /subscription|subscribe|member/i.test(txs[0].title)
+      const hasAnnualKeyword = /annual|yearly/i.test(txs[0].title)
+      const hasKeyword = /subscription|subscribe|member/i.test(txs[0].title) || hasAnnualKeyword
       const months = new Set(txs.map((tx) => tx.date.slice(0, 7)))
       if (months.size < 2 && !hasKeyword) continue
+
+      // Detect annual billing: explicit keyword or avg gap between charges > 300 days
+      let billingCycle: "monthly" | "yearly" = "monthly"
+      if (hasAnnualKeyword) {
+        billingCycle = "yearly"
+      } else if (txs.length >= 2) {
+        const chronological = [...txs].sort((a, b) => a.date.localeCompare(b.date))
+        let totalGap = 0
+        for (let i = 1; i < chronological.length; i++) {
+          const d1 = new Date(chronological[i - 1].date + "T12:00:00")
+          const d2 = new Date(chronological[i].date + "T12:00:00")
+          totalGap += (d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)
+        }
+        if (totalGap / (chronological.length - 1) > 300) billingCycle = "yearly"
+      }
+
       const sorted = [...txs].sort((a, b) => b.date.localeCompare(a.date))
       const latest = sorted[0]
       const lastDate = new Date(latest.date + "T12:00:00")
       const next = new Date(lastDate)
-      next.setMonth(next.getMonth() + 1)
+      if (billingCycle === "yearly") {
+        next.setFullYear(next.getFullYear() + 1)
+      } else {
+        next.setMonth(next.getMonth() + 1)
+      }
       result.push({
         id: `${txs[0].title}|${txs[0].amount}`,
         name: txs[0].title,
         amount: Number(txs[0].amount),
         category: txs[0].category,
+        billingCycle,
         nextBillingDate: next.toISOString().split("T")[0],
         latestTx: latest,
         occurrences: txs.length,
@@ -1716,12 +1739,19 @@ export function FinanceContent({
                           edit
                         </button>
                       </div>
-                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 capitalize mt-1.5">
-                        {sub.category}
-                      </Badge>
+                      <div className="flex items-center gap-1 mt-1.5">
+                        <Badge variant="outline" className="text-[10px] h-4 px-1.5 capitalize">
+                          {sub.category}
+                        </Badge>
+                        {sub.billingCycle === "yearly" && (
+                          <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-amber-600 border-amber-400/50 dark:text-amber-400">
+                            annual
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                     <div className="shrink-0 flex flex-col items-end gap-1">
-                      <p className="font-semibold text-foreground text-sm">{currency(sub.amount)}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
+                      <p className="font-semibold text-foreground text-sm">{currency(sub.amount)}<span className="text-xs font-normal text-muted-foreground">/{sub.billingCycle === "yearly" ? "yr" : "mo"}</span></p>
                       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button
                           variant="ghost"
