@@ -122,6 +122,22 @@ export async function approveTransaction(id: string) {
   return { success: true }
 }
 
+export async function approveTransactionWithCategory(id: string, category: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { error } = await supabase
+    .from("transactions")
+    .update({ reviewed: true, snoozed_until: null, category })
+    .eq("id", id)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/finance")
+  revalidatePath("/budget")
+  revalidatePath("/")
+  return { success: true }
+}
+
 export async function snoozeTransaction(id: string, hours = 24) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

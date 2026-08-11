@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle2, Clock, TrendingUp, TrendingDown, ArrowLeftRight, ChevronDown, ChevronUp, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
-import { approveTransaction, snoozeTransaction, approveAllVisible } from "@/app/finance/actions"
+import { approveTransaction, approveTransactionWithCategory, snoozeTransaction, approveAllVisible } from "@/app/finance/actions"
 import { format } from "date-fns"
 
 interface Transaction {
@@ -52,6 +52,15 @@ export function TransactionReview({ transactions }: Props) {
     setDismissed((prev) => new Set(prev).add(id))
     startTransition(async () => {
       const result = await approveTransaction(id)
+      if (result.error) toast.error(result.error)
+      else router.refresh()
+    })
+  }
+
+  function handleApproveWithCategory(id: string, category: string) {
+    setDismissed((prev) => new Set(prev).add(id))
+    startTransition(async () => {
+      const result = await approveTransactionWithCategory(id, category)
       if (result.error) toast.error(result.error)
       else router.refresh()
     })
@@ -139,60 +148,103 @@ export function TransactionReview({ transactions }: Props) {
             {queue.map((tx) => {
               const isIncome = tx.type === "income"
               const isTransfer = tx.type === "transfer"
+              const titleLower = tx.title.toLowerCase()
+              const isCostcoAmbiguous =
+                titleLower.includes("costco") &&
+                !titleLower.includes("costco gas") &&
+                !titleLower.includes("costco fuel")
               return (
-                <div key={tx.id} className="flex items-center gap-3 px-4 py-3">
-                  {/* Icon */}
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
-                    isTransfer
-                      ? "bg-muted text-muted-foreground"
-                      : isIncome
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-                      : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
-                  }`}>
-                    {isTransfer ? <ArrowLeftRight className="w-4 h-4" /> : isIncome ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                  </div>
+                <div key={tx.id} className="px-4 py-3 space-y-2">
+                  <div className="flex items-center gap-3">
+                    {/* Icon */}
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                      isTransfer
+                        ? "bg-muted text-muted-foreground"
+                        : isIncome
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                        : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
+                    }`}>
+                      {isTransfer ? <ArrowLeftRight className="w-4 h-4" /> : isIncome ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                    </div>
 
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{tx.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      <span className="capitalize">{tx.category}</span>
-                      {" · "}
-                      {format(new Date(tx.date + "T12:00:00"), "MMM d")}
-                      {tx.account_name && <span className="text-primary/70"> · {tx.account_name.split(" – ")[0]}</span>}
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{tx.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        <span className="capitalize">{tx.category}</span>
+                        {" · "}
+                        {format(new Date(tx.date + "T12:00:00"), "MMM d")}
+                        {tx.account_name && <span className="text-primary/70"> · {tx.account_name.split(" – ")[0]}</span>}
+                      </p>
+                    </div>
+
+                    {/* Amount */}
+                    <p className={`text-sm font-semibold shrink-0 ${
+                      isTransfer ? "text-muted-foreground" : isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                    }`}>
+                      {isIncome ? "+" : isTransfer ? "" : "-"}{currency(tx.amount)}
                     </p>
+
+                    {/* Actions — standard (non-Costco) */}
+                    {!isCostcoAmbiguous && (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Button
+                          size="sm"
+                          className="h-7 px-2.5 gap-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                          onClick={() => handleApprove(tx.id)}
+                          disabled={isPending}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Approve</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2.5 gap-1 text-xs bg-transparent"
+                          onClick={() => handleSnooze(tx.id)}
+                          disabled={isPending}
+                          title="Remind me in 24 hours"
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Later</span>
+                        </Button>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Amount */}
-                  <p className={`text-sm font-semibold shrink-0 ${
-                    isTransfer ? "text-muted-foreground" : isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                  }`}>
-                    {isIncome ? "+" : isTransfer ? "" : "-"}{currency(tx.amount)}
-                  </p>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Button
-                      size="sm"
-                      className="h-7 px-2.5 gap-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                      onClick={() => handleApprove(tx.id)}
-                      disabled={isPending}
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Approve</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2.5 gap-1 text-xs bg-transparent"
-                      onClick={() => handleSnooze(tx.id)}
-                      disabled={isPending}
-                      title="Remind me in 24 hours"
-                    >
-                      <Clock className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Later</span>
-                    </Button>
-                  </div>
+                  {/* Costco disambiguation row */}
+                  {isCostcoAmbiguous && (
+                    <div className="flex items-center gap-2 pl-12">
+                      <span className="text-xs text-muted-foreground shrink-0">Costco — groceries or gas?</span>
+                      <Button
+                        size="sm"
+                        className="h-7 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => handleApproveWithCategory(tx.id, "Shopping")}
+                        disabled={isPending}
+                      >
+                        🛒 Groceries
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-7 px-2.5 text-xs bg-sky-600 hover:bg-sky-700 text-white"
+                        onClick={() => handleApproveWithCategory(tx.id, "Car")}
+                        disabled={isPending}
+                      >
+                        ⛽ Gas
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2.5 gap-1 text-xs bg-transparent ml-auto"
+                        onClick={() => handleSnooze(tx.id)}
+                        disabled={isPending}
+                        title="Remind me in 24 hours"
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Later</span>
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )
             })}
