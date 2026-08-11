@@ -43,8 +43,19 @@ interface PaySettings {
   pay_delay_days: number
 }
 
+interface BudgetCategory {
+  id: string
+  name: string
+  type: string
+  value: number
+  sort_order: number
+  is_catchall: boolean
+  is_goal_mode: boolean
+}
+
 interface PaycheckCardProps {
   initialPaySettings: PaySettings | null
+  budgetCategories: BudgetCategory[]
 }
 
 function hoursFromShift(shift: Shift): number {
@@ -58,7 +69,7 @@ function hoursFromShift(shift: Shift): number {
   return raw
 }
 
-export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
+export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckCardProps) {
   const router = useRouter()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -311,6 +322,44 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
                     </div>
                   )}
                 </div>
+
+                {netPay > 0 && budgetCategories.length > 0 && (() => {
+                  const regular = budgetCategories.filter(c => !c.is_catchall)
+                  const catchall = budgetCategories.find(c => c.is_catchall)
+
+                  const rows = regular.map(cat => ({
+                    id: cat.id,
+                    name: cat.name,
+                    label: cat.type === "percentage" ? `${cat.value}%` : "fixed",
+                    amount: cat.type === "fixed" ? cat.value : (cat.value / 100) * netPay,
+                  }))
+
+                  const allocated = rows.reduce((s, r) => s + r.amount, 0)
+                  const leftover = Math.max(0, netPay - allocated)
+
+                  if (catchall) {
+                    rows.push({ id: catchall.id, name: catchall.name, label: "rest", amount: leftover })
+                  }
+
+                  return (
+                    <div className="border-t pt-3 mt-1 space-y-1.5">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Allocation</p>
+                      {rows.map(row => (
+                        <div key={row.id} className="flex items-center gap-2 text-sm">
+                          <span className="text-muted-foreground truncate flex-1">{row.name}</span>
+                          <span className="text-xs text-muted-foreground/50 shrink-0">{row.label}</span>
+                          <span className="font-medium tabular-nums shrink-0">${row.amount.toFixed(2)}</span>
+                        </div>
+                      ))}
+                      {!catchall && leftover > 0.005 && (
+                        <div className="flex items-center justify-between text-xs text-muted-foreground/60">
+                          <span>Unallocated</span>
+                          <span className="tabular-nums">${leftover.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </>
             )}
           </CardContent>
