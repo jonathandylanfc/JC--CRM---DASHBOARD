@@ -1662,7 +1662,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 defaultValue={editingCategory?.transfer_keywords ?? ""}
                 placeholder="e.g. honda, car payment"
               />
-              <p className="text-xs text-muted-foreground">Transfers matching these keywords count toward this category's budget (e.g. "honda" catches your car payment).</p>
+              <p className="text-xs text-muted-foreground">Separate multiple keywords with commas — any match counts (e.g. "honda, car payment" catches either).</p>
             </div>
 
             {formError && <p className="text-sm text-destructive">{formError}</p>}
