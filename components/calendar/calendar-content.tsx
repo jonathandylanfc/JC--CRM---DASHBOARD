@@ -83,7 +83,14 @@ const COLOR_OPTIONS = [
 function formatEventTime(e: CalEvent) {
   if (e.allDay) return "All day"
   if (!e.start) return ""
-  return format(parseISO(e.start), "h:mm a")
+  const startStr = format(parseISO(e.start), "h:mm a")
+  if (e.end) {
+    try {
+      const endStr = format(parseISO(e.end), "h:mm a")
+      return `${startStr} – ${endStr}`
+    } catch { /* fall through */ }
+  }
+  return startStr
 }
 
 export function CalendarContent() {
