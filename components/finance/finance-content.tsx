@@ -68,7 +68,6 @@ import {
   autoMarkTransfers,
 } from "@/app/finance/actions"
 import { CsvImporter } from "@/components/finance/csv-importer"
-import { PlaidConnect } from "@/components/finance/plaid-connect"
 
 interface Transaction {
   id: string
@@ -1159,12 +1158,6 @@ export function FinanceContent({
           </div>
         )
       })()}
-
-      {/* Connected Banks */}
-      <Card className="p-4 sm:p-6">
-        <h2 className="text-base font-semibold mb-4">Connected Banks</h2>
-        <PlaidConnect onSync={() => router.refresh()} />
-      </Card>
 
       {/* Transactions + Subscriptions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

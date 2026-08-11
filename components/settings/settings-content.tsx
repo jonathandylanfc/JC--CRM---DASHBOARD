@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { LogOut, Camera, Check } from "lucide-react"
+import { PlaidConnect } from "@/components/finance/plaid-connect"
 import { useTheme } from "@/components/theme-provider"
 import { signOut } from "@/app/login/actions"
 import { updateProfile } from "@/app/settings/actions"
@@ -200,6 +201,12 @@ export function SettingsContent({ initialName, initialEmail, initialAvatarUrl, i
             />
           </div>
         </div>
+      </Card>
+
+      {/* Connected Banks */}
+      <Card className="p-6">
+        <h3 className="font-semibold text-lg mb-4">Connected Banks</h3>
+        <PlaidConnect onSync={() => {}} />
       </Card>
 
       {/* Account */}
