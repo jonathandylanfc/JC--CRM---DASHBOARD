@@ -110,19 +110,21 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
         return d >= pStart.slice(0, 10) && d <= pEnd.slice(0, 10)
       }
 
-      // Fetch from the same calendar APIs the calendar view uses — these handle
-      // subscribed calendars, Google calendars, and iCloud correctly
-      const [gRes, caldavRes] = await Promise.all([
+      // Fetch from all three calendar sources the calendar view uses
+      const [gRes, caldavRes, icsRes] = await Promise.all([
         fetch("/api/calendar/events"),
         fetch("/api/calendar/caldav"),
+        fetch("/api/calendar/ics"),
       ])
       const gData = gRes.ok ? await gRes.json() : {}
       const caldavData = caldavRes.ok ? await caldavRes.json() : {}
+      const icsData = icsRes.ok ? await icsRes.json() : {}
 
       type RawEvent = { id?: string | null; title: string; start: string | null; end?: string | null; allDay?: boolean }
       const externalShifts: Shift[] = [
         ...(gData.events ?? []) as RawEvent[],
         ...(caldavData.events ?? []) as RawEvent[],
+        ...(icsData.events ?? []) as RawEvent[],
       ]
         .filter((e) => inPeriod(e.start) && matchesKeyword(e.title))
         .map((e) => ({

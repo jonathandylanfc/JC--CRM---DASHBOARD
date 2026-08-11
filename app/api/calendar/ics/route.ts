@@ -23,11 +23,12 @@ export async function GET() {
     subs.map(async (sub) => {
       try {
         const parsed = await fetchAndParseIcs(sub.ics_url)
+        const minStr = timeMin.toISOString().slice(0, 10)
+        const maxStr = timeMax.toISOString().slice(0, 10)
         return parsed
           .filter((e) => {
-            // Compare by parsing the string for window filtering
-            const d = new Date(e.start)
-            return d >= timeMin && d <= timeMax
+            const d = e.start.slice(0, 10)
+            return d >= minStr && d <= maxStr
           })
           .map((e) => ({
             id: `ics-${sub.id}-${e.id}`,
