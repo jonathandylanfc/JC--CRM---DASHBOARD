@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { DollarSign, Settings, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
+import { DollarSign, Settings, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { format, parseISO } from "date-fns"
 import { formatPayPeriodRange } from "@/lib/pay-period"
 import { updatePaySettings } from "@/app/calendar/actions"
@@ -277,29 +277,10 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
                   {fetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                 </div>
 
-                {shifts.length === 0 ? (
+                {shifts.length === 0 && (
                   <p className="text-sm text-muted-foreground py-1">
                     No &ldquo;{paySettings!.shift_keyword}&rdquo; shifts this pay period.
                   </p>
-                ) : (
-                  <div className="space-y-1 mb-3">
-                    {shifts.map((shift) => {
-                      const hrs = hoursFromShift(shift)
-                      return (
-                        <div key={shift.id} className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">
-                            {format(parseISO(shift.start_at), "EEE, MMM d")}
-                            {" "}
-                            <span className="text-foreground">{shift.title}</span>
-                          </span>
-                          <span className="flex items-center gap-1 text-muted-foreground tabular-nums">
-                            <Clock className="h-3 w-3" />
-                            {hrs > 0 ? `${hrs.toFixed(1)} hrs` : "—"}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
                 )}
 
                 <div className="border-t pt-3 space-y-1.5">
