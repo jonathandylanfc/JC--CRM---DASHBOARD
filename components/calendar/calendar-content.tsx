@@ -887,13 +887,14 @@ export function CalendarContent() {
       {/* Upcoming strip */}
       {(() => {
         const now = new Date()
+        const weekOut = new Date(now)
+        weekOut.setDate(weekOut.getDate() + 7)
         const calUpcoming = visibleEvents
-          .filter((e) => e.start && parseISO(e.start) >= now)
+          .filter((e) => e.start && parseISO(e.start) >= now && parseISO(e.start) <= weekOut)
           .map((e) => ({ type: "event" as const, title: e.title, date: e.start!, color: e.color ?? "#4285f4", allDay: e.allDay }))
 
         const all = [...calUpcoming]
           .sort((a, b) => a.date.localeCompare(b.date))
-          .slice(0, 30)
 
         if (!all.length) return null
         return (
