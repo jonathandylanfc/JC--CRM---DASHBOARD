@@ -17,6 +17,28 @@ export interface IcsEvent {
  *   correctly shows the event in the user's own timezone.
  * - All-day dates            → return date string  e.g. "2024-05-13"
  */
+// Parse ISO 8601 duration (e.g. "PT8H", "PT8H30M", "P1DT4H") → milliseconds
+function parseDurationMs(duration: string): number {
+  const m = duration.match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/)
+  if (!m) return 0
+  const days = parseInt(m[1] ?? "0")
+  const hours = parseInt(m[2] ?? "0")
+  const minutes = parseInt(m[3] ?? "0")
+  const seconds = parseInt(m[4] ?? "0")
+  return ((days * 24 + hours) * 60 + minutes) * 60 * 1000 + seconds * 1000
+}
+
+// Add a duration to a parsed ISO start string, preserving local vs. UTC format
+function applyDuration(startStr: string, duration: string): string | null {
+  const ms = parseDurationMs(duration)
+  if (!ms) return null
+  const isUtc = startStr.endsWith("Z")
+  const startMs = new Date(isUtc ? startStr : startStr + "Z").getTime()
+  if (isNaN(startMs)) return null
+  const end = new Date(startMs + ms)
+  return isUtc ? end.toISOString() : end.toISOString().slice(0, 19)
+}
+
 function parseIcsDateStr(value: string): { str: string; allDay: boolean } {
   // DATE-only: 20240101
   if (/^\d{8}$/.test(value)) {
@@ -72,6 +94,8 @@ export function parseIcs(text: string): IcsEvent[] {
         let endStr: string | null = null
         if (endRaw) {
           try { endStr = parseIcsDateStr(endRaw).str } catch { endStr = null }
+        } else if (current.DURATION && !startParsed.allDay) {
+          endStr = applyDuration(startParsed.str, current.DURATION)
         }
         events.push({
           id: current.UID ?? String(uid++),
@@ -91,8 +115,7 @@ export function parseIcs(text: string): IcsEvent[] {
       const baseKey = keyPart.split(";")[0].toUpperCase()
       const val = line.slice(colonIdx + 1).trim()
 
-      if (baseKey === "DTSTART" || baseKey === "DTEND") {
-        // Store raw value after colon (e.g. "20240513T093000" or "20240513T163000Z")
+      if (baseKey === "DTSTART" || baseKey === "DTEND" || baseKey === "DURATION") {
         current[baseKey] = val
       } else if (baseKey === "SUMMARY" || baseKey === "LOCATION" || baseKey === "DESCRIPTION" || baseKey === "UID") {
         if (!current[baseKey]) current[baseKey] = val
