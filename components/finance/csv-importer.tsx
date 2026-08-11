@@ -218,6 +218,7 @@ const CATEGORY_RULES: Array<[RegExp, string]> = [
   [/uber|lyft|taxi|transit|subway|metro|bart|mta\b|bus\b/i, "Transport"],
   [/netflix|spotify|hulu|hbo|disney|apple\.com\/bill|amazon prime|prime video|paramount|peacock|sling|youtube premium|audible/i, "Subscriptions"],
   [/walmart|target|costco|kroger|trader joe|whole foods|home depot|lowe'?s|best buy|ebay|amazon(?!.*prime)/i, "Shopping"],
+  [/costco\s*(gas|fuel)/i, "Car"],
   [/shell|exxon|mobil|chevron|\bbp\b|sunoco|citgo|marathon|speedway|wawa|gas station|\bfuel\b|arco\b|love'?s travel/i, "Car"],
   [/restaurant|mcdonald|burger king|taco bell|chipotle|wendy'?s|pizza|starbucks|dunkin|doordash|grubhub|uber.?eats|chick.fil|panera|domino|denny'?s|ihop|dairy queen|\bkfc\b|popeyes|waffle house/i, "Food"],
   [/delta\b|united airlines|american air|southwest air|jetblue|spirit air|frontier air|\bhotel\b|airbnb|marriott|hilton|expedia|booking\.com|hyatt|holiday inn|priceline/i, "Travel"],
