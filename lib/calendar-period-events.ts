@@ -140,17 +140,19 @@ export async function getCalDAVShiftsForPeriod(
 
     const calendars = await client.fetchCalendars()
 
-    const timeMin = new Date(periodStart)
-    timeMin.setHours(0, 0, 0, 0)
-    const timeMax = new Date(periodEnd)
-    timeMax.setHours(23, 59, 59, 999)
+    // iCloud CalDAV doesn't reliably handle narrow time-range queries for past periods.
+    // Use a broad window (matching what the calendar view uses) and filter in code.
+    const fetchMin = new Date()
+    fetchMin.setDate(fetchMin.getDate() - 60)
+    const fetchMax = new Date()
+    fetchMax.setDate(fetchMax.getDate() + 90)
 
     const results = await Promise.all(
       calendars.map(async (cal) => {
         try {
           const objects = await client.fetchCalendarObjects({
             calendar: cal,
-            timeRange: { start: timeMin.toISOString(), end: timeMax.toISOString() },
+            timeRange: { start: fetchMin.toISOString(), end: fetchMax.toISOString() },
           })
           return objects.flatMap((obj) => {
             if (!obj.data) return []
