@@ -90,6 +90,27 @@ export async function reorderBudgetCategories(orderedIds: string[]) {
   return { success: true }
 }
 
+export async function moveSingleTransaction(
+  transactionId: string,
+  category: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  const { error } = await supabase
+    .from("transactions")
+    .update({ category })
+    .eq("id", transactionId)
+    .eq("user_id", user.id)
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/budget")
+  revalidatePath("/finance")
+  return {}
+}
+
 export async function assignTransactionToCategory(
   transactionId: string,
   title: string,

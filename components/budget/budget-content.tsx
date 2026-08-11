@@ -26,7 +26,7 @@ import {
 import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown, ChevronUp, GripVertical } from "lucide-react"
 import { format, addMonths, subMonths, parseISO, differenceInDays } from "date-fns"
 import { toast } from "sonner"
-import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal, reorderBudgetCategories } from "@/app/budget/actions"
+import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, moveSingleTransaction, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal, reorderBudgetCategories } from "@/app/budget/actions"
 
 interface BudgetCategory {
   id: string
@@ -258,8 +258,24 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
   const [assignCatId, setAssignCatId] = useState<string | null>(null)
   const [assignSearch, setAssignSearch] = useState("")
   const [moveTx, setMoveTx] = useState<MonthlyTransaction | null>(null)
+  const [moveDest, setMoveDest] = useState<string | null>(null)
   const [moveSearch, setMoveSearch] = useState("")
   const [isAssigning, startAssigning] = useTransition()
+  const [isMovingOne, startMovingOne] = useTransition()
+
+  function handleMoveOne(tx: MonthlyTransaction, catName: string) {
+    startMovingOne(async () => {
+      const result = await moveSingleTransaction(tx.id, catName)
+      if (result.error) toast.error(result.error)
+      else {
+        toast.success(`Moved to ${catName}`)
+        setMoveTx(null)
+        setMoveDest(null)
+        setMoveSearch("")
+        router.refresh()
+      }
+    })
+  }
 
   function handleAssign(tx: MonthlyTransaction, catName: string): Promise<void> {
     return new Promise((resolve) => {
@@ -1553,7 +1569,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           ? destCategories.filter((c) => c.name.toLowerCase().includes(moveSearch.toLowerCase()))
           : destCategories
         return (
-          <Dialog open={!!moveTx} onOpenChange={(o) => { if (!o) { setMoveTx(null); setMoveSearch("") } }}>
+          <Dialog open={!!moveTx} onOpenChange={(o) => { if (!o) { setMoveTx(null); setMoveDest(null); setMoveSearch("") } }}>
             <DialogContent className="sm:max-w-sm">
               <DialogHeader>
                 <DialogTitle>Move "{moveTx.title}"</DialogTitle>
@@ -1561,36 +1577,71 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
               <p className="text-xs text-muted-foreground -mt-1">
                 Currently in <span className="italic font-medium">{moveTx.category}</span> · {currency(Number(moveTx.amount))}
               </p>
-              <div className="relative mt-1">
-                <Input
-                  placeholder="Search categories…"
-                  value={moveSearch}
-                  onChange={(e) => setMoveSearch(e.target.value)}
-                  className="pl-8 text-sm"
-                  autoFocus
-                />
-                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              </div>
-              <div className="mt-1 space-y-1.5 max-h-64 overflow-y-auto">
-                {filteredDest.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">No categories match.</p>
-                ) : (
-                  filteredDest.map((c) => (
+
+              {moveDest ? (
+                /* Step 2: confirm scope */
+                <div className="space-y-3 mt-2">
+                  <p className="text-sm">Move to <span className="font-semibold">{moveDest}</span>. Apply to:</p>
+                  <div className="flex flex-col gap-2">
                     <button
-                      key={c.id}
-                      disabled={isAssigning}
-                      onClick={() => handleAssign(moveTx, c.name).then(() => setMoveTx(null))}
-                      className="w-full flex items-center justify-between gap-3 p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-all text-left"
+                      disabled={isMovingOne}
+                      onClick={() => handleMoveOne(moveTx, moveDest)}
+                      className="w-full flex items-start gap-3 p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-all text-left"
                     >
-                      <span className="text-sm font-medium">{c.name}</span>
-                      <MoveRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium">Just this transaction</p>
+                        <p className="text-xs text-muted-foreground">Only move this one charge — other "{moveTx.title}" transactions stay where they are</p>
+                      </div>
                     </button>
-                  ))
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground pt-1 border-t">
-                Moving this transaction will also auto-sort all future transactions with the same name into that category.
-              </p>
+                    <button
+                      disabled={isAssigning}
+                      onClick={() => handleAssign(moveTx, moveDest).then(() => { setMoveTx(null); setMoveDest(null) })}
+                      className="w-full flex items-start gap-3 p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-all text-left"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">All "{moveTx.title}" transactions</p>
+                        <p className="text-xs text-muted-foreground">Move every charge from this merchant and auto-sort future ones here too</p>
+                      </div>
+                    </button>
+                  </div>
+                  <button
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                    onClick={() => setMoveDest(null)}
+                  >
+                    ← Back to categories
+                  </button>
+                </div>
+              ) : (
+                /* Step 1: pick category */
+                <>
+                  <div className="relative mt-1">
+                    <Input
+                      placeholder="Search categories…"
+                      value={moveSearch}
+                      onChange={(e) => setMoveSearch(e.target.value)}
+                      className="pl-8 text-sm"
+                      autoFocus
+                    />
+                    <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  </div>
+                  <div className="mt-1 space-y-1.5 max-h-64 overflow-y-auto">
+                    {filteredDest.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-6">No categories match.</p>
+                    ) : (
+                      filteredDest.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => setMoveDest(c.name)}
+                          className="w-full flex items-center justify-between gap-3 p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-all text-left"
+                        >
+                          <span className="text-sm font-medium">{c.name}</span>
+                          <MoveRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
             </DialogContent>
           </Dialog>
         )
