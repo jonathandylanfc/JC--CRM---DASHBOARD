@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { DollarSign, Settings, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
-import { format, startOfWeek } from "date-fns"
+import { format, startOfWeek, startOfMonth, endOfMonth, differenceInDays, addDays } from "date-fns"
 import { formatPayPeriodRange } from "@/lib/pay-period"
 import { updatePaySettings } from "@/app/calendar/actions"
 import { toast } from "sonner"
@@ -65,6 +65,31 @@ function hoursFromShift(shift: Shift): number {
   if (raw >= 8) return raw - 1
   if (raw >= 6) return raw - 0.5
   return raw
+}
+
+function countPaychecksInMonth(
+  refDateStr: string | null | undefined,
+  payPeriod: string,
+  monthDate: Date,
+): number {
+  if (payPeriod === "semimonthly") return 2
+  const intervalDays = payPeriod === "weekly" ? 7 : 14
+  const fallback = payPeriod === "weekly" ? 4 : 2
+  if (!refDateStr) return fallback
+  const ref = new Date(refDateStr)
+  const monthStart = startOfMonth(monthDate)
+  const monthEnd = endOfMonth(monthDate)
+  const daysDiff = differenceInDays(monthStart, ref)
+  const periodsBack = Math.floor(daysDiff / intervalDays)
+  let cur = addDays(ref, periodsBack * intervalDays)
+  // step back one period if we overshot
+  while (cur > monthStart) cur = addDays(cur, -intervalDays)
+  let count = 0
+  while (cur <= monthEnd) {
+    if (cur >= monthStart) count++
+    cur = addDays(cur, intervalDays)
+  }
+  return count
 }
 
 function buildAllocationRows(
@@ -193,9 +218,13 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
 
   const isConfigured = paySettings?.hourly_rate != null && paySettings.hourly_rate > 0
 
-  // For weekly pay, monthly = ~4 paychecks; for biweekly/semimonthly = 2
-  const isWeekly = paySettings?.pay_period === "weekly"
-  const paychecksPerMonth = isWeekly ? 4 : 2
+  const periodMonth = periodStart ? new Date(periodStart) : new Date()
+  const paychecksInMonth = countPaychecksInMonth(
+    paySettings?.pay_period_start_date,
+    paySettings?.pay_period ?? "biweekly",
+    periodMonth,
+  )
+  const paychecksPerMonth = paychecksInMonth
 
   const totalHours = shifts.reduce((sum, s) => sum + hoursFromShift(s), 0)
   const grossPay = totalHours * (paySettings?.hourly_rate ?? 0)
