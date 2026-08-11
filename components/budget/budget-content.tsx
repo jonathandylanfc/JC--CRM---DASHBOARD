@@ -887,11 +887,12 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
 
       {/* Goal add/edit dialog */}
       <Dialog open={goalDialogOpen} onOpenChange={(o) => { if (!o) setGoalDialogOpen(false) }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-sm max-h-[90dvh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>{editingGoal ? "Edit Goal" : "New Savings Goal"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleGoalSubmit} className="space-y-3 mt-2">
+          <form onSubmit={handleGoalSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="space-y-3 mt-2 overflow-y-auto flex-1 pr-1">
             <div className="space-y-1.5">
               <Label htmlFor="goal-name">Goal name</Label>
               <Input id="goal-name" name="name" placeholder="e.g. Emergency Fund" value={goalName} onChange={(e) => setGoalName(e.target.value)} required />
@@ -1040,7 +1041,8 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 ))}
               </div>
             </div>
-            <div className="flex gap-3 pt-1">
+            </div>
+            <div className="flex gap-3 pt-3 shrink-0 border-t mt-2">
               <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => setGoalDialogOpen(false)}>Cancel</Button>
               <Button type="submit" className="flex-1" disabled={isSavingGoal}>
                 {isSavingGoal ? "Saving…" : editingGoal ? "Save Changes" : "Create Goal"}
