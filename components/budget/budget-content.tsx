@@ -49,6 +49,8 @@ function getCatKeys(cat: BudgetCategory): string[] {
   ]
 }
 
+const CREDIT_CARD_PAYMENT_RE = /payment.*thank.?you|payment from chk|payment to crd|mobile banking payment|credit card payment|autopay payment|online payment to card/i
+
 interface SavingsGoal {
   id: string
   name: string
@@ -333,8 +335,9 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       }
     }
 
-    const unmatchedTransfers = monthlyTransferTransactions.filter((tx) => !matchedTxIds.has(tx.id))
-    return { transferMatchedGoals, transferMatchedCategories, unmatchedTransfers }
+    const visibleTransferTxs = monthlyTransferTransactions.filter((tx) => !CREDIT_CARD_PAYMENT_RE.test(tx.title))
+    const unmatchedTransfers = visibleTransferTxs.filter((tx) => !matchedTxIds.has(tx.id))
+    return { transferMatchedGoals, transferMatchedCategories, unmatchedTransfers, visibleTransferTxs }
   }, [monthlyTransferTransactions, savingsGoals, categories])
 
   // Seed from spreadsheet
@@ -1195,6 +1198,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 {isReordering ? "Done" : "Reorder"}
               </Button>
             </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {categories.map((cat, catIndex) => {
               const baseBudget = budgetedAmount(cat, monthlyIncome)
               // Rollover: surplus from last month adds to this month's budget (current month only)
@@ -1390,12 +1394,13 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                 </Card>
               )
             })}
+            </div>
           </div>
         )}
       </div>
 
       {/* Transfer Review */}
-      {monthlyTransferTransactions.length > 0 && (
+      {visibleTransferTxs.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <MoveRight className="w-5 h-5 text-primary" />
@@ -1407,7 +1412,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
             )}
           </h2>
           <div className="space-y-2">
-            {monthlyTransferTransactions.map((tx) => {
+            {visibleTransferTxs.map((tx) => {
               const matchedGoal = savingsGoals.find((g) => {
                 if (!g.transfer_keywords) return false
                 const t = tx.title.toLowerCase()

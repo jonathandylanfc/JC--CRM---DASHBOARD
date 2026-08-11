@@ -495,24 +495,36 @@ export function FinanceContent({
     }> = []
     for (const [, txs] of groups) {
       const hasAnnualKeyword = /annual|yearly/i.test(txs[0].title)
-      const hasKeyword = /subscription|subscribe|member/i.test(txs[0].title) || hasAnnualKeyword
       const months = new Set(txs.map((tx) => tx.date.slice(0, 7)))
-      if (months.size < 2 && !hasKeyword) continue
+      const monthList = [...months].sort()
 
-      // Detect annual billing: explicit keyword or avg gap between charges > 300 days
-      let billingCycle: "monthly" | "yearly" = "monthly"
-      if (hasAnnualKeyword) {
-        billingCycle = "yearly"
-      } else if (txs.length >= 2) {
-        const chronological = [...txs].sort((a, b) => a.date.localeCompare(b.date))
+      // Monthly: require at least 2 consecutive calendar months
+      const hasConsecutiveMonths = monthList.some((_, i) => {
+        if (i === 0) return false
+        const [y1, mo1] = monthList[i - 1].split("-").map(Number)
+        const [y2, mo2] = monthList[i].split("-").map(Number)
+        return (y2 - y1) * 12 + (mo2 - mo1) === 1
+      })
+
+      // Annual billing: check avg gap between occurrences
+      const chronological = [...txs].sort((a, b) => a.date.localeCompare(b.date))
+      let avgGap = 0
+      if (chronological.length >= 2) {
         let totalGap = 0
         for (let i = 1; i < chronological.length; i++) {
           const d1 = new Date(chronological[i - 1].date + "T12:00:00")
           const d2 = new Date(chronological[i].date + "T12:00:00")
           totalGap += (d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)
         }
-        if (totalGap / (chronological.length - 1) > 300) billingCycle = "yearly"
+        avgGap = totalGap / (chronological.length - 1)
       }
+
+      const billingCycle: "monthly" | "yearly" = (hasAnnualKeyword || avgGap > 300) ? "yearly" : "monthly"
+      const isAnnual = billingCycle === "yearly"
+
+      // Only count as a subscription if it recurs: consecutive months (monthly) or 2+ occurrences ~1yr apart (annual)
+      const hasRecurrence = hasConsecutiveMonths || (isAnnual && txs.length >= 2)
+      if (!hasRecurrence) continue
 
       const sorted = [...txs].sort((a, b) => b.date.localeCompare(a.date))
       const latest = sorted[0]
