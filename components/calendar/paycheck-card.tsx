@@ -2,7 +2,6 @@
 
 import { useState, useTransition, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,8 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { DollarSign, Settings, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
-import { format, parseISO } from "date-fns"
+import { DollarSign, Settings, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
+import { format, startOfWeek } from "date-fns"
 import { formatPayPeriodRange } from "@/lib/pay-period"
 import { updatePaySettings } from "@/app/calendar/actions"
 import { toast } from "sonner"
@@ -63,19 +62,17 @@ function hoursFromShift(shift: Shift): number {
   const start = new Date(shift.start_at)
   const end = new Date(shift.end_at)
   const raw = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60))
-  // Unpaid break deductions
-  if (raw >= 8) return raw - 1    // 8+ hours → 1 hr unpaid lunch
-  if (raw >= 6) return raw - 0.5  // 6–8 hours → 30 min unpaid lunch
+  if (raw >= 8) return raw - 1
+  if (raw >= 6) return raw - 0.5
   return raw
 }
 
 export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckCardProps) {
   const router = useRouter()
+  const [open, setOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
   const [isPending, startTransition] = useTransition()
 
-  // Live data fetched client-side
   const [paySettings, setPaySettings] = useState<PaySettings | null>(initialPaySettings)
   const [shifts, setShifts] = useState<Shift[]>([])
   const [periodStart, setPeriodStart] = useState("")
@@ -83,7 +80,6 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
   const [fetching, setFetching] = useState(true)
   const [periodOffset, setPeriodOffset] = useState(0)
 
-  // Settings form state — seeded from initial props
   const [hourlyRate, setHourlyRate] = useState(initialPaySettings?.hourly_rate?.toString() ?? "")
   const [payPeriod, setPayPeriod] = useState(initialPaySettings?.pay_period ?? "biweekly")
   const [shiftKeyword, setShiftKeyword] = useState(initialPaySettings?.shift_keyword ?? "Work")
@@ -120,14 +116,12 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
         return true
       }
 
-      // Compare by YYYY-MM-DD string to avoid timezone/all-day event issues
       function inPeriod(start: string | null | undefined): boolean {
         if (!start) return false
         const d = start.slice(0, 10)
         return d >= pStart.slice(0, 10) && d <= pEnd.slice(0, 10)
       }
 
-      // Fetch from all three calendar sources the calendar view uses
       const [gRes, caldavRes, icsRes] = await Promise.all([
         fetch("/api/calendar/events"),
         fetch("/api/calendar/caldav"),
@@ -152,7 +146,6 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
           all_day: e.allDay ?? false,
         }))
 
-      // Merge local DB shifts + external, dedup by title+date
       const seen = new Set<string>()
       const merged = [...(data.shifts ?? []), ...externalShifts].filter((s: Shift) => {
         const key = `${s.title.toLowerCase()}|${s.start_at.slice(0, 10)}`
@@ -167,12 +160,10 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
     }
   }, [])
 
-  // Fetch on mount and whenever offset changes
   useEffect(() => {
     fetchShifts(periodOffset)
   }, [fetchShifts, periodOffset])
 
-  // Re-fetch whenever CalendarContent mutates local events
   useEffect(() => {
     const handler = () => fetchShifts(periodOffset)
     window.addEventListener("localShiftsChanged", handler)
@@ -180,7 +171,6 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
   }, [fetchShifts, periodOffset])
 
   const isConfigured = paySettings?.hourly_rate != null && paySettings.hourly_rate > 0
-
   const totalHours = shifts.reduce((sum, s) => sum + hoursFromShift(s), 0)
   const grossPay = totalHours * (paySettings?.hourly_rate ?? 0)
   const netPay = grossPay * (1 - (paySettings?.tax_rate ?? 25) / 100)
@@ -194,6 +184,23 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
     const d = new Date(periodEnd)
     d.setDate(d.getDate() + paySettings.pay_delay_days)
     return d
+  })()
+
+  // Group shifts by calendar week
+  const weeklyHours = (() => {
+    const weekMap = new Map<string, { label: string; hours: number }>()
+    for (const shift of shifts) {
+      const weekStart = startOfWeek(new Date(shift.start_at), { weekStartsOn: 0 })
+      const key = format(weekStart, "yyyy-MM-dd")
+      const hrs = hoursFromShift(shift)
+      if (!weekMap.has(key)) {
+        weekMap.set(key, { label: `Week of ${format(weekStart, "MMM d")}`, hours: 0 })
+      }
+      weekMap.get(key)!.hours += hrs
+    }
+    return Array.from(weekMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, v]) => v)
   })()
 
   function handleSaveSettings() {
@@ -221,151 +228,175 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
 
   return (
     <>
-      <Card className="mb-4">
-        <CardHeader className="pb-2 pt-3 px-4">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setCollapsed((c) => !c)}
-              className="flex items-center gap-2 text-sm font-medium hover:text-foreground/80 transition-colors"
-            >
-              <DollarSign className="h-4 w-4 text-green-500" />
-              Paycheck Estimator
-              {collapsed ? (
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-              ) : (
-                <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
-            </button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Settings className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </CardHeader>
+      {/* Trigger button */}
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full flex items-center justify-between px-4 py-3 mb-4 rounded-lg border border-border hover:border-primary/40 bg-card transition-colors text-left"
+      >
+        <div className="flex items-center gap-2">
+          <DollarSign className="h-4 w-4 text-green-500 shrink-0" />
+          <span className="text-sm font-medium">Paycheck Estimator</span>
+          {fetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          {isConfigured && !fetching && netPay > 0 && (
+            <span className="tabular-nums">${netPay.toFixed(2)} net</span>
+          )}
+          {!isConfigured && !fetching && (
+            <span className="text-xs">Not configured</span>
+          )}
+          <ChevronRight className="h-4 w-4 shrink-0" />
+        </div>
+      </button>
 
-        {!collapsed && (
-          <CardContent className="px-4 pb-4 pt-0">
-            {fetching && !isConfigured ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground py-1">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading…
-              </div>
-            ) : !isConfigured ? (
-              <div className="flex items-center justify-between">
+      {/* Main dialog */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md max-h-[85dvh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <div className="flex items-center justify-between pr-6">
+              <DialogTitle className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-green-500" />
+                Paycheck Estimator
+              </DialogTitle>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={() => { setOpen(false); setSettingsOpen(true) }}
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </DialogHeader>
+
+          <div className="overflow-y-auto flex-1 min-h-0 space-y-4 pr-1 mt-1">
+            {!isConfigured ? (
+              <div className="py-6 text-center space-y-3">
                 <p className="text-sm text-muted-foreground">
                   Set your hourly rate to estimate pay from calendar shifts.
                 </p>
-                <Button size="sm" variant="outline" onClick={() => setSettingsOpen(true)}>
+                <Button size="sm" onClick={() => { setOpen(false); setSettingsOpen(true) }}>
                   Configure
                 </Button>
               </div>
             ) : (
               <>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => setPeriodOffset((o) => o - 1)}
-                      className="p-0.5 rounded hover:bg-muted transition-colors"
-                      title="Previous period"
-                    >
-                      <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
-                    </button>
-                    <p className="text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">{periodLabel}</span>
-                      {periodOffset < 0 && <span className="text-muted-foreground"> · past</span>}
-                      {paySettings!.shift_exclude_keyword && (
-                        <span className="text-destructive/70"> · excl. &ldquo;{paySettings!.shift_exclude_keyword}&rdquo;</span>
-                      )}
-                    </p>
-                    <button
-                      onClick={() => setPeriodOffset((o) => Math.min(0, o + 1))}
-                      className={`p-0.5 rounded hover:bg-muted transition-colors ${periodOffset >= 0 ? "opacity-30 pointer-events-none" : ""}`}
-                      title="Next period"
-                    >
-                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                    </button>
-                  </div>
-                  {fetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                {/* Period navigation */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPeriodOffset((o) => o - 1)}
+                    className="p-1 rounded hover:bg-muted transition-colors"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                  <p className="text-xs text-center flex-1">
+                    <span className="font-medium">{periodLabel}</span>
+                    {periodOffset < 0 && <span className="text-muted-foreground"> · past</span>}
+                    {paySettings!.shift_exclude_keyword && (
+                      <span className="text-destructive/70"> · excl. &ldquo;{paySettings!.shift_exclude_keyword}&rdquo;</span>
+                    )}
+                  </p>
+                  <button
+                    onClick={() => setPeriodOffset((o) => Math.min(0, o + 1))}
+                    className={`p-1 rounded hover:bg-muted transition-colors ${periodOffset >= 0 ? "opacity-30 pointer-events-none" : ""}`}
+                  >
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                  {fetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground ml-1" />}
                 </div>
 
-                {shifts.length === 0 && (
-                  <p className="text-sm text-muted-foreground py-1">
+                {shifts.length === 0 && !fetching ? (
+                  <p className="text-sm text-muted-foreground text-center py-2">
                     No &ldquo;{paySettings!.shift_keyword}&rdquo; shifts this pay period.
                   </p>
-                )}
+                ) : (
+                  <>
+                    {/* Weekly hours breakdown */}
+                    {weeklyHours.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Hours by Week</p>
+                        {weeklyHours.map((week, i) => (
+                          <div key={i} className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">{week.label}</span>
+                            <span className="font-medium tabular-nums">{week.hours.toFixed(1)} hrs</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
-                <div className="border-t pt-3 space-y-1.5">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total Hours</span>
-                    <span className="font-medium tabular-nums">{totalHours.toFixed(1)} hrs</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Est. Gross</span>
-                    <span className="font-semibold text-green-600 dark:text-green-400 tabular-nums">
-                      ${grossPay.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      Est. Net <span className="text-xs">(~{paySettings!.tax_rate}% tax)</span>
-                    </span>
-                    <span className="font-medium tabular-nums">${netPay.toFixed(2)}</span>
-                  </div>
-                  {payDate && (
-                    <div className="flex justify-between text-xs pt-0.5">
-                      <span className="text-muted-foreground">Pay date</span>
-                      <span className="font-medium">{format(payDate, "MMM d")}</span>
-                    </div>
-                  )}
-                </div>
-
-                {netPay > 0 && budgetCategories.length > 0 && (() => {
-                  const regular = budgetCategories.filter(c => !c.is_catchall)
-                  const catchall = budgetCategories.find(c => c.is_catchall)
-
-                  const rows = regular.map(cat => ({
-                    id: cat.id,
-                    name: cat.name,
-                    label: cat.type === "percentage" ? `${cat.value}%` : "fixed",
-                    amount: cat.type === "fixed" ? cat.value : (cat.value / 100) * netPay,
-                  }))
-
-                  const allocated = rows.reduce((s, r) => s + r.amount, 0)
-                  const leftover = Math.max(0, netPay - allocated)
-
-                  if (catchall) {
-                    rows.push({ id: catchall.id, name: catchall.name, label: "rest", amount: leftover })
-                  }
-
-                  return (
-                    <div className="border-t pt-3 mt-1 space-y-1.5">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Allocation</p>
-                      {rows.map(row => (
-                        <div key={row.id} className="flex items-center gap-2 text-sm">
-                          <span className="text-muted-foreground truncate flex-1">{row.name}</span>
-                          <span className="text-xs text-muted-foreground/50 shrink-0">{row.label}</span>
-                          <span className="font-medium tabular-nums shrink-0">${row.amount.toFixed(2)}</span>
-                        </div>
-                      ))}
-                      {!catchall && leftover > 0.005 && (
-                        <div className="flex items-center justify-between text-xs text-muted-foreground/60">
-                          <span>Unallocated</span>
-                          <span className="tabular-nums">${leftover.toFixed(2)}</span>
+                    {/* Summary */}
+                    <div className="border-t pt-3 space-y-1.5">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Total Hours</span>
+                        <span className="font-medium tabular-nums">{totalHours.toFixed(1)} hrs</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Est. Gross</span>
+                        <span className="font-semibold text-green-600 dark:text-green-400 tabular-nums">
+                          ${grossPay.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          Est. Net <span className="text-xs">(~{paySettings!.tax_rate}% tax)</span>
+                        </span>
+                        <span className="font-medium tabular-nums">${netPay.toFixed(2)}</span>
+                      </div>
+                      {payDate && (
+                        <div className="flex justify-between text-xs pt-0.5">
+                          <span className="text-muted-foreground">Pay date</span>
+                          <span className="font-medium">{format(payDate, "MMM d")}</span>
                         </div>
                       )}
                     </div>
-                  )
-                })()}
+
+                    {/* Allocation */}
+                    {netPay > 0 && budgetCategories.length > 0 && (() => {
+                      const regular = budgetCategories.filter(c => !c.is_catchall)
+                      const catchall = budgetCategories.find(c => c.is_catchall)
+
+                      const rows = regular.map(cat => ({
+                        id: cat.id,
+                        name: cat.name,
+                        label: cat.type === "percentage" ? `${cat.value}%` : "fixed",
+                        amount: cat.type === "fixed" ? cat.value : (cat.value / 100) * netPay,
+                      }))
+
+                      const allocated = rows.reduce((s, r) => s + r.amount, 0)
+                      const leftover = Math.max(0, netPay - allocated)
+
+                      if (catchall) {
+                        rows.push({ id: catchall.id, name: catchall.name, label: "rest", amount: leftover })
+                      }
+
+                      return (
+                        <div className="border-t pt-3 space-y-1.5">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Allocation</p>
+                          {rows.map(row => (
+                            <div key={row.id} className="flex items-center gap-2 text-sm">
+                              <span className="text-muted-foreground truncate flex-1">{row.name}</span>
+                              <span className="text-xs text-muted-foreground/50 shrink-0">{row.label}</span>
+                              <span className="font-medium tabular-nums shrink-0">${row.amount.toFixed(2)}</span>
+                            </div>
+                          ))}
+                          {!catchall && leftover > 0.005 && (
+                            <div className="flex items-center justify-between text-xs text-muted-foreground/60">
+                              <span>Unallocated</span>
+                              <span className="tabular-nums">${leftover.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </>
+                )}
               </>
             )}
-          </CardContent>
-        )}
-      </Card>
+          </div>
+        </DialogContent>
+      </Dialog>
 
+      {/* Settings dialog */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -476,11 +507,7 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
             </div>
 
             <div className="flex gap-2 pt-2">
-              <Button
-                className="flex-1"
-                onClick={handleSaveSettings}
-                disabled={isPending}
-              >
+              <Button className="flex-1" onClick={handleSaveSettings} disabled={isPending}>
                 {isPending ? "Saving…" : "Save Settings"}
               </Button>
               <Button variant="outline" onClick={() => setSettingsOpen(false)}>
