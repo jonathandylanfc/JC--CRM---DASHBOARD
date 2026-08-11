@@ -85,9 +85,7 @@ function buildAllocationRows(
   const allocated = rows.reduce((s, r) => s + r.amount, 0)
   const leftover = Math.max(0, netPay - allocated)
 
-  if (catchall) {
-    rows.push({ id: catchall.id, name: catchall.name, label: "rest", amount: leftover })
-  }
+  if (catchall) rows.push({ id: catchall.id, name: catchall.name, label: "rest", amount: leftover })
 
   return { rows, leftover: catchall ? 0 : leftover }
 }
@@ -105,10 +103,6 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
   const [fetching, setFetching] = useState(true)
   const [periodOffset, setPeriodOffset] = useState(0)
 
-  // Previous period (for monthly view on 2nd paycheck)
-  const [prevNetPay, setPrevNetPay] = useState<number | null>(null)
-  const [fetchingPrev, setFetchingPrev] = useState(false)
-
   const [hourlyRate, setHourlyRate] = useState(initialPaySettings?.hourly_rate?.toString() ?? "")
   const [payPeriod, setPayPeriod] = useState(initialPaySettings?.pay_period ?? "biweekly")
   const [shiftKeyword, setShiftKeyword] = useState(initialPaySettings?.shift_keyword ?? "Work")
@@ -116,65 +110,6 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
   const [taxRate, setTaxRate] = useState(initialPaySettings?.tax_rate?.toString() ?? "25")
   const [periodStartDate, setPeriodStartDate] = useState(initialPaySettings?.pay_period_start_date ?? "")
   const [payDelayDays, setPayDelayDays] = useState(initialPaySettings?.pay_delay_days?.toString() ?? "0")
-
-  const fetchShiftsForPeriod = useCallback(async (offset: number, ps: PaySettings, signal?: AbortSignal) => {
-    const res = await fetch(`/api/calendar/paycheck-shifts?offset=${offset}`, { signal })
-    if (!res.ok) return null
-    const data = await res.json()
-
-    const pStart: string = data.periodStart ?? ""
-    const pEnd: string = data.periodEnd ?? ""
-    if (!pStart || !pEnd || !ps.hourly_rate) return { shifts: data.shifts ?? [], pStart, pEnd }
-
-    const kw = (ps.shift_keyword ?? "work").toLowerCase()
-    const excKw = (ps.shift_exclude_keyword ?? "").toLowerCase().trim()
-
-    function matchesKeyword(title: string) {
-      const t = title.toLowerCase()
-      if (!t.includes(kw)) return false
-      if (excKw && t.includes(excKw)) return false
-      return true
-    }
-    function inPeriod(start: string | null | undefined) {
-      if (!start) return false
-      const d = start.slice(0, 10)
-      return d >= pStart.slice(0, 10) && d <= pEnd.slice(0, 10)
-    }
-
-    const [gRes, caldavRes, icsRes] = await Promise.all([
-      fetch("/api/calendar/events", { signal }),
-      fetch("/api/calendar/caldav", { signal }),
-      fetch("/api/calendar/ics", { signal }),
-    ])
-    const gData = gRes.ok ? await gRes.json() : {}
-    const caldavData = caldavRes.ok ? await caldavRes.json() : {}
-    const icsData = icsRes.ok ? await icsRes.json() : {}
-
-    type RawEvent = { id?: string | null; title: string; start: string | null; end?: string | null; allDay?: boolean }
-    const external: Shift[] = [
-      ...(gData.events ?? []) as RawEvent[],
-      ...(caldavData.events ?? []) as RawEvent[],
-      ...(icsData.events ?? []) as RawEvent[],
-    ]
-      .filter(e => inPeriod(e.start) && matchesKeyword(e.title))
-      .map(e => ({
-        id: e.id ?? `ext-${e.start}`,
-        title: e.title,
-        start_at: e.start!,
-        end_at: e.end ?? null,
-        all_day: e.allDay ?? false,
-      }))
-
-    const seen = new Set<string>()
-    const merged = [...(data.shifts ?? []), ...external].filter((s: Shift) => {
-      const key = `${s.title.toLowerCase()}|${s.start_at.slice(0, 10)}`
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-
-    return { shifts: merged.sort((a: Shift, b: Shift) => a.start_at.localeCompare(b.start_at)), pStart, pEnd }
-  }, [])
 
   const fetchShifts = useCallback(async (offset: number) => {
     setFetching(true)
@@ -189,19 +124,64 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
       const pEnd: string = data.periodEnd ?? ""
       setPeriodStart(pStart)
       setPeriodEnd(pEnd)
-      setPrevNetPay(null)
 
       if (!pStart || !pEnd || !ps?.hourly_rate) {
         setShifts(data.shifts ?? [])
         return
       }
 
-      const result = await fetchShiftsForPeriod(offset, ps)
-      if (result) setShifts(result.shifts)
+      const kw = (ps.shift_keyword ?? "work").toLowerCase()
+      const excKw = (ps.shift_exclude_keyword ?? "").toLowerCase().trim()
+
+      function matchesKeyword(title: string) {
+        const t = title.toLowerCase()
+        if (!t.includes(kw)) return false
+        if (excKw && t.includes(excKw)) return false
+        return true
+      }
+      function inPeriod(start: string | null | undefined) {
+        if (!start) return false
+        const d = start.slice(0, 10)
+        return d >= pStart.slice(0, 10) && d <= pEnd.slice(0, 10)
+      }
+
+      const [gRes, caldavRes, icsRes] = await Promise.all([
+        fetch("/api/calendar/events"),
+        fetch("/api/calendar/caldav"),
+        fetch("/api/calendar/ics"),
+      ])
+      const gData = gRes.ok ? await gRes.json() : {}
+      const caldavData = caldavRes.ok ? await caldavRes.json() : {}
+      const icsData = icsRes.ok ? await icsRes.json() : {}
+
+      type RawEvent = { id?: string | null; title: string; start: string | null; end?: string | null; allDay?: boolean }
+      const external: Shift[] = [
+        ...(gData.events ?? []) as RawEvent[],
+        ...(caldavData.events ?? []) as RawEvent[],
+        ...(icsData.events ?? []) as RawEvent[],
+      ]
+        .filter(e => inPeriod(e.start) && matchesKeyword(e.title))
+        .map(e => ({
+          id: e.id ?? `ext-${e.start}`,
+          title: e.title,
+          start_at: e.start!,
+          end_at: e.end ?? null,
+          all_day: e.allDay ?? false,
+        }))
+
+      const seen = new Set<string>()
+      const merged = [...(data.shifts ?? []), ...external].filter((s: Shift) => {
+        const key = `${s.title.toLowerCase()}|${s.start_at.slice(0, 10)}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      setShifts(merged.sort((a: Shift, b: Shift) => a.start_at.localeCompare(b.start_at)))
     } finally {
       setFetching(false)
     }
-  }, [fetchShiftsForPeriod])
+  }, [])
 
   useEffect(() => { fetchShifts(periodOffset) }, [fetchShifts, periodOffset])
 
@@ -212,13 +192,15 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
   }, [fetchShifts, periodOffset])
 
   const isConfigured = paySettings?.hourly_rate != null && paySettings.hourly_rate > 0
-  const isSemimonthly = paySettings?.pay_period === "semimonthly"
-  const isSecondPaycheck = isSemimonthly && !!periodStart
-    && new Date(periodStart + "T12:00:00").getDate() >= 16
+
+  // For weekly pay, monthly = ~4 paychecks; for biweekly/semimonthly = 2
+  const isWeekly = paySettings?.pay_period === "weekly"
+  const paychecksPerMonth = isWeekly ? 4 : 2
 
   const totalHours = shifts.reduce((sum, s) => sum + hoursFromShift(s), 0)
   const grossPay = totalHours * (paySettings?.hourly_rate ?? 0)
   const netPay = grossPay * (1 - (paySettings?.tax_rate ?? 25) / 100)
+  const monthlyNetEstimate = netPay * paychecksPerMonth
 
   const periodLabel = periodStart && periodEnd
     ? formatPayPeriodRange(new Date(periodStart), new Date(periodEnd))
@@ -231,7 +213,6 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
     return d
   })()
 
-  // Group shifts by calendar week
   const weeklyHours = (() => {
     const weekMap = new Map<string, { label: string; hours: number }>()
     for (const shift of shifts) {
@@ -247,25 +228,6 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([, v]) => v)
   })()
-
-  // Fetch first paycheck of month when modal opens on second paycheck
-  useEffect(() => {
-    if (!open || !isSecondPaycheck || !paySettings || prevNetPay !== null) return
-    setFetchingPrev(true)
-    fetchShiftsForPeriod(periodOffset - 1, paySettings)
-      .then(result => {
-        if (!result) return
-        const prevHours = result.shifts.reduce((sum, s) => sum + hoursFromShift(s), 0)
-        const prevGross = prevHours * (paySettings.hourly_rate ?? 0)
-        const prevNet = prevGross * (1 - (paySettings.tax_rate ?? 25) / 100)
-        setPrevNetPay(prevNet)
-      })
-      .catch(() => {})
-      .finally(() => setFetchingPrev(false))
-  }, [open, isSecondPaycheck, paySettings, periodOffset, prevNetPay, fetchShiftsForPeriod])
-
-  // Per-paycheck fixed divisor: semimonthly splits monthly fixed amounts in half
-  const fixedDivisor = isSemimonthly ? 2 : 1
 
   function handleSaveSettings() {
     const fd = new FormData()
@@ -345,7 +307,7 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
               <>
                 {/* Period navigation */}
                 <div className="flex items-center gap-1">
-                  <button onClick={() => { setPeriodOffset(o => o - 1); setPrevNetPay(null) }} className="p-1 rounded hover:bg-muted transition-colors">
+                  <button onClick={() => setPeriodOffset(o => o - 1)} className="p-1 rounded hover:bg-muted transition-colors">
                     <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
                   <p className="text-xs text-center flex-1">
@@ -356,7 +318,7 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
                     )}
                   </p>
                   <button
-                    onClick={() => { setPeriodOffset(o => Math.min(0, o + 1)); setPrevNetPay(null) }}
+                    onClick={() => setPeriodOffset(o => Math.min(0, o + 1))}
                     className={`p-1 rounded hover:bg-muted transition-colors ${periodOffset >= 0 ? "opacity-30 pointer-events-none" : ""}`}
                   >
                     <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -383,11 +345,9 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
                       </div>
                     )}
 
-                    {/* This paycheck summary */}
+                    {/* This paycheck */}
                     <div className="border-t pt-3 space-y-1.5">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                        {isSemimonthly ? "This Paycheck" : "Summary"}
-                      </p>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">This Paycheck</p>
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Total Hours</span>
                         <span className="font-medium tabular-nums">{totalHours.toFixed(1)} hrs</span>
@@ -410,12 +370,10 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
 
                     {/* Per-paycheck allocation */}
                     {netPay > 0 && budgetCategories.length > 0 && (() => {
-                      const { rows, leftover } = buildAllocationRows(budgetCategories, netPay, fixedDivisor)
+                      const { rows, leftover } = buildAllocationRows(budgetCategories, netPay, paychecksPerMonth)
                       return (
                         <div className="border-t pt-3 space-y-1.5">
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                            {isSemimonthly ? "This Paycheck — Allocation" : "Allocation"}
-                          </p>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">This Paycheck — Allocation</p>
                           {rows.map(row => (
                             <div key={row.id} className="flex items-center gap-2 text-sm">
                               <span className="text-muted-foreground truncate flex-1">{row.name}</span>
@@ -433,45 +391,37 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
                       )
                     })()}
 
-                    {/* Monthly total — only shown on second paycheck of semimonthly */}
-                    {isSecondPaycheck && budgetCategories.length > 0 && (
-                      <div className="border-t pt-3 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Monthly Total</p>
-                          {fetchingPrev && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                    {/* Monthly estimate */}
+                    {netPay > 0 && budgetCategories.length > 0 && (() => {
+                      const { rows, leftover } = buildAllocationRows(budgetCategories, monthlyNetEstimate, 1)
+                      return (
+                        <div className="border-t pt-3 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Monthly Estimate</p>
+                            <span className="text-xs text-muted-foreground/60">×{paychecksPerMonth} paychecks</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Est. Monthly Net</span>
+                            <span className="font-semibold tabular-nums">${monthlyNetEstimate.toFixed(2)}</span>
+                          </div>
+                          <div className="border-t border-dashed pt-2 space-y-1.5">
+                            {rows.map(row => (
+                              <div key={row.id} className="flex items-center gap-2 text-sm">
+                                <span className="text-muted-foreground truncate flex-1">{row.name}</span>
+                                <span className="text-xs text-muted-foreground/50 shrink-0">{row.label}</span>
+                                <span className="font-medium tabular-nums shrink-0">${row.amount.toFixed(2)}</span>
+                              </div>
+                            ))}
+                            {leftover > 0.005 && (
+                              <div className="flex items-center justify-between text-xs text-muted-foreground/60">
+                                <span>Unallocated</span>
+                                <span className="tabular-nums">${leftover.toFixed(2)}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-
-                        {prevNetPay !== null ? (() => {
-                          const monthlyNet = prevNetPay + netPay
-                          const { rows, leftover } = buildAllocationRows(budgetCategories, monthlyNet, 1)
-                          return (
-                            <>
-                              <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Combined Net</span>
-                                <span className="font-semibold tabular-nums">${monthlyNet.toFixed(2)}</span>
-                              </div>
-                              <div className="border-t border-dashed pt-2 space-y-1.5">
-                                {rows.map(row => (
-                                  <div key={row.id} className="flex items-center gap-2 text-sm">
-                                    <span className="text-muted-foreground truncate flex-1">{row.name}</span>
-                                    <span className="text-xs text-muted-foreground/50 shrink-0">{row.label}</span>
-                                    <span className="font-medium tabular-nums shrink-0">${row.amount.toFixed(2)}</span>
-                                  </div>
-                                ))}
-                                {leftover > 0.005 && (
-                                  <div className="flex items-center justify-between text-xs text-muted-foreground/60">
-                                    <span>Unallocated</span>
-                                    <span className="tabular-nums">${leftover.toFixed(2)}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </>
-                          )
-                        })() : !fetchingPrev && (
-                          <p className="text-xs text-muted-foreground">Could not load first paycheck data.</p>
-                        )}
-                      </div>
-                    )}
+                      )
+                    })()}
                   </>
                 )}
               </>
