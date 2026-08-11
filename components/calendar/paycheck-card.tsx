@@ -51,7 +51,11 @@ function hoursFromShift(shift: Shift): number {
   if (shift.all_day || !shift.end_at) return 0
   const start = new Date(shift.start_at)
   const end = new Date(shift.end_at)
-  return Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60))
+  const raw = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60))
+  // Unpaid break deductions
+  if (raw >= 8) return raw - 1    // 8+ hours → 1 hr unpaid lunch
+  if (raw >= 6) return raw - 0.5  // 6–8 hours → 30 min unpaid lunch
+  return raw
 }
 
 export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
