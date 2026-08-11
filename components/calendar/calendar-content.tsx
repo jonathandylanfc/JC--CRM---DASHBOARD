@@ -1224,23 +1224,27 @@ export function CalendarContent() {
                       </div>
                     </div>
 
-                    <Button
-                      className="w-full gap-2"
-                      onClick={handleAddShifts}
-                      disabled={addingShifts || parsedShifts.every((s) => !s.selected)}
-                    >
-                      {addingShifts ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                      {addingShifts
-                        ? "Adding…"
-                        : scheduleType === "sports"
-                          ? `Add ${parsedShifts.filter((s) => s.selected).length} Game${parsedShifts.filter((s) => s.selected).length !== 1 ? "s" : ""} to Calendar`
-                          : `Add ${parsedShifts.filter((s) => s.selected).length} Shift${parsedShifts.filter((s) => s.selected).length !== 1 ? "s" : ""} to Calendar`}
-                    </Button>
                   </div>
                 )}
               </div>
             )}
           </div>
+          {parsedShifts.length > 0 && (
+            <div className="pt-3 border-t shrink-0">
+              <Button
+                className="w-full gap-2"
+                onClick={handleAddShifts}
+                disabled={addingShifts || parsedShifts.every((s) => !s.selected)}
+              >
+                {addingShifts ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                {addingShifts
+                  ? "Adding…"
+                  : scheduleType === "sports"
+                    ? `Add ${parsedShifts.filter((s) => s.selected).length} Game${parsedShifts.filter((s) => s.selected).length !== 1 ? "s" : ""} to Calendar`
+                    : `Add ${parsedShifts.filter((s) => s.selected).length} Shift${parsedShifts.filter((s) => s.selected).length !== 1 ? "s" : ""} to Calendar`}
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
