@@ -72,6 +72,24 @@ export async function updateBudgetCategory(id: string, formData: FormData) {
   return { category: data }
 }
 
+export async function reorderBudgetCategories(orderedIds: string[]) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  await Promise.all(
+    orderedIds.map((id, index) =>
+      supabase
+        .from("budget_categories")
+        .update({ sort_order: index })
+        .eq("id", id)
+        .eq("user_id", user.id)
+    )
+  )
+  revalidatePath("/budget")
+  return { success: true }
+}
+
 export async function assignTransactionToCategory(
   transactionId: string,
   title: string,

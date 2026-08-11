@@ -23,10 +23,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown } from "lucide-react"
+import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown, ChevronUp, GripVertical } from "lucide-react"
 import { format, addMonths, subMonths, parseISO, differenceInDays } from "date-fns"
 import { toast } from "sonner"
-import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal } from "@/app/budget/actions"
+import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal, reorderBudgetCategories } from "@/app/budget/actions"
 
 interface BudgetCategory {
   id: string
@@ -365,6 +365,21 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       const result = await bulkCreateBudgetCategories(names)
       if (result.error) toast.error(result.error)
       else router.refresh()
+    })
+  }
+
+  // Reordering
+  const [isReordering, setIsReordering] = useState(false)
+  const [isReorderPending, startReorderTransition] = useTransition()
+
+  function moveCategory(index: number, direction: -1 | 1) {
+    const newIndex = index + direction
+    if (newIndex < 0 || newIndex >= categories.length) return
+    const reordered = [...categories]
+    ;[reordered[index], reordered[newIndex]] = [reordered[newIndex], reordered[index]]
+    startReorderTransition(async () => {
+      await reorderBudgetCategories(reordered.map((c) => c.id))
+      router.refresh()
     })
   }
 
@@ -1167,7 +1182,18 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           </Card>
         ) : (
           <div className="space-y-3">
-            {categories.map((cat) => {
+            <div className="flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`h-7 px-2.5 text-xs gap-1.5 ${isReordering ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                onClick={() => setIsReordering((v) => !v)}
+              >
+                <GripVertical className="w-3.5 h-3.5" />
+                {isReordering ? "Done" : "Reorder"}
+              </Button>
+            </div>
+            {categories.map((cat, catIndex) => {
               const baseBudget = budgetedAmount(cat, monthlyIncome)
               // Rollover: surplus from last month adds to this month's budget (current month only)
               const lastMonthActual = getCatKeys(cat).reduce((s, k) => s + (lastMonthExpenses[k] ?? 0), 0)
@@ -1250,6 +1276,26 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                           </p>
                         )}
                       </div>
+                      {isReordering ? (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost" size="icon"
+                            className="w-7 h-7 text-muted-foreground hover:text-foreground"
+                            disabled={catIndex === 0 || isReorderPending}
+                            onClick={() => moveCategory(catIndex, -1)}
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost" size="icon"
+                            className="w-7 h-7 text-muted-foreground hover:text-foreground"
+                            disabled={catIndex === categories.length - 1 || isReorderPending}
+                            onClick={() => moveCategory(catIndex, 1)}
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      ) : (
                       <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <Button
                           variant="ghost" size="icon"
@@ -1266,6 +1312,7 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>
                       </div>
+                      )}
                     </div>
                   </div>
 
