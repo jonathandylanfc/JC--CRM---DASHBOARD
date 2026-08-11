@@ -570,7 +570,7 @@ export async function getPaySettings() {
   if (!userId) return null
   const { data } = await supabase
     .from("profiles")
-    .select("hourly_rate, pay_period, shift_keyword, shift_exclude_keyword, tax_rate, pay_period_start_date")
+    .select("hourly_rate, pay_period, shift_keyword, shift_exclude_keyword, tax_rate, pay_period_start_date, pay_delay_days")
     .eq("id", userId)
     .single()
   if (!data) return null
@@ -581,6 +581,7 @@ export async function getPaySettings() {
     shift_exclude_keyword: (data.shift_exclude_keyword as string) ?? null,
     tax_rate: data.tax_rate != null ? Number(data.tax_rate) : 25,
     pay_period_start_date: (data.pay_period_start_date as string) ?? null,
+    pay_delay_days: data.pay_delay_days != null ? Number(data.pay_delay_days) : 0,
   }
 }
 

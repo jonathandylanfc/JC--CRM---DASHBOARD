@@ -40,6 +40,7 @@ interface PaySettings {
   shift_exclude_keyword: string | null
   tax_rate: number
   pay_period_start_date: string | null
+  pay_delay_days: number
 }
 
 interface PaycheckCardProps {
@@ -74,6 +75,7 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
   const [shiftExcludeKeyword, setShiftExcludeKeyword] = useState(initialPaySettings?.shift_exclude_keyword ?? "")
   const [taxRate, setTaxRate] = useState(initialPaySettings?.tax_rate?.toString() ?? "25")
   const [periodStartDate, setPeriodStartDate] = useState(initialPaySettings?.pay_period_start_date ?? "")
+  const [payDelayDays, setPayDelayDays] = useState(initialPaySettings?.pay_delay_days?.toString() ?? "0")
 
   const fetchShifts = useCallback(async (offset: number) => {
     setFetching(true)
@@ -172,6 +174,13 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
     ? formatPayPeriodRange(new Date(periodStart), new Date(periodEnd))
     : ""
 
+  const payDate = (() => {
+    if (!periodEnd || !(paySettings?.pay_delay_days)) return null
+    const d = new Date(periodEnd)
+    d.setDate(d.getDate() + paySettings.pay_delay_days)
+    return d
+  })()
+
   function handleSaveSettings() {
     const fd = new FormData()
     fd.set("hourly_rate", hourlyRate)
@@ -180,6 +189,7 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
     fd.set("shift_exclude_keyword", shiftExcludeKeyword)
     fd.set("tax_rate", taxRate)
     fd.set("pay_period_start_date", periodStartDate)
+    fd.set("pay_delay_days", payDelayDays)
 
     startTransition(async () => {
       const result = await updatePaySettings(fd)
@@ -313,6 +323,12 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
                     <span>${paySettings!.hourly_rate!.toFixed(2)}/hr</span>
                     <span className="capitalize">{paySettings!.pay_period}</span>
                   </div>
+                  {payDate && (
+                    <div className="flex justify-between text-xs pt-0.5">
+                      <span className="text-muted-foreground">Pay date</span>
+                      <span className="font-medium">{format(payDate, "MMM d")}</span>
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -407,6 +423,25 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
               />
               <p className="text-xs text-muted-foreground">
                 A known pay period start date so periods stay aligned correctly.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="pay_delay_days">
+                Days until paycheck after period ends
+                <span className="text-muted-foreground font-normal"> (optional)</span>
+              </Label>
+              <Input
+                id="pay_delay_days"
+                type="number"
+                min="0"
+                max="30"
+                placeholder="0"
+                value={payDelayDays}
+                onChange={(e) => setPayDelayDays(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                e.g. 7 if you&apos;re paid one week after the period ends.
               </p>
             </div>
 
