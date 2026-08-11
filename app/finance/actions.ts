@@ -138,6 +138,40 @@ export async function approveTransactionWithCategory(id: string, category: strin
   return { success: true }
 }
 
+export async function approveTransactionWithCategoryAlways(id: string, title: string, category: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+
+  // Update this transaction + all others with same title
+  const { error: txError } = await supabase
+    .from("transactions")
+    .update({ reviewed: true, snoozed_until: null, category })
+    .eq("id", id)
+    .eq("user_id", user.id)
+  if (txError) return { error: txError.message }
+
+  await supabase
+    .from("transactions")
+    .update({ category })
+    .eq("user_id", user.id)
+    .ilike("title", title)
+    .neq("id", id)
+
+  // Save mapping so future imports auto-categorize
+  await supabase
+    .from("category_mappings")
+    .upsert(
+      { user_id: user.id, title: title.toLowerCase().trim(), category },
+      { onConflict: "user_id,title" },
+    )
+
+  revalidatePath("/finance")
+  revalidatePath("/budget")
+  revalidatePath("/")
+  return { success: true }
+}
+
 export async function snoozeTransaction(id: string, hours = 24) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

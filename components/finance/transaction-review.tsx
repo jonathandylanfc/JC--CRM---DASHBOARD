@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle2, Clock, TrendingUp, TrendingDown, ArrowLeftRight, ChevronDown, ChevronUp, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
-import { approveTransaction, approveTransactionWithCategory, snoozeTransaction, approveAllVisible } from "@/app/finance/actions"
+import { approveTransaction, approveTransactionWithCategory, approveTransactionWithCategoryAlways, snoozeTransaction, approveAllVisible } from "@/app/finance/actions"
 import { format } from "date-fns"
 
 interface Transaction {
@@ -48,6 +48,8 @@ export function TransactionReview({ transactions, budgetCategories = [] }: Props
   const [expanded, setExpanded] = useState(true)
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const [isPending, startTransition] = useTransition()
+  const [recatTxId, setRecatTxId] = useState<string | null>(null)
+  const [recatDest, setRecatDest] = useState<string | null>(null)
 
   const now = new Date()
 
@@ -76,6 +78,34 @@ export function TransactionReview({ transactions, budgetCategories = [] }: Props
       const result = await approveTransactionWithCategory(id, category)
       if (result.error) toast.error(result.error)
       else router.refresh()
+    })
+  }
+
+  function handleRecatJustOne(tx: Transaction, category: string) {
+    setDismissed((prev) => new Set(prev).add(tx.id))
+    setRecatTxId(null)
+    setRecatDest(null)
+    startTransition(async () => {
+      const result = await approveTransactionWithCategory(tx.id, category)
+      if (result.error) toast.error(result.error)
+      else {
+        toast.success(`Moved to ${category}`)
+        router.refresh()
+      }
+    })
+  }
+
+  function handleRecatAlways(tx: Transaction, category: string) {
+    setDismissed((prev) => new Set(prev).add(tx.id))
+    setRecatTxId(null)
+    setRecatDest(null)
+    startTransition(async () => {
+      const result = await approveTransactionWithCategoryAlways(tx.id, tx.title, category)
+      if (result.error) toast.error(result.error)
+      else {
+        toast.success(`"${tx.title}" → ${category} (all future charges will auto-sort here)`)
+        router.refresh()
+      }
     })
   }
 
@@ -213,17 +243,74 @@ export function TransactionReview({ transactions, budgetCategories = [] }: Props
                         <Button
                           variant="outline"
                           size="sm"
+                          className={`h-7 px-2.5 text-xs bg-transparent ${recatTxId === tx.id ? "border-primary text-primary" : ""}`}
+                          onClick={() => { setRecatTxId(recatTxId === tx.id ? null : tx.id); setRecatDest(null) }}
+                          disabled={isPending}
+                          title="Change category"
+                        >
+                          ↩ Move
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
                           className="h-7 px-2.5 gap-1 text-xs bg-transparent"
                           onClick={() => handleSnooze(tx.id)}
                           disabled={isPending}
                           title="Remind me in 24 hours"
                         >
                           <Clock className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Later</span>
                         </Button>
                       </div>
                     )}
                   </div>
+
+                  {/* Inline re-categorize panel */}
+                  {recatTxId === tx.id && !isCostcoAmbiguous && (
+                    <div className="pl-12 space-y-2">
+                      {recatDest ? (
+                        /* Step 2: pick scope */
+                        <div className="space-y-2">
+                          <p className="text-xs text-muted-foreground">Move to <span className="font-medium text-foreground">{recatDest}</span>. Apply to:</p>
+                          <div className="flex flex-col gap-1.5">
+                            <button
+                              disabled={isPending}
+                              onClick={() => handleRecatJustOne(tx, recatDest)}
+                              className="w-full flex items-start gap-2 p-2.5 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-all text-left"
+                            >
+                              <div>
+                                <p className="text-xs font-medium">Just this charge</p>
+                                <p className="text-[11px] text-muted-foreground">Other "{tx.title}" transactions stay where they are</p>
+                              </div>
+                            </button>
+                            <button
+                              disabled={isPending}
+                              onClick={() => handleRecatAlways(tx, recatDest)}
+                              className="w-full flex items-start gap-2 p-2.5 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-all text-left"
+                            >
+                              <div>
+                                <p className="text-xs font-medium">All "{tx.title}" charges — now and future</p>
+                                <p className="text-[11px] text-muted-foreground">Every charge from this merchant auto-sorts here going forward</p>
+                              </div>
+                            </button>
+                          </div>
+                          <button className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2" onClick={() => setRecatDest(null)}>← back</button>
+                        </div>
+                      ) : (
+                        /* Step 1: pick category */
+                        <div className="flex flex-wrap gap-1.5">
+                          {budgetCategories.map((c) => (
+                            <button
+                              key={c.id}
+                              onClick={() => setRecatDest(c.name)}
+                              className="text-xs px-2.5 py-1 rounded-full border border-border hover:border-primary/60 hover:bg-muted/40 transition-colors"
+                            >
+                              {c.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Costco disambiguation row */}
                   {isCostcoAmbiguous && (() => {
