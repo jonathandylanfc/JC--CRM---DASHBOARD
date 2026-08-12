@@ -437,8 +437,8 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
                       )
                     })()}
 
-                    {/* Monthly estimate — collapsible */}
-                    {netPay > 0 && budgetCategories.length > 0 && (() => {
+                    {/* Monthly estimate — only for current/upcoming periods */}
+                    {netPay > 0 && budgetCategories.length > 0 && (!payDate || payDate >= new Date()) && (() => {
                       const { rows, leftover } = buildAllocationRows(budgetCategories, monthlyNetEstimate, 1)
                       return (
                         <div className="border-t pt-3 space-y-2">
