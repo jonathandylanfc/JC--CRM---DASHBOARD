@@ -22,6 +22,7 @@ import { DollarSign, Settings, ChevronLeft, ChevronRight, Loader2 } from "lucide
 import { format, startOfWeek, startOfMonth, endOfMonth, differenceInDays, addDays } from "date-fns"
 import { formatPayPeriodRange } from "@/lib/pay-period"
 import { updatePaySettings } from "@/app/calendar/actions"
+import { setExpectedMonthlyIncome } from "@/app/budget/actions"
 import { toast } from "sonner"
 
 interface Shift {
@@ -433,6 +434,21 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
                             <span className="text-muted-foreground">Est. Monthly Net</span>
                             <span className="font-semibold tabular-nums">${monthlyNetEstimate.toFixed(2)}</span>
                           </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full h-7 text-xs"
+                            disabled={isPending}
+                            onClick={() => {
+                              startTransition(async () => {
+                                await setExpectedMonthlyIncome(monthlyNetEstimate)
+                                toast.success(`Budget income set to $${monthlyNetEstimate.toFixed(2)}/mo`)
+                              })
+                            }}
+                          >
+                            {isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                            Sync to budget
+                          </Button>
                           <div className="border-t border-dashed pt-2 space-y-1.5">
                             {rows.map(row => (
                               <div key={row.id} className="flex items-center gap-2 text-sm">
