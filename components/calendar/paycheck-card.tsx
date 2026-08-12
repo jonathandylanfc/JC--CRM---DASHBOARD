@@ -128,6 +128,8 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
   const [periodEnd, setPeriodEnd] = useState("")
   const [fetching, setFetching] = useState(true)
   const [periodOffset, setPeriodOffset] = useState(0)
+  const [allocationOpen, setAllocationOpen] = useState(false)
+  const [monthlyOpen, setMonthlyOpen] = useState(false)
 
   const [hourlyRate, setHourlyRate] = useState(initialPaySettings?.hourly_rate?.toString() ?? "")
   const [payPeriod, setPayPeriod] = useState(initialPaySettings?.pay_period ?? "biweekly")
@@ -402,41 +404,53 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
                       )}
                     </div>
 
-                    {/* Per-paycheck allocation */}
+                    {/* Per-paycheck allocation — collapsible */}
                     {netPay > 0 && budgetCategories.length > 0 && (() => {
                       const { rows, leftover } = buildAllocationRows(budgetCategories, netPay, paychecksPerMonth)
                       return (
-                        <div className="border-t pt-3 space-y-1.5">
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">This Paycheck — Allocation</p>
-                          {rows.map(row => (
-                            <div key={row.id} className="flex items-center gap-2 text-sm">
-                              <span className="text-muted-foreground truncate flex-1">{row.name}</span>
-                              <span className="text-xs text-muted-foreground/50 shrink-0">{row.label}</span>
-                              <span className="font-medium tabular-nums shrink-0">${row.amount.toFixed(2)}</span>
-                            </div>
-                          ))}
-                          {leftover > 0.005 && (
-                            <div className="flex items-center justify-between text-xs text-muted-foreground/60">
-                              <span>Unallocated</span>
-                              <span className="tabular-nums">${leftover.toFixed(2)}</span>
+                        <div className="border-t pt-3">
+                          <button
+                            onClick={() => setAllocationOpen(o => !o)}
+                            className="w-full flex items-center justify-between text-xs font-semibold text-muted-foreground uppercase tracking-wide hover:text-foreground transition-colors"
+                          >
+                            <span>This Paycheck — Allocation</span>
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${allocationOpen ? "rotate-180" : ""}`} />
+                          </button>
+                          {allocationOpen && (
+                            <div className="mt-2 space-y-1.5">
+                              {rows.map(row => (
+                                <div key={row.id} className="flex items-center gap-2 text-sm">
+                                  <span className="text-muted-foreground truncate flex-1">{row.name}</span>
+                                  <span className="text-xs text-muted-foreground/50 shrink-0">{row.label}</span>
+                                  <span className="font-medium tabular-nums shrink-0">${row.amount.toFixed(2)}</span>
+                                </div>
+                              ))}
+                              {leftover > 0.005 && (
+                                <div className="flex items-center justify-between text-xs text-muted-foreground/60">
+                                  <span>Unallocated</span>
+                                  <span className="tabular-nums">${leftover.toFixed(2)}</span>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
                       )
                     })()}
 
-                    {/* Monthly estimate */}
+                    {/* Monthly estimate — collapsible */}
                     {netPay > 0 && budgetCategories.length > 0 && (() => {
                       const { rows, leftover } = buildAllocationRows(budgetCategories, monthlyNetEstimate, 1)
                       return (
-                        <div className="border-t pt-3 space-y-1.5">
+                        <div className="border-t pt-3 space-y-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Monthly Estimate</p>
-                            <span className="text-xs text-muted-foreground/60">×{paychecksPerMonth} paychecks</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Est. Monthly Net</span>
-                            <span className="font-semibold tabular-nums">${monthlyNetEstimate.toFixed(2)}</span>
+                            <button
+                              onClick={() => setMonthlyOpen(o => !o)}
+                              className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide hover:text-foreground transition-colors"
+                            >
+                              Monthly Estimate
+                              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${monthlyOpen ? "rotate-180" : ""}`} />
+                            </button>
+                            <span className="text-xs text-muted-foreground/60">×{paychecksPerMonth} · ${monthlyNetEstimate.toFixed(2)}</span>
                           </div>
                           <Button
                             size="sm"
@@ -457,21 +471,23 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
                             {isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
                             Sync to budget
                           </Button>
-                          <div className="border-t border-dashed pt-2 space-y-1.5">
-                            {rows.map(row => (
-                              <div key={row.id} className="flex items-center gap-2 text-sm">
-                                <span className="text-muted-foreground truncate flex-1">{row.name}</span>
-                                <span className="text-xs text-muted-foreground/50 shrink-0">{row.label}</span>
-                                <span className="font-medium tabular-nums shrink-0">${row.amount.toFixed(2)}</span>
-                              </div>
-                            ))}
-                            {leftover > 0.005 && (
-                              <div className="flex items-center justify-between text-xs text-muted-foreground/60">
-                                <span>Unallocated</span>
-                                <span className="tabular-nums">${leftover.toFixed(2)}</span>
-                              </div>
-                            )}
-                          </div>
+                          {monthlyOpen && (
+                            <div className="space-y-1.5">
+                              {rows.map(row => (
+                                <div key={row.id} className="flex items-center gap-2 text-sm">
+                                  <span className="text-muted-foreground truncate flex-1">{row.name}</span>
+                                  <span className="text-xs text-muted-foreground/50 shrink-0">{row.label}</span>
+                                  <span className="font-medium tabular-nums shrink-0">${row.amount.toFixed(2)}</span>
+                                </div>
+                              ))}
+                              {leftover > 0.005 && (
+                                <div className="flex items-center justify-between text-xs text-muted-foreground/60">
+                                  <span>Unallocated</span>
+                                  <span className="tabular-nums">${leftover.toFixed(2)}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )
                     })()}
