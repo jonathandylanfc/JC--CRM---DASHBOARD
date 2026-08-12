@@ -690,11 +690,13 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       {/* Overspend alert banner */}
       {(() => {
         const overCats = categories.filter((cat) => {
+          if (cat.is_goal_mode) return false
           const budgeted = budgetedAmount(cat, monthlyIncome)
           const actual = cat.is_catchall ? catchallSpending : getCatKeys(cat).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0)
           return budgeted > 0 && actual > budgeted
         })
         const warnCats = categories.filter((cat) => {
+          if (cat.is_goal_mode) return false
           const budgeted = budgetedAmount(cat, monthlyIncome)
           const actual = cat.is_catchall ? catchallSpending : getCatKeys(cat).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0)
           const pct = budgeted > 0 ? actual / budgeted : 0
