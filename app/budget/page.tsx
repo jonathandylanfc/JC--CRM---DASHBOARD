@@ -32,12 +32,13 @@ export default async function BudgetPage({
   const currentMonthDate = new Date(currentMonth + "-02")
   const lastMonth = format(subMonths(currentMonthDate, 1), "yyyy-MM")
 
-  const [categories, financeSummary, expensesByCategory, monthlyTransactions, lastMonthExpenses, savingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, monthlyTransferTransactions, user, expectedMonthlyIncome, monthlyReimbursements, monthlyIncomeTransactions] = await Promise.all([
+  const [categories, financeSummary, expensesByCategory, monthlyTransactions, lastMonthExpenses, lastMonthSummary, savingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, monthlyTransferTransactions, user, expectedMonthlyIncome, monthlyReimbursements, monthlyIncomeTransactions] = await Promise.all([
     getBudgetCategories(),
     getMonthlyFinanceSummary(currentMonth),
     getMonthlyExpensesByCategory(currentMonth),
     getMonthlyExpenseTransactions(currentMonth),
     getMonthlyExpensesByCategory(lastMonth),
+    getMonthlyFinanceSummary(lastMonth),
     getSavingsGoals(),
     getMonthlyAccountGrowth(currentMonth),
     getConnectedBankNames(),
@@ -70,6 +71,8 @@ export default async function BudgetPage({
             expensesByCategory={expensesByCategory}
             monthlyTransactions={monthlyTransactions}
             lastMonthExpenses={lastMonthExpenses}
+            lastMonthIncome={lastMonthSummary.income}
+            lastMonth={lastMonth}
             initialSavingsGoals={savingsGoals}
             accountGrowth={accountGrowth}
             connectedBankNames={connectedBankNames}
