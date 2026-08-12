@@ -160,11 +160,10 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
   const [incomeEditValue, setIncomeEditValue] = useState("")
   const [isSavingExpectedIncome, startSavingExpectedIncome] = useTransition()
 
-  // Effective income: for the current month, use expected if it's higher than actual
   const isCurrentMonthView = currentMonth === format(new Date(), "yyyy-MM")
-  const monthlyIncome = (isCurrentMonthView && expectedIncome && expectedIncome > actualMonthlyIncome)
-    ? expectedIncome
-    : actualMonthlyIncome
+  const usingExpectedIncome = isCurrentMonthView && !!expectedIncome && expectedIncome > actualMonthlyIncome
+  // Effective income: for the current month, use expected if it's higher than actual
+  const monthlyIncome = usingExpectedIncome ? expectedIncome! : actualMonthlyIncome
 
   function handleSaveExpectedIncome() {
     const val = parseFloat(incomeEditValue)
@@ -590,47 +589,73 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-2 gap-4 ${usingExpectedIncome ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+        {/* Income Received */}
         <Card className="p-5 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Monthly Income</p>
+            <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+              {usingExpectedIncome ? "Income Received" : "Monthly Income"}
+            </p>
             <TrendingUp className="w-4 h-4 text-emerald-600" />
           </div>
-          {incomeEditOpen ? (
-            <div className="flex items-center gap-2 mt-1">
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="e.g. 2200"
-                value={incomeEditValue}
-                onChange={(e) => setIncomeEditValue(e.target.value)}
-                className="h-8 text-sm"
-                autoFocus
-                onKeyDown={(e) => { if (e.key === "Enter") handleSaveExpectedIncome(); if (e.key === "Escape") setIncomeEditOpen(false) }}
-              />
-              <Button size="sm" className="h-8 px-3 text-xs" onClick={handleSaveExpectedIncome} disabled={isSavingExpectedIncome}>Save</Button>
-              <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => setIncomeEditOpen(false)}>✕</Button>
-            </div>
-          ) : (
-            <>
-              <p className="text-2xl font-bold text-emerald-800 dark:text-emerald-300">{currency(monthlyIncome)}</p>
-              {isCurrentMonthView && expectedIncome && expectedIncome > actualMonthlyIncome ? (
-                <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1">
-                  Expecting {currency(expectedIncome)} · {currency(actualMonthlyIncome)} received
-                  <button onClick={() => { setIncomeEditValue(String(expectedIncome)); setIncomeEditOpen(true) }} className="ml-1.5 underline underline-offset-2 hover:opacity-70">edit</button>
-                </p>
-              ) : (
-                <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1">
-                  This month ·{" "}
-                  <button onClick={() => { setIncomeEditValue(expectedIncome ? String(expectedIncome) : ""); setIncomeEditOpen(true) }} className="underline underline-offset-2 hover:opacity-70">
-                    {expectedIncome ? "edit expected" : "set expected"}
-                  </button>
-                </p>
-              )}
-            </>
+          <p className="text-2xl font-bold text-emerald-800 dark:text-emerald-300">{currency(actualMonthlyIncome)}</p>
+          {!usingExpectedIncome && (
+            <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1">
+              This month ·{" "}
+              <button
+                onClick={() => { setIncomeEditValue(expectedIncome ? String(expectedIncome) : ""); setIncomeEditOpen(true) }}
+                className="underline underline-offset-2 hover:opacity-70"
+              >
+                set expected
+              </button>
+            </p>
+          )}
+          {usingExpectedIncome && (
+            <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1">
+              so far this month
+            </p>
           )}
         </Card>
+
+        {/* Estimated Income — only when synced */}
+        {usingExpectedIncome && (
+          <Card className="p-5 bg-teal-50 dark:bg-teal-950/20 border-teal-200 dark:border-teal-800">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-teal-700 dark:text-teal-400">Estimated Income</p>
+              <TrendingUp className="w-4 h-4 text-teal-600" />
+            </div>
+            {incomeEditOpen ? (
+              <div className="flex items-center gap-2 mt-1">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g. 2200"
+                  value={incomeEditValue}
+                  onChange={(e) => setIncomeEditValue(e.target.value)}
+                  className="h-8 text-sm"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveExpectedIncome(); if (e.key === "Escape") setIncomeEditOpen(false) }}
+                />
+                <Button size="sm" className="h-8 px-3 text-xs" onClick={handleSaveExpectedIncome} disabled={isSavingExpectedIncome}>Save</Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => setIncomeEditOpen(false)}>✕</Button>
+              </div>
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-teal-800 dark:text-teal-300">{currency(expectedIncome!)}</p>
+                <p className="text-xs text-teal-600 dark:text-teal-500 mt-1">
+                  used for budget goals ·{" "}
+                  <button
+                    onClick={() => { setIncomeEditValue(String(expectedIncome)); setIncomeEditOpen(true) }}
+                    className="underline underline-offset-2 hover:opacity-70"
+                  >
+                    edit
+                  </button>
+                </p>
+              </>
+            )}
+          </Card>
+        )}
 
         <Card className={`p-5 ${overBudget ? "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800" : "bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"}`}>
           <div className="flex items-center justify-between mb-2">
@@ -638,7 +663,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
             <DollarSign className={`w-4 h-4 ${overBudget ? "text-rose-600" : "text-blue-600"}`} />
           </div>
           <p className={`text-2xl font-bold ${overBudget ? "text-rose-800 dark:text-rose-300" : "text-blue-800 dark:text-blue-300"}`}>{currency(totalBudgeted)}</p>
-          <p className={`text-xs mt-1 ${overBudget ? "text-rose-600 dark:text-rose-500" : "text-blue-600 dark:text-blue-500"}`}>{totalPercent.toFixed(1)}% of income{overBudget ? " — over budget!" : ""}</p>
+          <p className={`text-xs mt-1 ${overBudget ? "text-rose-600 dark:text-rose-500" : "text-blue-600 dark:text-blue-500"}`}>{totalPercent.toFixed(1)}% of {usingExpectedIncome ? "estimate" : "income"}{overBudget ? " — over budget!" : ""}</p>
         </Card>
 
         <Card className="p-5 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
