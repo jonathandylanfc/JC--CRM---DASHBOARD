@@ -1807,7 +1807,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
       {(() => {
         const cat = reimburseCatId ? categories.find(c => c.id === reimburseCatId) : null
         if (!cat) return null
-        const available = incomeTxs.filter(tx => tx.reimburses_category_id === null || tx.reimburses_category_id === cat.id)
+        const available = incomeTxs.filter(tx => tx.reimburses_category_id === null)
         const filtered = reimburseSearch.trim()
           ? available.filter(tx => tx.title.toLowerCase().includes(reimburseSearch.toLowerCase()))
           : available
