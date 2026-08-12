@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { DollarSign, Settings, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
+import { DollarSign, Settings, ChevronLeft, ChevronRight, ChevronDown, Loader2 } from "lucide-react"
 import { format, startOfWeek, startOfMonth, endOfMonth, differenceInDays, addDays } from "date-fns"
 import { formatPayPeriodRange } from "@/lib/pay-period"
 import { updatePaySettings } from "@/app/calendar/actions"
