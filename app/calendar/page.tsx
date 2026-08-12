@@ -2,13 +2,12 @@ import { SidebarServer as Sidebar } from "@/components/dashboard/sidebar-server"
 import { Header } from "@/components/dashboard/header"
 import { CalendarContent } from "@/components/calendar/calendar-content"
 import { PaycheckCard } from "@/components/calendar/paycheck-card"
-import { getUserProfile, getPaySettings, getBudgetCategories } from "@/lib/data"
+import { getUserProfile, getPaySettings } from "@/lib/data"
 
 export default async function CalendarPage() {
-  const [user, paySettings, budgetCategories] = await Promise.all([
+  const [user, paySettings] = await Promise.all([
     getUserProfile(),
     getPaySettings(),
-    getBudgetCategories(),
   ])
 
   return (
@@ -23,7 +22,7 @@ export default async function CalendarPage() {
           user={user ?? undefined}
         />
         <div className="mt-6">
-          <PaycheckCard initialPaySettings={paySettings} budgetCategories={budgetCategories} />
+          <PaycheckCard initialPaySettings={paySettings} />
           <CalendarContent />
         </div>
       </main>
