@@ -342,7 +342,11 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
                   </button>
                   <p className="text-xs text-center flex-1">
                     <span className="font-medium">{periodLabel}</span>
-                    {periodOffset < 0 && <span className="text-muted-foreground"> · past</span>}
+                    {periodOffset < 0 && (
+                      payDate && payDate >= new Date()
+                        ? <span className="text-amber-500 dark:text-amber-400"> · pay due {format(payDate, "MMM d")}</span>
+                        : <span className="text-muted-foreground"> · past</span>
+                    )}
                     {paySettings!.shift_exclude_keyword && (
                       <span className="text-destructive/70"> · excl. &ldquo;{paySettings!.shift_exclude_keyword}&rdquo;</span>
                     )}
