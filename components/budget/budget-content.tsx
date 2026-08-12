@@ -43,10 +43,9 @@ interface BudgetCategory {
 }
 
 function getCatKeys(cat: BudgetCategory): string[] {
-  return [
-    cat.name.toLowerCase(),
-    ...(cat.category_aliases?.split(",").map(a => a.trim().toLowerCase()).filter(Boolean) ?? []),
-  ]
+  const name = cat.name.toLowerCase()
+  const aliases = cat.category_aliases?.split(",").map(a => a.trim().toLowerCase()).filter(Boolean) ?? []
+  return [...new Set([name, ...aliases])]
 }
 
 const CREDIT_CARD_PAYMENT_RE = /payment.*thank.?you|payment from chk|payment to crd|mobile banking payment|credit card payment|autopay payment|online payment to card/i
