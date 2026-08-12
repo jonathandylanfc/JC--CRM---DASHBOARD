@@ -543,10 +543,9 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
   }
 
   // Summary calculations
-  const { totalBudgeted, totalPercent, unallocatedDollars, catchallSpending } = useMemo(() => {
+  const { totalBudgeted, totalPercent, catchallSpending } = useMemo(() => {
     const totalBudgeted = categories.reduce((sum, cat) => sum + budgetedAmount(cat, monthlyIncome), 0)
     const totalPercent = monthlyIncome > 0 ? (totalBudgeted / monthlyIncome) * 100 : 0
-    const unallocatedDollars = Math.max(0, monthlyIncome - totalBudgeted)
 
     // Catch-all spending = total expenses minus what's claimed by named (non-catchall) categories
     const namedSpending = categories
@@ -555,7 +554,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
     const totalExpenses = Object.values(expensesByCategory).reduce((s, v) => s + v, 0)
     const catchallSpending = Math.max(0, totalExpenses - namedSpending)
 
-    return { totalBudgeted, totalPercent, unallocatedDollars, catchallSpending }
+    return { totalBudgeted, totalPercent, catchallSpending }
   }, [categories, monthlyIncome, expensesByCategory])
 
   const overBudget = totalBudgeted > monthlyIncome && monthlyIncome > 0
@@ -640,15 +639,6 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
           </div>
           <p className={`text-2xl font-bold ${overBudget ? "text-rose-800 dark:text-rose-300" : "text-blue-800 dark:text-blue-300"}`}>{currency(totalBudgeted)}</p>
           <p className={`text-xs mt-1 ${overBudget ? "text-rose-600 dark:text-rose-500" : "text-blue-600 dark:text-blue-500"}`}>{totalPercent.toFixed(1)}% of income{overBudget ? " — over budget!" : ""}</p>
-        </Card>
-
-        <Card className="p-5 bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-medium text-violet-700 dark:text-violet-400">Unallocated</p>
-            <PiggyBank className="w-4 h-4 text-violet-600" />
-          </div>
-          <p className="text-2xl font-bold text-violet-800 dark:text-violet-300">{currency(unallocatedDollars)}</p>
-          <p className="text-xs text-violet-600 dark:text-violet-500 mt-1">{monthlyIncome > 0 ? (100 - totalPercent).toFixed(1) : "0.0"}% unplanned</p>
         </Card>
 
         <Card className="p-5 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
@@ -1493,57 +1483,6 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
           </div>
         )}
       </div>
-
-      {/* Unallocated Transactions */}
-      {(() => {
-        const hasCatchall = categories.some((c) => c.is_catchall)
-        if (hasCatchall) return null // catch-all category already shows these
-        const namedCatKeys = new Set(categories.flatMap(getCatKeys))
-        const uncatTxs = monthlyTransactions.filter((tx) => !namedCatKeys.has(tx.category.toLowerCase()))
-        if (uncatTxs.length === 0) return null
-        const uncatTotal = uncatTxs.reduce((s, tx) => s + tx.amount, 0)
-        return (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-500" />
-                Unallocated Transactions
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
-                  {uncatTxs.length}
-                </span>
-              </h2>
-              <span className="text-sm font-semibold text-muted-foreground tabular-nums">{currency(uncatTotal)}</span>
-            </div>
-            <Card className="divide-y divide-border">
-              {uncatTxs.map((tx) => (
-                <div key={tx.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm group/tx">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-foreground truncate">{tx.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {format(new Date(tx.date + "T12:00:00"), "MMM d")} · <span className="italic">{tx.category}</span>
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
-                      -{currency(tx.amount)}
-                    </span>
-                    <button
-                      title="Move to a category"
-                      onClick={() => { setMoveTx(tx); setMoveSearch("") }}
-                      className="opacity-100 sm:opacity-0 sm:group-hover/tx:opacity-100 transition-opacity p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                    >
-                      <MoveRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </Card>
-            <p className="text-xs text-muted-foreground">
-              These transactions don&apos;t match any of your budget categories. Use the arrow to assign them, or add a <strong>catch-all</strong> category to collect everything automatically.
-            </p>
-          </div>
-        )
-      })()}
 
       {/* Transfer Review */}
       {visibleTransferTxs.length > 0 && (
