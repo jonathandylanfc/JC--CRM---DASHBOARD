@@ -23,7 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown, ChevronUp, GripVertical } from "lucide-react"
+import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown, ChevronUp, GripVertical, X } from "lucide-react"
 import { format, addMonths, subMonths, parseISO, differenceInDays } from "date-fns"
 import { toast } from "sonner"
 import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, moveSingleTransaction, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal, reorderBudgetCategories } from "@/app/budget/actions"
@@ -301,6 +301,8 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
       return state
     }
   )
+
+  const [alertsMinimized, setAlertsMinimized] = useState(false)
 
   // Transfer assignment state
   const [assignTransferOpen, setAssignTransferOpen] = useState<TransferTx | null>(null)
@@ -703,24 +705,45 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           return budgeted > 0 && pct >= 0.8 && actual <= budgeted
         })
         if (overCats.length === 0 && warnCats.length === 0) return null
+        const totalAlerts = overCats.length + warnCats.length
+        if (alertsMinimized) {
+          return (
+            <button
+              onClick={() => setAlertsMinimized(false)}
+              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+              <span>{totalAlerts} budget alert{totalAlerts !== 1 ? "s" : ""} hidden</span>
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          )
+        }
         return (
           <div className="space-y-2">
             {overCats.length > 0 && (
               <div className="flex items-start gap-3 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800">
                 <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-                <div className="text-sm text-rose-700 dark:text-rose-400">
+                <div className="flex-1 text-sm text-rose-700 dark:text-rose-400">
                   <span className="font-semibold">Over budget: </span>
                   {overCats.map((c) => c.name).join(", ")}
                 </div>
+                <button onClick={() => setAlertsMinimized(true)} className="shrink-0 text-rose-400 hover:text-rose-600 transition-colors" title="Dismiss alerts">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             )}
             {warnCats.length > 0 && (
               <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
                 <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                <div className="text-sm text-amber-700 dark:text-amber-400">
+                <div className="flex-1 text-sm text-amber-700 dark:text-amber-400">
                   <span className="font-semibold">Approaching limit: </span>
                   {warnCats.map((c) => c.name).join(", ")}
                 </div>
+                {overCats.length === 0 && (
+                  <button onClick={() => setAlertsMinimized(true)} className="shrink-0 text-amber-400 hover:text-amber-600 transition-colors" title="Dismiss alerts">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1416,6 +1439,57 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
           </div>
         )}
       </div>
+
+      {/* Unallocated Transactions */}
+      {(() => {
+        const hasCatchall = categories.some((c) => c.is_catchall)
+        if (hasCatchall) return null // catch-all category already shows these
+        const namedCatKeys = new Set(categories.flatMap(getCatKeys))
+        const uncatTxs = monthlyTransactions.filter((tx) => !namedCatKeys.has(tx.category.toLowerCase()))
+        if (uncatTxs.length === 0) return null
+        const uncatTotal = uncatTxs.reduce((s, tx) => s + tx.amount, 0)
+        return (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                Unallocated Transactions
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
+                  {uncatTxs.length}
+                </span>
+              </h2>
+              <span className="text-sm font-semibold text-muted-foreground tabular-nums">{currency(uncatTotal)}</span>
+            </div>
+            <Card className="divide-y divide-border">
+              {uncatTxs.map((tx) => (
+                <div key={tx.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm group/tx">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-foreground truncate">{tx.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(tx.date + "T12:00:00"), "MMM d")} · <span className="italic">{tx.category}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
+                      -{currency(tx.amount)}
+                    </span>
+                    <button
+                      title="Move to a category"
+                      onClick={() => { setMoveTx(tx); setMoveSearch("") }}
+                      className="opacity-100 sm:opacity-0 sm:group-hover/tx:opacity-100 transition-opacity p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                    >
+                      <MoveRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </Card>
+            <p className="text-xs text-muted-foreground">
+              These transactions don&apos;t match any of your budget categories. Use the arrow to assign them, or add a <strong>catch-all</strong> category to collect everything automatically.
+            </p>
+          </div>
+        )
+      })()}
 
       {/* Transfer Review */}
       {visibleTransferTxs.length > 0 && (
