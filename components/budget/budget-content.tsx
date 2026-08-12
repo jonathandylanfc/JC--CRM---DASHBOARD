@@ -26,7 +26,7 @@ import {
 import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown, ChevronUp, GripVertical, X } from "lucide-react"
 import { format, addMonths, subMonths, parseISO, differenceInDays } from "date-fns"
 import { toast } from "sonner"
-import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, moveSingleTransaction, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal, reorderBudgetCategories, setExpectedMonthlyIncome } from "@/app/budget/actions"
+import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, moveSingleTransaction, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal, reorderBudgetCategories, setExpectedMonthlyIncome, tagReimbursement } from "@/app/budget/actions"
 
 interface BudgetCategory {
   id: string
@@ -94,6 +94,8 @@ interface BudgetContentProps {
   allTimeCategoryTotals: Array<{ category: string; amount: number; date: string }>
   allTimeAccountGrowth: Record<string, number>
   monthlyTransferTransactions: TransferTx[]
+  monthlyReimbursements: Record<string, number>
+  monthlyIncomeTransactions: Array<{ id: string; title: string; amount: number; date: string; category: string; reimburses_category_id: string | null }>
   currentMonth: string // "yyyy-MM"
 }
 
@@ -150,7 +152,7 @@ const ONBOARDING_GROUPS = [
   },
 ]
 
-export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyIncome, expectedMonthlyIncome: initialExpectedIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, monthlyTransferTransactions, currentMonth }: BudgetContentProps) {
+export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyIncome, expectedMonthlyIncome: initialExpectedIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, monthlyTransferTransactions, monthlyReimbursements: initialReimbursements, monthlyIncomeTransactions, currentMonth }: BudgetContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -164,6 +166,12 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
   const usingExpectedIncome = isCurrentMonthView && !!expectedIncome && expectedIncome > actualMonthlyIncome
   // Effective income: for the current month, use expected if it's higher than actual
   const monthlyIncome = usingExpectedIncome ? expectedIncome! : actualMonthlyIncome
+
+  // Reimbursements: local state so tagging updates instantly
+  const [reimbursements, setReimbursements] = useState<Record<string, number>>(initialReimbursements)
+  const [incomeTxs, setIncomeTxs] = useState(monthlyIncomeTransactions)
+  const [reimburseCatId, setReimburseCatId] = useState<string | null>(null)
+  const [reimburseSearch, setReimburseSearch] = useState("")
 
   function handleSaveExpectedIncome() {
     const val = parseFloat(incomeEditValue)
@@ -556,6 +564,13 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
     return { totalBudgeted, totalPercent, catchallSpending }
   }, [categories, monthlyIncome, expensesByCategory])
 
+  function getCatNet(cat: BudgetCategory): number {
+    const gross = cat.is_catchall
+      ? catchallSpending
+      : getCatKeys(cat).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0)
+    return Math.max(0, gross - (reimbursements[cat.id] ?? 0))
+  }
+
   const overBudget = totalBudgeted > monthlyIncome && monthlyIncome > 0
 
   return (
@@ -763,13 +778,13 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
         const overCats = categories.filter((cat) => {
           if (cat.is_goal_mode) return false
           const budgeted = budgetedAmount(cat, monthlyIncome)
-          const actual = cat.is_catchall ? catchallSpending : getCatKeys(cat).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0)
+          const actual = getCatNet(cat)
           return budgeted > 0 && actual > budgeted
         })
         const warnCats = categories.filter((cat) => {
           if (cat.is_goal_mode) return false
           const budgeted = budgetedAmount(cat, monthlyIncome)
-          const actual = cat.is_catchall ? catchallSpending : getCatKeys(cat).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0)
+          const actual = getCatNet(cat)
           const pct = budgeted > 0 ? actual / budgeted : 0
           return budgeted > 0 && pct >= 0.8 && actual <= budgeted
         })
@@ -1318,10 +1333,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
                 : 0
               const budgeted = baseBudget + rolloverAmount
 
-              const actual = (cat.is_catchall
-                ? catchallSpending
-                : getCatKeys(cat).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0))
-                + (transferMatchedCategories[cat.name.toLowerCase()] ?? 0)
+              const actual = getCatNet(cat) + (transferMatchedCategories[cat.name.toLowerCase()] ?? 0)
               const pct = budgeted > 0 ? Math.min((actual / budgeted) * 100, 100) : 0
               // Goal mode: red = haven't hit target, green = at or over target
               const over = cat.is_goal_mode ? false : (actual > budgeted && budgeted > 0)
@@ -1458,49 +1470,99 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
                   </div>
 
                   {/* Transactions toggle + assign button */}
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    {catTxs.length > 0 ? (
-                      <button
-                        onClick={() => toggleExpand(cat.id)}
-                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                        {catTxs.length} transaction{catTxs.length !== 1 ? "s" : ""} this month
-                      </button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground/50">No transactions this month</span>
-                    )}
-                    <button
-                      onClick={() => setAssignCatId(cat.id)}
-                      className="text-xs text-primary underline underline-offset-2 hover:opacity-70 transition-opacity shrink-0"
-                    >
-                      + Add transaction
-                    </button>
-                  </div>
-                  {isExpanded && catTxs.length > 0 && (
-                    <div className="mt-2 space-y-1.5 border-t pt-2">
-                      {catTxs.map((tx) => (
-                        <div key={tx.id} className="flex items-center justify-between gap-2 text-xs group/tx">
-                          <div className="min-w-0">
-                            <span className="truncate block text-foreground font-medium" title={tx.title}>{tx.title}</span>
-                            <span className="text-muted-foreground">{format(new Date(tx.date + "T12:00:00"), "MMM d")}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
-                              -{currency(Number(tx.amount))}
-                            </span>
+                  {(() => {
+                    const catReimbursements = incomeTxs.filter(tx => tx.reimburses_category_id === cat.id)
+                    return (
+                      <>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          {catTxs.length > 0 ? (
                             <button
-                              title="Move to another category"
-                              onClick={() => { setMoveTx(tx); setMoveSearch("") }}
-                              className="opacity-100 sm:opacity-0 sm:group-hover/tx:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                              onClick={() => toggleExpand(cat.id)}
+                              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                             >
-                              <MoveRight className="w-3 h-3" />
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                              {catTxs.length} transaction{catTxs.length !== 1 ? "s" : ""} this month
+                            </button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/50">No transactions this month</span>
+                          )}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => { setReimburseCatId(cat.id); setReimburseSearch("") }}
+                              className="text-xs text-emerald-600 dark:text-emerald-400 underline underline-offset-2 hover:opacity-70 transition-opacity"
+                              title="Tag an income transaction as a reimbursement for this category"
+                            >
+                              + Reimburse
+                            </button>
+                            <button
+                              onClick={() => setAssignCatId(cat.id)}
+                              className="text-xs text-primary underline underline-offset-2 hover:opacity-70 transition-opacity"
+                            >
+                              + Add transaction
                             </button>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        {/* Reimbursement rows */}
+                        {catReimbursements.length > 0 && (
+                          <div className="mt-1.5 space-y-1">
+                            {catReimbursements.map(tx => (
+                              <div key={tx.id} className="flex items-center justify-between gap-2 text-xs px-2 py-1 rounded bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
+                                <div className="min-w-0 flex items-center gap-1.5">
+                                  <span className="text-emerald-600 dark:text-emerald-400 shrink-0">↩</span>
+                                  <span className="truncate text-emerald-700 dark:text-emerald-300 font-medium">{tx.title}</span>
+                                  <span className="text-emerald-600/60 dark:text-emerald-500/60 shrink-0">{format(new Date(tx.date + "T12:00:00"), "MMM d")}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">-{currency(tx.amount)}</span>
+                                  <button
+                                    title="Remove reimbursement"
+                                    onClick={() => startTransition(async () => {
+                                      const result = await tagReimbursement(tx.id, null)
+                                      if (result?.error) { toast.error(result.error); return }
+                                      setIncomeTxs(prev => prev.map(t => t.id === tx.id ? { ...t, reimburses_category_id: null } : t))
+                                      setReimbursements(prev => {
+                                        const next = { ...prev }
+                                        next[cat.id] = Math.max(0, (next[cat.id] ?? 0) - tx.amount)
+                                        if (next[cat.id] === 0) delete next[cat.id]
+                                        return next
+                                      })
+                                    })}
+                                    className="p-0.5 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900 text-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {isExpanded && catTxs.length > 0 && (
+                          <div className="mt-2 space-y-1.5 border-t pt-2">
+                            {catTxs.map((tx) => (
+                              <div key={tx.id} className="flex items-center justify-between gap-2 text-xs group/tx">
+                                <div className="min-w-0">
+                                  <span className="truncate block text-foreground font-medium" title={tx.title}>{tx.title}</span>
+                                  <span className="text-muted-foreground">{format(new Date(tx.date + "T12:00:00"), "MMM d")}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className="text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
+                                    -{currency(Number(tx.amount))}
+                                  </span>
+                                  <button
+                                    title="Move to another category"
+                                    onClick={() => { setMoveTx(tx); setMoveSearch("") }}
+                                    className="opacity-100 sm:opacity-0 sm:group-hover/tx:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                                  >
+                                    <MoveRight className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
                 </Card>
               )
             })}
@@ -1736,6 +1798,65 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
                   </div>
                 </>
               )}
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
+
+      {/* Reimbursement picker dialog */}
+      {(() => {
+        const cat = reimburseCatId ? categories.find(c => c.id === reimburseCatId) : null
+        if (!cat) return null
+        const available = incomeTxs.filter(tx => tx.reimburses_category_id === null || tx.reimburses_category_id === cat.id)
+        const filtered = reimburseSearch.trim()
+          ? available.filter(tx => tx.title.toLowerCase().includes(reimburseSearch.toLowerCase()))
+          : available
+        return (
+          <Dialog open={!!reimburseCatId} onOpenChange={(o) => { if (!o) { setReimburseCatId(null); setReimburseSearch("") } }}>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Tag reimbursement — {cat.name}</DialogTitle>
+              </DialogHeader>
+              <p className="text-xs text-muted-foreground -mt-1">
+                Pick an incoming payment that partially or fully offsets spending in this category.
+              </p>
+              <div className="relative mt-1">
+                <Input
+                  placeholder="Search income transactions…"
+                  value={reimburseSearch}
+                  onChange={(e) => setReimburseSearch(e.target.value)}
+                  className="pl-8 text-sm"
+                  autoFocus
+                />
+                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              </div>
+              <div className="mt-1 space-y-1.5 max-h-64 overflow-y-auto">
+                {filtered.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">No income transactions this month.</p>
+                ) : (
+                  filtered.map(tx => (
+                    <button
+                      key={tx.id}
+                      onClick={() => startTransition(async () => {
+                        const result = await tagReimbursement(tx.id, cat.id)
+                        if (result?.error) { toast.error(result.error); return }
+                        setIncomeTxs(prev => prev.map(t => t.id === tx.id ? { ...t, reimburses_category_id: cat.id } : t))
+                        setReimbursements(prev => ({ ...prev, [cat.id]: (prev[cat.id] ?? 0) + tx.amount }))
+                        toast.success(`${currency(tx.amount)} tagged as reimbursement for ${cat.name}`)
+                        setReimburseCatId(null)
+                        setReimburseSearch("")
+                      })}
+                      className="w-full flex items-center justify-between gap-3 p-3 rounded-lg border border-border hover:border-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-all text-left"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{tx.title}</p>
+                        <p className="text-xs text-muted-foreground">{format(new Date(tx.date + "T12:00:00"), "MMM d")} · {tx.category}</p>
+                      </div>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums shrink-0">+{currency(tx.amount)}</span>
+                    </button>
+                  ))
+                )}
+              </div>
             </DialogContent>
           </Dialog>
         )

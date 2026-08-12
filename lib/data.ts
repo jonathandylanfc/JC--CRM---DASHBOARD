@@ -420,6 +420,45 @@ export async function getMonthlyExpensesByCategory(month?: string): Promise<Reco
   return result
 }
 
+export async function getMonthlyReimbursements(month?: string): Promise<Record<string, number>> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return {}
+  const base = month ? new Date(month + "-02") : new Date()
+  const monthStart = format(startOfMonth(base), "yyyy-MM-dd")
+  const monthEnd = format(endOfMonth(base), "yyyy-MM-dd")
+  const { data } = await supabase
+    .from("transactions")
+    .select("reimburses_category_id, amount")
+    .eq("user_id", userId)
+    .not("reimburses_category_id", "is", null)
+    .gte("date", monthStart)
+    .lte("date", monthEnd)
+  if (!data) return {}
+  const result: Record<string, number> = {}
+  for (const row of data) {
+    if (!row.reimburses_category_id) continue
+    result[row.reimburses_category_id] = (result[row.reimburses_category_id] ?? 0) + Number(row.amount)
+  }
+  return result
+}
+
+export async function getMonthlyIncomeTransactions(month?: string): Promise<Array<{ id: string; title: string; amount: number; date: string; category: string; reimburses_category_id: string | null }>> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return []
+  const base = month ? new Date(month + "-02") : new Date()
+  const monthStart = format(startOfMonth(base), "yyyy-MM-dd")
+  const monthEnd = format(endOfMonth(base), "yyyy-MM-dd")
+  const { data } = await supabase
+    .from("transactions")
+    .select("id, title, amount, date, category, reimburses_category_id")
+    .eq("user_id", userId)
+    .eq("type", "income")
+    .gte("date", monthStart)
+    .lte("date", monthEnd)
+    .order("date", { ascending: false })
+  return (data ?? []).map((tx) => ({ ...tx, amount: Number(tx.amount), reimburses_category_id: tx.reimburses_category_id ?? null }))
+}
+
 export async function getStartingBalance(): Promise<number> {
   const { supabase, userId } = await getAuthenticatedClient()
   if (!userId) return 0

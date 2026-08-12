@@ -414,6 +414,20 @@ export async function setPaydayDay(day: number) {
   return { success: true }
 }
 
+export async function tagReimbursement(transactionId: string, categoryId: string | null) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { error } = await supabase
+    .from("transactions")
+    .update({ reimburses_category_id: categoryId })
+    .eq("id", transactionId)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  return { success: true }
+}
+
 export async function setExpectedMonthlyIncome(amount: number | null) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

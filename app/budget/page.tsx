@@ -15,6 +15,8 @@ import {
   getAllTimeCategoryTotals,
   getAllTimeAccountGrowth,
   getExpectedMonthlyIncome,
+  getMonthlyReimbursements,
+  getMonthlyIncomeTransactions,
 } from "@/lib/data"
 import { format, subMonths } from "date-fns"
 
@@ -30,7 +32,7 @@ export default async function BudgetPage({
   const currentMonthDate = new Date(currentMonth + "-02")
   const lastMonth = format(subMonths(currentMonthDate, 1), "yyyy-MM")
 
-  const [categories, financeSummary, expensesByCategory, monthlyTransactions, lastMonthExpenses, savingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, monthlyTransferTransactions, user, expectedMonthlyIncome] = await Promise.all([
+  const [categories, financeSummary, expensesByCategory, monthlyTransactions, lastMonthExpenses, savingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, monthlyTransferTransactions, user, expectedMonthlyIncome, monthlyReimbursements, monthlyIncomeTransactions] = await Promise.all([
     getBudgetCategories(),
     getMonthlyFinanceSummary(currentMonth),
     getMonthlyExpensesByCategory(currentMonth),
@@ -45,6 +47,8 @@ export default async function BudgetPage({
     getMonthlyTransferTransactions(currentMonth),
     getUserProfile(),
     getExpectedMonthlyIncome(),
+    getMonthlyReimbursements(currentMonth),
+    getMonthlyIncomeTransactions(currentMonth),
   ])
 
   return (
@@ -73,6 +77,8 @@ export default async function BudgetPage({
             allTimeCategoryTotals={allTimeCategoryTotals}
             allTimeAccountGrowth={allTimeAccountGrowth}
             monthlyTransferTransactions={monthlyTransferTransactions}
+            monthlyReimbursements={monthlyReimbursements}
+            monthlyIncomeTransactions={monthlyIncomeTransactions}
             currentMonth={currentMonth}
           />
         </div>
