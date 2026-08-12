@@ -97,6 +97,7 @@ interface BudgetCat {
   type: "percentage" | "fixed"
   value: number
   is_catchall?: boolean
+  is_goal_mode?: boolean
 }
 
 interface FinanceContentProps {
@@ -1113,6 +1114,7 @@ export function FinanceContent({
         // Budget alerts
         const alerts: Array<{ name: string; spent: number; budget: number; pct: number }> = []
         for (const cat of budgetCategories) {
+          if (cat.is_goal_mode) continue
           const budget = cat.type === "percentage" ? (cat.value / 100) * monthlyIncome : cat.value
           if (budget <= 0) continue
           const spent = currentMonthExpenses[cat.name.toLowerCase()] ?? 0
