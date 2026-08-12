@@ -441,8 +441,12 @@ export function PaycheckCard({ initialPaySettings, budgetCategories }: PaycheckC
                             disabled={isPending}
                             onClick={() => {
                               startTransition(async () => {
-                                await setExpectedMonthlyIncome(monthlyNetEstimate)
-                                toast.success(`Budget income set to $${monthlyNetEstimate.toFixed(2)}/mo`)
+                                const result = await setExpectedMonthlyIncome(monthlyNetEstimate)
+                                if (result?.error) {
+                                  toast.error(result.error)
+                                } else {
+                                  toast.success(`Budget income set to $${monthlyNetEstimate.toFixed(2)}/mo`)
+                                }
                               })
                             }}
                           >
