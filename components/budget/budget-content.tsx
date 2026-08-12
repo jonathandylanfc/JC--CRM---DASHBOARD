@@ -26,7 +26,7 @@ import {
 import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown, ChevronUp, GripVertical, X } from "lucide-react"
 import { format, addMonths, subMonths, parseISO, differenceInDays } from "date-fns"
 import { toast } from "sonner"
-import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, moveSingleTransaction, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal, reorderBudgetCategories } from "@/app/budget/actions"
+import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, moveSingleTransaction, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal, reorderBudgetCategories, setExpectedMonthlyIncome } from "@/app/budget/actions"
 
 interface BudgetCategory {
   id: string
@@ -83,6 +83,7 @@ interface MonthlyTransaction {
 interface BudgetContentProps {
   initialCategories: BudgetCategory[]
   monthlyIncome: number
+  expectedMonthlyIncome: number | null
   expensesByCategory: Record<string, number>
   monthlyTransactions: MonthlyTransaction[]
   lastMonthExpenses: Record<string, number>
@@ -149,9 +150,31 @@ const ONBOARDING_GROUPS = [
   },
 ]
 
-export function BudgetContent({ initialCategories, monthlyIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, monthlyTransferTransactions, currentMonth }: BudgetContentProps) {
+export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyIncome, expectedMonthlyIncome: initialExpectedIncome, expensesByCategory, monthlyTransactions, lastMonthExpenses, initialSavingsGoals, accountGrowth, connectedBankNames, monthlyGoalContributions, allTimeCategoryTotals, allTimeAccountGrowth, monthlyTransferTransactions, currentMonth }: BudgetContentProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+
+  // Expected income state
+  const [expectedIncome, setExpectedIncome] = useState<number | null>(initialExpectedIncome)
+  const [incomeEditOpen, setIncomeEditOpen] = useState(false)
+  const [incomeEditValue, setIncomeEditValue] = useState("")
+  const [isSavingExpectedIncome, startSavingExpectedIncome] = useTransition()
+
+  // Effective income: for the current month, use expected if it's higher than actual
+  const isCurrentMonthView = currentMonth === format(new Date(), "yyyy-MM")
+  const monthlyIncome = (isCurrentMonthView && expectedIncome && expectedIncome > actualMonthlyIncome)
+    ? expectedIncome
+    : actualMonthlyIncome
+
+  function handleSaveExpectedIncome() {
+    const val = parseFloat(incomeEditValue)
+    const amount = isNaN(val) || val <= 0 ? null : val
+    startSavingExpectedIncome(async () => {
+      await setExpectedMonthlyIncome(amount)
+      setExpectedIncome(amount)
+      setIncomeEditOpen(false)
+    })
+  }
 
   // Savings goals state — sync when server re-renders with fresh props
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>(initialSavingsGoals)
@@ -574,8 +597,40 @@ export function BudgetContent({ initialCategories, monthlyIncome, expensesByCate
             <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Monthly Income</p>
             <TrendingUp className="w-4 h-4 text-emerald-600" />
           </div>
-          <p className="text-2xl font-bold text-emerald-800 dark:text-emerald-300">{currency(monthlyIncome)}</p>
-          <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1">This month</p>
+          {incomeEditOpen ? (
+            <div className="flex items-center gap-2 mt-1">
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="e.g. 2200"
+                value={incomeEditValue}
+                onChange={(e) => setIncomeEditValue(e.target.value)}
+                className="h-8 text-sm"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === "Enter") handleSaveExpectedIncome(); if (e.key === "Escape") setIncomeEditOpen(false) }}
+              />
+              <Button size="sm" className="h-8 px-3 text-xs" onClick={handleSaveExpectedIncome} disabled={isSavingExpectedIncome}>Save</Button>
+              <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => setIncomeEditOpen(false)}>✕</Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-emerald-800 dark:text-emerald-300">{currency(monthlyIncome)}</p>
+              {isCurrentMonthView && expectedIncome && expectedIncome > actualMonthlyIncome ? (
+                <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1">
+                  Expecting {currency(expectedIncome)} · {currency(actualMonthlyIncome)} received
+                  <button onClick={() => { setIncomeEditValue(String(expectedIncome)); setIncomeEditOpen(true) }} className="ml-1.5 underline underline-offset-2 hover:opacity-70">edit</button>
+                </p>
+              ) : (
+                <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1">
+                  This month ·{" "}
+                  <button onClick={() => { setIncomeEditValue(expectedIncome ? String(expectedIncome) : ""); setIncomeEditOpen(true) }} className="underline underline-offset-2 hover:opacity-70">
+                    {expectedIncome ? "edit expected" : "set expected"}
+                  </button>
+                </p>
+              )}
+            </>
+          )}
         </Card>
 
         <Card className={`p-5 ${overBudget ? "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800" : "bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"}`}>

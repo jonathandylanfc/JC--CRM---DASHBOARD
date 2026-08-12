@@ -413,3 +413,17 @@ export async function setPaydayDay(day: number) {
   revalidatePath("/calendar")
   return { success: true }
 }
+
+export async function setExpectedMonthlyIncome(amount: number | null) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { error } = await supabase
+    .from("profiles")
+    .update({ expected_monthly_income: amount })
+    .eq("id", user.id)
+  if (error) return { error: error.message }
+  revalidatePath("/budget")
+  revalidatePath("/")
+  return { success: true }
+}

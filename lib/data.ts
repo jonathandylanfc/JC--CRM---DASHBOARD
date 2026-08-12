@@ -86,6 +86,17 @@ export async function getMonthlyFinanceSummary(month?: string) {
   return { income, expenses }
 }
 
+export async function getExpectedMonthlyIncome(): Promise<number | null> {
+  const { supabase, userId } = await getAuthenticatedClient()
+  if (!userId) return null
+  const { data } = await supabase
+    .from("profiles")
+    .select("expected_monthly_income")
+    .eq("id", userId)
+    .single()
+  return data?.expected_monthly_income ? Number(data.expected_monthly_income) : null
+}
+
 export async function getWeeklyFocusActivity() {
   const { supabase, userId } = await getAuthenticatedClient()
   const now = new Date()
