@@ -88,8 +88,12 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
           {top3.map((cat) => {
             const spent = expensesByCategory[cat.name.toLowerCase()] ?? 0
             const pct = cat.dollarValue > 0 ? Math.min(Math.round((spent / cat.dollarValue) * 100), 100) : 0
-            const color = pct >= 100 ? "bg-rose-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500"
-            const textColor = pct >= 100 ? "text-rose-500" : pct >= 75 ? "text-amber-500" : "text-emerald-500"
+            const color = cat.is_goal_mode
+              ? (pct >= 100 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-400" : "bg-rose-500")
+              : (pct >= 100 ? "bg-rose-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500")
+            const textColor = cat.is_goal_mode
+              ? (pct >= 100 ? "text-emerald-500" : pct >= 50 ? "text-amber-500" : "text-rose-500")
+              : (pct >= 100 ? "text-rose-500" : pct >= 75 ? "text-amber-500" : "text-emerald-500")
             return (
               <div key={cat.id}>
                 <div className="flex items-baseline justify-between mb-1">
