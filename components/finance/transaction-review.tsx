@@ -198,9 +198,9 @@ export function TransactionReview({ transactions, budgetCategories = [] }: Props
                 !titleLower.includes("costco fuel")
               return (
                 <div key={tx.id} className="px-4 py-3 space-y-2">
-                  <div className="flex items-center gap-3">
-                    {/* Icon */}
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                  {/* Row 1: icon + title + amount */}
+                  <div className="flex items-start gap-3">
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
                       isTransfer
                         ? "bg-muted text-muted-foreground"
                         : isIncome
@@ -209,60 +209,56 @@ export function TransactionReview({ transactions, budgetCategories = [] }: Props
                     }`}>
                       {isTransfer ? <ArrowLeftRight className="w-4 h-4" /> : isIncome ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                     </div>
-
-                    {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{tx.title}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-sm font-medium text-foreground leading-snug">{tx.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         <span className="capitalize">{tx.category}</span>
                         {" · "}
                         {format(new Date(tx.date + "T12:00:00"), "MMM d")}
                         {tx.account_name && <span className="text-primary/70"> · {tx.account_name.split(" – ")[0]}</span>}
                       </p>
                     </div>
-
-                    {/* Amount */}
-                    <p className={`text-sm font-semibold shrink-0 ${
+                    <p className={`text-sm font-semibold shrink-0 mt-0.5 tabular-nums ${
                       isTransfer ? "text-muted-foreground" : isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
                     }`}>
                       {isIncome ? "+" : isTransfer ? "" : "-"}{currency(tx.amount)}
                     </p>
-
-                    {/* Actions — standard (non-Costco) */}
-                    {!isCostcoAmbiguous && (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <Button
-                          size="sm"
-                          className="h-7 px-2.5 gap-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                          onClick={() => handleApprove(tx.id)}
-                          disabled={isPending}
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Approve</span>
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className={`h-7 px-2.5 text-xs bg-transparent ${recatTxId === tx.id ? "border-primary text-primary" : ""}`}
-                          onClick={() => { setRecatTxId(recatTxId === tx.id ? null : tx.id); setRecatDest(null) }}
-                          disabled={isPending}
-                          title="Change category"
-                        >
-                          ↩ Move
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 px-2.5 gap-1 text-xs bg-transparent"
-                          onClick={() => handleSnooze(tx.id)}
-                          disabled={isPending}
-                          title="Remind me in 24 hours"
-                        >
-                          <Clock className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    )}
                   </div>
+
+                  {/* Row 2: action buttons (standard, non-Costco) */}
+                  {!isCostcoAmbiguous && (
+                    <div className="flex items-center gap-1.5 pl-12">
+                      <Button
+                        size="sm"
+                        className="h-7 px-3 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => handleApprove(tx.id)}
+                        disabled={isPending}
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Approve
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`h-7 px-2.5 text-xs bg-transparent ${recatTxId === tx.id ? "border-primary text-primary" : ""}`}
+                        onClick={() => { setRecatTxId(recatTxId === tx.id ? null : tx.id); setRecatDest(null) }}
+                        disabled={isPending}
+                        title="Change category"
+                      >
+                        ↩ Move
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2.5 gap-1 text-xs bg-transparent"
+                        onClick={() => handleSnooze(tx.id)}
+                        disabled={isPending}
+                        title="Remind me in 24 hours"
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  )}
 
                   {/* Inline re-categorize panel */}
                   {recatTxId === tx.id && !isCostcoAmbiguous && (
