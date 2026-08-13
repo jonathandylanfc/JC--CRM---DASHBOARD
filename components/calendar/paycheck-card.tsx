@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useEffect, useCallback } from "react"
+import { useState, useTransition, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -184,6 +184,21 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
     return () => window.removeEventListener("localShiftsChanged", handler)
   }, [fetchShifts, periodOffset])
 
+  // After first fetch of current period, switch to previous period if its pay date is sooner
+  const didInitOffset = useRef(false)
+  useEffect(() => {
+    if (didInitOffset.current || fetching || periodOffset !== 0 || !periodStart || !paySettings?.pay_delay_days) return
+    didInitOffset.current = true
+    // Previous period ends one day before this period starts
+    const prevEnd = new Date(periodStart)
+    prevEnd.setDate(prevEnd.getDate() - 1)
+    const prevPayDate = new Date(prevEnd)
+    prevPayDate.setDate(prevEnd.getDate() + paySettings.pay_delay_days)
+    if (prevPayDate >= new Date()) {
+      setPeriodOffset(-1)
+    }
+  }, [fetching, periodOffset, periodStart, paySettings])
+
   const isConfigured = paySettings?.hourly_rate != null && paySettings.hourly_rate > 0
 
   const periodMonth = periodStart ? new Date(periodStart) : new Date()
@@ -198,6 +213,15 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
   const grossPay = totalHours * (paySettings?.hourly_rate ?? 0)
   const netPay = grossPay * (1 - (paySettings?.tax_rate ?? 25) / 100)
   const monthlyNetEstimate = netPay * paychecksPerMonth
+
+  // Auto-sync monthly estimate to budget whenever current period is loaded
+  const lastSyncedEstimate = useRef<number>(-1)
+  useEffect(() => {
+    if (fetching || periodOffset !== 0 || monthlyNetEstimate <= 0) return
+    if (Math.abs(monthlyNetEstimate - lastSyncedEstimate.current) < 0.01) return
+    lastSyncedEstimate.current = monthlyNetEstimate
+    setExpectedMonthlyIncome(monthlyNetEstimate)
+  }, [fetching, periodOffset, monthlyNetEstimate])
 
   const periodLabel = periodStart && periodEnd
     ? formatPayPeriodRange(new Date(periodStart), new Date(periodEnd))

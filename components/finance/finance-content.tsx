@@ -40,6 +40,7 @@ import {
   Download,
   ArrowLeftRight,
   ArrowUpDown,
+  RefreshCw,
 } from "lucide-react"
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns"
 import { toast } from "sonner"
@@ -202,6 +203,24 @@ export function FinanceContent({
   const [confirmClearOpen, setConfirmClearOpen] = useState(false)
   const [isClearing, startClearing] = useTransition()
   const [realCount, setRealCount] = useState<number | null>(null)
+
+  // Plaid sync
+  const [isSyncing, setIsSyncing] = useState(false)
+
+  async function handleSyncAll() {
+    setIsSyncing(true)
+    try {
+      const res = await fetch("/api/plaid/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
+      const data = await res.json()
+      if (data.error) { toast.error(data.error); return }
+      toast.success(`Synced ${data.count ?? 0} new transaction${data.count !== 1 ? "s" : ""}`)
+      router.refresh()
+    } catch {
+      toast.error("Sync failed")
+    } finally {
+      setIsSyncing(false)
+    }
+  }
 
   // Select mode
   const [selectMode, setSelectMode] = useState(false)
@@ -802,6 +821,15 @@ export function FinanceContent({
       {/* Date range selector */}
       <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleSyncAll}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors border border-border shrink-0"
+            title="Sync transactions from connected banks"
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncing ? "animate-spin" : ""}`} />
+            Sync
+          </button>
           <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-max">
             {DATE_RANGES.map((r) => (
               <button
