@@ -189,8 +189,8 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
   useEffect(() => {
     if (didInitOffset.current || fetching || periodOffset !== 0 || !periodStart || !paySettings?.pay_delay_days) return
     didInitOffset.current = true
-    // Previous period ends one day before this period starts
-    const prevEnd = new Date(periodStart)
+    // Use noon to avoid UTC-midnight timezone shift flipping the day
+    const prevEnd = new Date(periodStart.slice(0, 10) + "T12:00:00")
     prevEnd.setDate(prevEnd.getDate() - 1)
     const prevPayDate = new Date(prevEnd)
     prevPayDate.setDate(prevEnd.getDate() + paySettings.pay_delay_days)
@@ -214,14 +214,43 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
   const netPay = grossPay * (1 - (paySettings?.tax_rate ?? 25) / 100)
   const monthlyNetEstimate = netPay * paychecksPerMonth
 
-  // Auto-sync monthly estimate to budget whenever current period is loaded
+  // Compute monthly total by summing all paychecks whose pay date falls in the same calendar month
+  const [monthlyTotal, setMonthlyTotal] = useState<number | null>(null)
+  useEffect(() => {
+    if (fetching || !payDate || !paySettings?.hourly_rate) { setMonthlyTotal(null); return }
+    const payMonthKey = format(payDate, "yyyy-MM")
+    const rate = paySettings.hourly_rate
+    const taxFactor = 1 - (paySettings.tax_rate ?? 25) / 100
+    async function computeMonthly() {
+      let total = netPay
+      for (const adj of [-2, -1, 1, 2]) {
+        const adjOffset = periodOffset + adj
+        if (adjOffset > 0) continue
+        try {
+          const res = await fetch(`/api/calendar/paycheck-shifts?offset=${adjOffset}`)
+          if (!res.ok) continue
+          const data = await res.json()
+          if (!data.periodEnd || !data.paySettings?.pay_delay_days) continue
+          const adjPay = new Date(data.periodEnd.slice(0, 10) + "T12:00:00")
+          adjPay.setDate(adjPay.getDate() + data.paySettings.pay_delay_days)
+          if (format(adjPay, "yyyy-MM") !== payMonthKey) continue
+          const adjHours = (data.shifts ?? []).reduce((s: number, sh: Shift) => s + hoursFromShift(sh), 0)
+          total += adjHours * rate * taxFactor
+        } catch { /* skip */ }
+      }
+      setMonthlyTotal(total)
+    }
+    computeMonthly()
+  }, [fetching, payDate, periodOffset, paySettings, netPay])
+
+  // Auto-sync monthly total to budget whenever current period is loaded
   const lastSyncedEstimate = useRef<number>(-1)
   useEffect(() => {
-    if (fetching || periodOffset !== 0 || monthlyNetEstimate <= 0) return
-    if (Math.abs(monthlyNetEstimate - lastSyncedEstimate.current) < 0.01) return
-    lastSyncedEstimate.current = monthlyNetEstimate
-    setExpectedMonthlyIncome(monthlyNetEstimate)
-  }, [fetching, periodOffset, monthlyNetEstimate])
+    if (fetching || periodOffset !== 0 || !monthlyTotal || monthlyTotal <= 0) return
+    if (Math.abs(monthlyTotal - lastSyncedEstimate.current) < 0.01) return
+    lastSyncedEstimate.current = monthlyTotal
+    setExpectedMonthlyIncome(monthlyTotal)
+  }, [fetching, periodOffset, monthlyTotal])
 
   const periodLabel = periodStart && periodEnd
     ? formatPayPeriodRange(new Date(periodStart), new Date(periodEnd))
@@ -229,7 +258,7 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
 
   const payDate = (() => {
     if (!periodEnd || !(paySettings?.pay_delay_days)) return null
-    const d = new Date(periodEnd)
+    const d = new Date(periodEnd.slice(0, 10) + "T12:00:00")
     d.setDate(d.getDate() + paySettings.pay_delay_days)
     return d
   })()
@@ -317,7 +346,7 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
             </div>
           </DialogHeader>
 
-          {isConfigured && payDate && periodOffset === 0 && (
+          {isConfigured && payDate && payDate >= new Date() && (
             <div className="mx-6 mt-1 mb-0 rounded-md bg-green-500/10 border border-green-500/20 px-3 py-2 flex items-center justify-between">
               <span className="text-xs text-green-700 dark:text-green-400 font-medium">Next paycheck</span>
               <span className="text-sm font-semibold text-green-700 dark:text-green-400">{format(payDate, "EEEE, MMM d")}</span>
@@ -408,7 +437,11 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
                       <div className="border-t pt-3 space-y-2">
                         <div className="flex items-center justify-between">
                           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Est. Monthly Net</p>
-                          <span className="text-sm font-medium tabular-nums">×{paychecksPerMonth} = ${monthlyNetEstimate.toFixed(2)}</span>
+                          <span className="text-sm font-medium tabular-nums">
+                            {monthlyTotal !== null
+                              ? `$${monthlyTotal.toFixed(2)}`
+                              : `×${paychecksPerMonth} = $${monthlyNetEstimate.toFixed(2)}`}
+                          </span>
                         </div>
                         <Button
                           size="sm"
@@ -416,12 +449,13 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
                           className="w-full h-7 text-xs"
                           disabled={isPending}
                           onClick={() => {
+                            const income = monthlyTotal ?? monthlyNetEstimate
                             startTransition(async () => {
-                              const result = await setExpectedMonthlyIncome(monthlyNetEstimate)
+                              const result = await setExpectedMonthlyIncome(income)
                               if (result?.error) {
                                 toast.error(result.error)
                               } else {
-                                toast.success(`Budget income set to $${monthlyNetEstimate.toFixed(2)}/mo`)
+                                toast.success(`Budget income set to $${income.toFixed(2)}/mo`)
                               }
                             })
                           }}
