@@ -818,18 +818,19 @@ export function FinanceContent({
           </div>
         </div>
       )}
+      {/* Sync button */}
+      <button
+        onClick={handleSyncAll}
+        disabled={isSyncing}
+        className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg bg-muted text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors border border-border"
+      >
+        <RefreshCw className={`w-4 h-4 ${isSyncing ? "animate-spin" : ""}`} />
+        {isSyncing ? "Syncing…" : "Sync transactions"}
+      </button>
+
       {/* Date range selector */}
       <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleSyncAll}
-            disabled={isSyncing}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors border border-border shrink-0"
-            title="Sync transactions from connected banks"
-          >
-            <RefreshCw className={`w-3 h-3 ${isSyncing ? "animate-spin" : ""}`} />
-            Sync
-          </button>
           <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-max">
             {DATE_RANGES.map((r) => (
               <button
