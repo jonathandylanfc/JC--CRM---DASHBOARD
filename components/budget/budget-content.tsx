@@ -193,6 +193,17 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
   const [reimburseCatId, setReimburseCatId] = useState<string | null>(null)
   const [reimburseSearch, setReimburseSearch] = useState("")
 
+  // Surplus banner dismiss — keyed by month so it reappears for a new month's surplus
+  const surplusDismissKey = `surplus_dismissed_${lastMonth}`
+  const [surplusDismissed, setSurplusDismissed] = useState(() => {
+    if (typeof window === "undefined") return false
+    return localStorage.getItem(surplusDismissKey) === "1"
+  })
+  function dismissSurplus() {
+    setSurplusDismissed(true)
+    localStorage.setItem(surplusDismissKey, "1")
+  }
+
   function handleSaveExpectedIncome() {
     const val = parseFloat(incomeEditValue)
     const amount = isNaN(val) || val <= 0 ? null : val
@@ -733,7 +744,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
       </div>
 
       {/* Last month carryover — only on current month view when last month had a surplus */}
-      {isCurrentMonthView && (() => {
+      {isCurrentMonthView && !surplusDismissed && (() => {
         if (lastMonthIncome === 0) return null
         const lastMonthTotalExpenses = Object.values(lastMonthExpenses).reduce((s, v) => s + v, 0)
         const surplus = lastMonthIncome - lastMonthTotalExpenses
@@ -757,6 +768,13 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
                   Consider sweeping this into your HYSA as extra savings.
                 </p>
               </div>
+              <button
+                onClick={dismissSurplus}
+                className="shrink-0 text-emerald-600/60 hover:text-emerald-700 dark:text-emerald-400/60 dark:hover:text-emerald-300 transition-colors"
+                title="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
         )
