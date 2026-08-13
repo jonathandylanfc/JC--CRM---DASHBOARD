@@ -225,6 +225,16 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
     return d
   })()
 
+  // The period before this one pays sooner — if it's still upcoming, this one is "Following"
+  const isNextPaycheck = (() => {
+    if (!periodStart || !paySettings?.pay_delay_days) return true
+    const prevEnd = new Date(periodStart.slice(0, 10) + "T12:00:00")
+    prevEnd.setDate(prevEnd.getDate() - 1)
+    const prevPayDate = new Date(prevEnd)
+    prevPayDate.setDate(prevPayDate.getDate() + paySettings.pay_delay_days)
+    return prevPayDate < new Date()
+  })()
+
   // Compute monthly total by summing all paychecks whose pay date falls in the same calendar month
   const [monthlyTotal, setMonthlyTotal] = useState<number | null>(null)
   useEffect(() => {
@@ -348,7 +358,7 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
 
           {isConfigured && payDate && payDate >= new Date() && (
             <div className="mx-6 mt-1 mb-0 rounded-md bg-green-500/10 border border-green-500/20 px-3 py-2 flex items-center justify-between">
-              <span className="text-xs text-green-700 dark:text-green-400 font-medium">Next paycheck</span>
+              <span className="text-xs text-green-700 dark:text-green-400 font-medium">{isNextPaycheck ? "Next paycheck" : "Following paycheck"}</span>
               <span className="text-sm font-semibold text-green-700 dark:text-green-400">{format(payDate, "EEEE, MMM d")}</span>
             </div>
           )}
