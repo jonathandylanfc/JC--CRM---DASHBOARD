@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { plaidClient } from "@/lib/plaid"
 
-function plaidCategory(cats: string[] | null): string {
+// Legacy category array fallback (used when personal_finance_category is unavailable)
+function legacyCategory(cats: string[] | null): string {
   if (!cats || cats.length === 0) return "other"
   const top = (cats[0] ?? "").toLowerCase()
   const sub = (cats[1] ?? "").toLowerCase()
-
   if (top === "food and drink") return "food"
   if (top === "shops") return "shopping"
   if (top === "transportation") {
@@ -21,6 +21,58 @@ function plaidCategory(cats: string[] | null): string {
   if (top === "bank fees") return "fees"
   if (top === "income") return "income"
   return "other"
+}
+
+const PFC_CATEGORY_MAP: Record<string, string> = {
+  FOOD_AND_DRINK: "food",
+  GENERAL_MERCHANDISE: "shopping",
+  TRANSPORTATION: "transportation",
+  TRAVEL: "travel",
+  ENTERTAINMENT: "entertainment",
+  PERSONAL_CARE: "personal",
+  MEDICAL: "healthcare",
+  HOME_IMPROVEMENT: "home",
+  RENT_AND_UTILITIES: "utilities",
+  GENERAL_SERVICES: "utilities",
+  BANK_FEES: "fees",
+  GOVERNMENT_AND_NON_PROFIT: "other",
+}
+
+function classifyTransaction(
+  pfc: { primary: string; detailed: string } | null | undefined,
+  legacyCats: string[] | null,
+  isCredit: boolean, // tx.amount < 0 in Plaid = money coming in
+  title: string
+): { type: "income" | "expense" | "transfer"; category: string } {
+  if (pfc) {
+    const primary = pfc.primary
+    const detailed = pfc.detailed
+
+    if (primary === "INCOME") return { type: "income", category: "income" }
+    if (primary === "LOAN_PAYMENTS") return { type: "transfer", category: "transfer" }
+
+    if (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") {
+      // Incoming Zelle / P2P = income, not a transfer
+      if (primary === "TRANSFER_IN" && (detailed.includes("ZELLE") || detailed.includes("P2P"))) {
+        return { type: "income", category: "income" }
+      }
+      return { type: "transfer", category: "transfer" }
+    }
+
+    const cat = PFC_CATEGORY_MAP[primary] ?? legacyCategory(legacyCats)
+    return { type: "expense", category: cat }
+  }
+
+  // No PFC data — fall back to legacy category + amount sign + title heuristics
+  const cat = legacyCategory(legacyCats)
+  const isTransferCat = cat === "transfer"
+
+  const isZelleIncoming = /\bzelle\b.*\bfrom\b/i.test(title)
+  const isCardPayment = /payment\s+to\s+.{0,40}card(\s+ending)?|payment\s+(to|from)\s+(crd|chk|checking|savings|credit)|mobile banking payment|credit card payment|transfer\s+(to|from)|from\s+chk|to\s+crd/i.test(title)
+
+  if (isZelleIncoming) return { type: "income", category: "income" }
+  if (isTransferCat || isCardPayment) return { type: "transfer", category: "transfer" }
+  return { type: isCredit ? "income" : "expense", category: cat }
 }
 
 export async function POST(req: NextRequest) {
@@ -97,34 +149,29 @@ export async function POST(req: NextRequest) {
       const res = await plaidClient.transactionsSync({
         access_token: item.access_token,
         cursor,
+        options: { include_personal_finance_category: true },
       })
       const { added, next_cursor, has_more } = res.data
 
       for (const tx of added) {
         if (tx.pending) continue
-        if (investmentAccountIds.has(tx.account_id)) continue // skip investment account transactions
+        if (investmentAccountIds.has(tx.account_id)) continue
 
-        const isIncome = tx.amount < 0
+        const isCredit = tx.amount < 0
         const amount = Math.abs(tx.amount)
         const rawTitle = tx.merchant_name ?? tx.name
         const title = rawTitle.slice(0, 255)
-        const category = mappings.get(title.toLowerCase()) ?? plaidCategory(tx.category ?? null)
-        // Use per-account label; fall back to institution name if account not found
-        const accountName = accountLabelMap.get(tx.account_id)
-          ?? item.institution_name
-          ?? "Bank"
+        const accountName = accountLabelMap.get(tx.account_id) ?? item.institution_name ?? "Bank"
 
-        // Incoming P2P payments (Zelle from someone) are always income, not transfers
-        const isZelleIncoming = /\bzelle\b.*\bfrom\b/i.test(title)
-
-        // Detect internal transfers (credit card payments, account-to-account moves, P2P)
-        const isTransferCategory = !isZelleIncoming && category === "transfer"
-        const isTransferTitle = /payment\s+(to|from)\s+(crd|chk|checking|savings|credit)|mobile banking payment|credit card payment|transfer\s+(to|from)|from\s+chk|to\s+crd|payment\s+to\s+.{0,40}card(\s+ending)?/i.test(title)
-        const txType = isZelleIncoming ? "income"
-          : (isTransferCategory || isTransferTitle) ? "transfer"
-          : (isIncome ? "income" : "expense")
-
-        const finalCategory = isZelleIncoming && category === "transfer" ? "income" : category
+        const userMapping = mappings.get(title.toLowerCase())
+        const { type: txType, category: inferredCategory } = classifyTransaction(
+          tx.personal_finance_category ?? null,
+          tx.category ?? null,
+          isCredit,
+          title
+        )
+        // User's explicit mapping overrides inferred category but not the type
+        const finalCategory = userMapping ?? inferredCategory
 
         toInsert.push({
           title,
@@ -175,24 +222,16 @@ export async function POST(req: NextRequest) {
     }, { onConflict: "plaid_item_id" })
   }
 
-  // Auto-mark transfers after every Plaid sync
+  // Post-insert: catch any legacy transfers the PFC classifier may have missed
+  // (only needed for transactions already in DB before PFC was enabled)
   if (totalAdded > 0) {
-    const TRANSFER_KEYWORDS = [
-      "payment from chk", "payment from checking", "payment from savings",
-      "payment from sav", "mobile banking payment to crd", "mobile banking payment to credit",
-      "online banking transfer", "online transfer", "transfer to checking",
-      "transfer to savings", "transfer from checking", "transfer from savings",
-      "ach transfer", "internal transfer", "account transfer", "funds transfer",
-      "autopay payment", "automatic payment", "credit card payment",
-    ]
     const { data: txns } = await supabase
       .from("transactions")
       .select("id, title")
       .eq("user_id", user.id)
-      .neq("type", "transfer")
-    const toMark = (txns ?? [])
-      .filter((tx) => TRANSFER_KEYWORDS.some((kw) => tx.title.toLowerCase().includes(kw)))
-      .map((tx) => tx.id)
+      .eq("type", "expense")
+    const TRANSFER_RE = /payment\s+(to|from)\s+(crd|chk|checking|savings|credit)|mobile banking payment|credit card payment|transfer\s+(to|from)|from\s+chk|to\s+crd|payment\s+to\s+.{0,40}card(\s+ending)?|online\s+(banking\s+)?transfer|ach transfer|internal transfer|account transfer|autopay payment|automatic payment/i
+    const toMark = (txns ?? []).filter((tx) => TRANSFER_RE.test(tx.title)).map((tx) => tx.id)
     if (toMark.length) {
       await supabase.from("transactions").update({ type: "transfer" }).in("id", toMark).eq("user_id", user.id)
     }
