@@ -63,6 +63,10 @@ interface SavingsGoal {
   linked_account: string | null
   tracking_start_date: string | null
   transfer_keywords: string | null
+  goal_type: "savings" | "debt" | null
+  debt_principal: number | null
+  debt_interest_rate: number | null
+  debt_monthly_payment: number | null
 }
 
 interface TransferTx {
@@ -114,6 +118,20 @@ function currency(n: number) {
 
 function budgetedAmount(cat: BudgetCategory, income: number): number {
   return cat.type === "percentage" ? (cat.value / 100) * income : cat.value
+}
+
+function calcPayoffMonths(balance: number, annualRate: number, monthlyPayment: number): number | null {
+  if (monthlyPayment <= 0 || balance <= 0) return null
+  const r = annualRate / 12
+  let b = balance
+  let months = 0
+  while (b > 0.01 && months < 600) {
+    const interest = r > 0 ? b * r : 0
+    if (monthlyPayment <= interest) return null
+    b = b + interest - monthlyPayment
+    months++
+  }
+  return months
 }
 
 const ONBOARDING_GROUPS = [
@@ -202,17 +220,23 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
   const [goalLinkedAccount, setGoalLinkedAccount] = useState("")
   const [goalTrackingStart, setGoalTrackingStart] = useState("")
   const [goalTransferKeywords, setGoalTransferKeywords] = useState("")
+  const [goalType, setGoalType] = useState<"savings" | "debt">("savings")
+  const [goalDebtPrincipal, setGoalDebtPrincipal] = useState("")
+  const [goalDebtRate, setGoalDebtRate] = useState("")
+  const [goalDebtPayment, setGoalDebtPayment] = useState("")
   const [isSavingGoal, startSavingGoal] = useTransition()
   const [deleteGoalId, setDeleteGoalId] = useState<string | null>(null)
 
   function openAddGoal() {
     setEditingGoal(null)
-    setGoalName(""); setGoalTarget(""); setGoalCurrent(""); setGoalDate(""); setGoalColor(GOAL_COLORS[0])
+    setGoalName(""); setGoalTarget("0"); setGoalCurrent(""); setGoalDate(""); setGoalColor(GOAL_COLORS[0])
     setGoalContribEnabled(false); setGoalContribType("fixed"); setGoalContribValue("")
     setGoalLinkedCategories(new Set())
     setGoalLinkedAccount("")
     setGoalTrackingStart(new Date().toISOString().slice(0, 10))
     setGoalTransferKeywords("")
+    setGoalType("savings")
+    setGoalDebtPrincipal(""); setGoalDebtRate(""); setGoalDebtPayment("")
     setGoalDialogOpen(true)
   }
   function openEditGoal(g: SavingsGoal) {
@@ -227,6 +251,10 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
     setGoalLinkedAccount(g.linked_account ?? "")
     setGoalTrackingStart(g.tracking_start_date ?? new Date().toISOString().slice(0, 10))
     setGoalTransferKeywords(g.transfer_keywords ?? "")
+    setGoalType(g.goal_type === "debt" ? "debt" : "savings")
+    setGoalDebtPrincipal(g.debt_principal != null ? String(g.debt_principal) : "")
+    setGoalDebtRate(g.debt_interest_rate != null ? String((g.debt_interest_rate * 100).toFixed(2)) : "")
+    setGoalDebtPayment(g.debt_monthly_payment != null ? String(g.debt_monthly_payment) : "")
     setGoalDialogOpen(true)
   }
   function handleGoalSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -244,6 +272,17 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
     fd.set("linked_account", goalLinkedAccount)
     fd.set("tracking_start_date", goalTrackingStart || "")
     fd.set("transfer_keywords", goalTransferKeywords.trim().toLowerCase())
+    fd.set("goal_type", goalType)
+    if (goalType === "debt") {
+      fd.set("debt_principal", goalDebtPrincipal)
+      fd.set("debt_interest_rate", goalDebtRate)
+      fd.set("debt_monthly_payment", goalDebtPayment)
+      fd.set("target_amount", "0")
+    } else {
+      fd.delete("debt_principal")
+      fd.delete("debt_interest_rate")
+      fd.delete("debt_monthly_payment")
+    }
     startSavingGoal(async () => {
       if (editingGoal) {
         await updateSavingsGoal(editingGoal.id, fd)
@@ -856,6 +895,70 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
                 ? Math.ceil(remaining / monthlyTarget)
                 : null
 
+              // Debt goal card
+              if (goal.goal_type === "debt") {
+                const principal = goal.debt_principal ?? 0
+                const balanceOwed = goal.current_amount
+                const monthlyPayment = goal.debt_monthly_payment ?? 0
+                const annualRate = goal.debt_interest_rate ?? 0
+                const paidOff = Math.max(0, principal - balanceOwed)
+                const paidPct = principal > 0 ? Math.min((paidOff / principal) * 100, 100) : 0
+                const payoffMonths = calcPayoffMonths(balanceOwed, annualRate, monthlyPayment)
+                const payoffLabel = payoffMonths !== null ? format(addMonths(new Date(), payoffMonths), "MMM yyyy") : "—"
+                const totalInterest = payoffMonths !== null && monthlyPayment > 0 ? Math.max(0, monthlyPayment * payoffMonths - balanceOwed) : null
+
+                return (
+                  <Card key={goal.id} className="p-4 group hover:shadow-md transition-all duration-200">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-3 h-3 rounded-full shrink-0" style={{ background: goal.color }} />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm text-foreground truncate">{goal.name}</p>
+                          <p className="text-[10px] text-muted-foreground">Loan · {annualRate > 0 ? `${(annualRate * 100).toFixed(2)}% APR` : "no interest"}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
+                        <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-foreground" onClick={() => openEditGoal(goal)}>
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-destructive" onClick={() => setDeleteGoalId(goal.id)}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="mb-1">
+                      <div className="flex items-baseline justify-between mb-1.5">
+                        <span className="text-xl font-bold tabular-nums">{currency(balanceOwed)}</span>
+                        <span className="text-xs text-muted-foreground">{currency(paidOff)} paid</span>
+                      </div>
+                      <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${paidPct}%`, background: goal.color }} />
+                      </div>
+                      <div className="flex justify-between text-xs mt-1 text-muted-foreground">
+                        <span>{paidPct.toFixed(0)}% paid off</span>
+                        <span>of {currency(principal)}</span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-border/50 mt-2 grid grid-cols-3 gap-x-2 text-xs">
+                      <div>
+                        <p className="text-muted-foreground mb-0.5">Monthly</p>
+                        <p className="font-semibold tabular-nums">{monthlyPayment > 0 ? currency(monthlyPayment) : "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-0.5">Payoff</p>
+                        <p className="font-semibold">{payoffLabel}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-0.5">Interest</p>
+                        <p className="font-semibold tabular-nums">{totalInterest != null ? currency(totalInterest) : "—"}</p>
+                      </div>
+                    </div>
+                  </Card>
+                )
+              }
+
               return (
                 <Card key={goal.id} className={`p-4 group hover:shadow-md transition-all duration-200 ${monthlyStatus === "red" && monthlyTarget ? "border-rose-300 dark:border-rose-800" : monthlyStatus === "amber" ? "border-amber-300 dark:border-amber-800" : ""}`}>
                   <div className="flex items-start justify-between gap-2 mb-3">
@@ -967,147 +1070,223 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
       <Dialog open={goalDialogOpen} onOpenChange={(o) => { if (!o) setGoalDialogOpen(false) }}>
         <DialogContent className="sm:max-w-sm max-h-[90dvh] flex flex-col overflow-hidden">
           <DialogHeader className="shrink-0">
-            <DialogTitle>{editingGoal ? "Edit Goal" : "New Savings Goal"}</DialogTitle>
+            <DialogTitle>{editingGoal ? "Edit Goal" : "New Goal"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleGoalSubmit} className="flex flex-col flex-1 min-h-0">
           <div className="space-y-3 mt-2 overflow-y-auto flex-1 pr-1">
+            {/* Type toggle */}
             <div className="space-y-1.5">
-              <Label htmlFor="goal-name">Goal name</Label>
-              <Input id="goal-name" name="name" placeholder="e.g. Emergency Fund" value={goalName} onChange={(e) => setGoalName(e.target.value)} required />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="goal-target">Target ($)</Label>
-                <Input id="goal-target" name="target_amount" type="number" step="0.01" min="0" placeholder="5000" value={goalTarget} onChange={(e) => setGoalTarget(e.target.value)} required />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="goal-current">Saved so far ($)</Label>
-                <Input id="goal-current" name="current_amount" type="number" step="0.01" min="0" placeholder="0" value={goalCurrent} onChange={(e) => setGoalCurrent(e.target.value)} />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="goal-date">Target date <span className="text-muted-foreground">(optional)</span></Label>
-              <Input id="goal-date" name="target_date" type="date" value={goalDate} onChange={(e) => setGoalDate(e.target.value)} />
-            </div>
-            {/* Monthly contribution */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm">Monthly contribution <span className="text-muted-foreground">(optional)</span></Label>
+              <Label>Type</Label>
+              <div className="flex rounded-md border border-input overflow-hidden">
                 <button
                   type="button"
-                  onClick={() => setGoalContribEnabled((v) => !v)}
-                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${goalContribEnabled ? "bg-primary" : "bg-muted"}`}
-                >
-                  <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${goalContribEnabled ? "translate-x-4" : "translate-x-0"}`} />
-                </button>
+                  onClick={() => setGoalType("savings")}
+                  className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${goalType === "savings" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                >Savings</button>
+                <button
+                  type="button"
+                  onClick={() => setGoalType("debt")}
+                  className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${goalType === "debt" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                >Loan / Debt</button>
               </div>
-              {goalContribEnabled && (
-                <div className="flex gap-2">
-                  <div className="flex rounded-md border border-input overflow-hidden shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setGoalContribType("fixed")}
-                      className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${goalContribType === "fixed" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
-                    >$</button>
-                    <button
-                      type="button"
-                      onClick={() => setGoalContribType("percentage")}
-                      className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${goalContribType === "percentage" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
-                    >%</button>
-                  </div>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max={goalContribType === "percentage" ? "100" : undefined}
-                    placeholder={goalContribType === "percentage" ? "e.g. 10" : "e.g. 200"}
-                    value={goalContribValue}
-                    onChange={(e) => setGoalContribValue(e.target.value)}
-                    className="flex-1"
-                  />
-                </div>
-              )}
-              {goalContribEnabled && goalContribValue && goalContribType === "percentage" && monthlyIncome > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  = {currency((monthlyIncome * parseFloat(goalContribValue || "0")) / 100)}/mo based on your income
-                </p>
-              )}
             </div>
-
-            {/* Track a bank account balance */}
-            {connectedBankNames.length > 0 && (
-              <div className="space-y-1.5">
-                <Label htmlFor="goal-linked-account">Track a bank account <span className="text-muted-foreground">(optional)</span></Label>
-                <p className="text-xs text-muted-foreground -mt-0.5">The goal shows the net money growth in that account — great for savings accounts</p>
-                <select
-                  id="goal-linked-account"
-                  value={goalLinkedAccount}
-                  onChange={(e) => { setGoalLinkedAccount(e.target.value); if (e.target.value) setGoalLinkedCategories(new Set()) }}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                >
-                  <option value="">— Not linked —</option>
-                  {connectedBankNames.map((name) => (
-                    <option key={name} value={name}>{name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Linked budget categories (multi-select) */}
-            {categories.length > 0 && !goalLinkedAccount && (
-              <div className="space-y-1.5">
-                <Label>Or link to budget categories <span className="text-muted-foreground">(optional)</span></Label>
-                <p className="text-xs text-muted-foreground -mt-0.5">Every dollar spent in those categories automatically counts toward this goal's running total</p>
-                <div className="rounded-md border border-input bg-background max-h-36 overflow-y-auto divide-y divide-border">
-                  {categories.map((c) => {
-                    const checked = goalLinkedCategories.has(c.name)
-                    return (
-                      <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-muted/40 transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            setGoalLinkedCategories((prev) => {
-                              const next = new Set(prev)
-                              next.has(c.name) ? next.delete(c.name) : next.add(c.name)
-                              return next
-                            })
-                          }}
-                          className="h-3.5 w-3.5 rounded border-border accent-primary"
-                        />
-                        <span className="text-sm">{c.name}</span>
-                      </label>
-                    )
-                  })}
-                </div>
-                {goalLinkedCategories.size > 0 && (
-                  <p className="text-xs text-primary font-medium">{goalLinkedCategories.size} categor{goalLinkedCategories.size === 1 ? "y" : "ies"} selected</p>
-                )}
-                {goalLinkedCategories.size > 0 && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">Track spending from</Label>
-                    <Input
-                      type="date"
-                      value={goalTrackingStart}
-                      onChange={(e) => setGoalTrackingStart(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">Only transactions on or after this date count toward this goal.</p>
-                  </div>
-                )}
-              </div>
-            )}
 
             <div className="space-y-1.5">
-              <Label htmlFor="goal-transfer-kw">Auto-detect from transfers <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                id="goal-transfer-kw"
-                name="transfer_keywords"
-                placeholder="e.g. acorns, fidelity, ally savings"
-                value={goalTransferKeywords}
-                onChange={(e) => setGoalTransferKeywords(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">Comma-separated keywords from your transfer transaction titles. Matching transfers count as contributions automatically.</p>
+              <Label htmlFor="goal-name">{goalType === "debt" ? "Loan name" : "Goal name"}</Label>
+              <Input id="goal-name" name="name" placeholder={goalType === "debt" ? "e.g. Car Loan" : "e.g. Emergency Fund"} value={goalName} onChange={(e) => setGoalName(e.target.value)} required />
             </div>
+
+            {goalType === "debt" ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="goal-debt-principal">Original Amount ($)</Label>
+                    <Input id="goal-debt-principal" type="number" step="0.01" min="0" placeholder="25000" value={goalDebtPrincipal} onChange={(e) => setGoalDebtPrincipal(e.target.value)} required />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="goal-debt-balance">Balance Owed ($)</Label>
+                    <Input id="goal-debt-balance" name="current_amount" type="number" step="0.01" min="0" placeholder="18000" value={goalCurrent} onChange={(e) => setGoalCurrent(e.target.value)} required />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="goal-debt-rate">Interest Rate (APR %)</Label>
+                    <Input id="goal-debt-rate" type="number" step="0.01" min="0" max="100" placeholder="5.99" value={goalDebtRate} onChange={(e) => setGoalDebtRate(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="goal-debt-payment">Monthly Payment ($)</Label>
+                    <Input id="goal-debt-payment" type="number" step="0.01" min="0" placeholder="400" value={goalDebtPayment} onChange={(e) => setGoalDebtPayment(e.target.value)} required />
+                  </div>
+                </div>
+                {(() => {
+                  const principal = parseFloat(goalDebtPrincipal) || 0
+                  const balance = parseFloat(goalCurrent) || 0
+                  const rate = parseFloat(goalDebtRate) / 100 || 0
+                  const payment = parseFloat(goalDebtPayment) || 0
+                  const months = calcPayoffMonths(balance, rate, payment)
+                  if (!months || balance <= 0 || payment <= 0) return null
+                  const payoffDate = format(addMonths(new Date(), months), "MMMM yyyy")
+                  const totalInterest = Math.max(0, payment * months - balance)
+                  const paidPct = principal > 0 ? Math.min((Math.max(0, principal - balance) / principal) * 100, 100).toFixed(0) : "0"
+                  return (
+                    <div className="rounded-md bg-muted/60 px-3 py-2.5 text-xs space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Paid off</span>
+                        <span className="font-medium">{paidPct}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Payoff date</span>
+                        <span className="font-medium">{payoffDate}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Est. interest</span>
+                        <span className="font-medium">{currency(totalInterest)}</span>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="goal-target">Target ($)</Label>
+                    <Input id="goal-target" name="target_amount" type="number" step="0.01" min="0" placeholder="5000" value={goalTarget} onChange={(e) => setGoalTarget(e.target.value)} required />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="goal-current">Saved so far ($)</Label>
+                    <Input id="goal-current" name="current_amount" type="number" step="0.01" min="0" placeholder="0" value={goalCurrent} onChange={(e) => setGoalCurrent(e.target.value)} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="goal-date">Target date <span className="text-muted-foreground">(optional)</span></Label>
+                  <Input id="goal-date" name="target_date" type="date" value={goalDate} onChange={(e) => setGoalDate(e.target.value)} />
+                </div>
+              </>
+            )}
+            {goalType === "savings" && (
+              <>
+                {/* Monthly contribution */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Monthly contribution <span className="text-muted-foreground">(optional)</span></Label>
+                    <button
+                      type="button"
+                      onClick={() => setGoalContribEnabled((v) => !v)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${goalContribEnabled ? "bg-primary" : "bg-muted"}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${goalContribEnabled ? "translate-x-4" : "translate-x-0"}`} />
+                    </button>
+                  </div>
+                  {goalContribEnabled && (
+                    <div className="flex gap-2">
+                      <div className="flex rounded-md border border-input overflow-hidden shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setGoalContribType("fixed")}
+                          className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${goalContribType === "fixed" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                        >$</button>
+                        <button
+                          type="button"
+                          onClick={() => setGoalContribType("percentage")}
+                          className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${goalContribType === "percentage" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                        >%</button>
+                      </div>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={goalContribType === "percentage" ? "100" : undefined}
+                        placeholder={goalContribType === "percentage" ? "e.g. 10" : "e.g. 200"}
+                        value={goalContribValue}
+                        onChange={(e) => setGoalContribValue(e.target.value)}
+                        className="flex-1"
+                      />
+                    </div>
+                  )}
+                  {goalContribEnabled && goalContribValue && goalContribType === "percentage" && monthlyIncome > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      = {currency((monthlyIncome * parseFloat(goalContribValue || "0")) / 100)}/mo based on your income
+                    </p>
+                  )}
+                </div>
+
+                {/* Track a bank account balance */}
+                {connectedBankNames.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="goal-linked-account">Track a bank account <span className="text-muted-foreground">(optional)</span></Label>
+                    <p className="text-xs text-muted-foreground -mt-0.5">The goal shows the net money growth in that account — great for savings accounts</p>
+                    <select
+                      id="goal-linked-account"
+                      value={goalLinkedAccount}
+                      onChange={(e) => { setGoalLinkedAccount(e.target.value); if (e.target.value) setGoalLinkedCategories(new Set()) }}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    >
+                      <option value="">— Not linked —</option>
+                      {connectedBankNames.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Linked budget categories (multi-select) */}
+                {categories.length > 0 && !goalLinkedAccount && (
+                  <div className="space-y-1.5">
+                    <Label>Or link to budget categories <span className="text-muted-foreground">(optional)</span></Label>
+                    <p className="text-xs text-muted-foreground -mt-0.5">Every dollar spent in those categories automatically counts toward this goal's running total</p>
+                    <div className="rounded-md border border-input bg-background max-h-36 overflow-y-auto divide-y divide-border">
+                      {categories.map((c) => {
+                        const checked = goalLinkedCategories.has(c.name)
+                        return (
+                          <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-muted/40 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setGoalLinkedCategories((prev) => {
+                                  const next = new Set(prev)
+                                  next.has(c.name) ? next.delete(c.name) : next.add(c.name)
+                                  return next
+                                })
+                              }}
+                              className="h-3.5 w-3.5 rounded border-border accent-primary"
+                            />
+                            <span className="text-sm">{c.name}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                    {goalLinkedCategories.size > 0 && (
+                      <p className="text-xs text-primary font-medium">{goalLinkedCategories.size} categor{goalLinkedCategories.size === 1 ? "y" : "ies"} selected</p>
+                    )}
+                    {goalLinkedCategories.size > 0 && (
+                      <div className="space-y-1">
+                        <Label className="text-xs">Track spending from</Label>
+                        <Input
+                          type="date"
+                          value={goalTrackingStart}
+                          onChange={(e) => setGoalTrackingStart(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">Only transactions on or after this date count toward this goal.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="goal-transfer-kw">Auto-detect from transfers <span className="text-muted-foreground">(optional)</span></Label>
+                  <Input
+                    id="goal-transfer-kw"
+                    name="transfer_keywords"
+                    placeholder="e.g. acorns, fidelity, ally savings"
+                    value={goalTransferKeywords}
+                    onChange={(e) => setGoalTransferKeywords(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">Comma-separated keywords from your transfer transaction titles. Matching transfers count as contributions automatically.</p>
+                </div>
+              </>
+            )}
 
             <div className="space-y-1.5">
               <Label>Color</Label>

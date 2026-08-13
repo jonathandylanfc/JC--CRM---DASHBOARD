@@ -244,9 +244,13 @@ export async function createSavingsGoal(formData: FormData) {
   const linked_account = (formData.get("linked_account") as string) || null
   const tracking_start_date = (formData.get("tracking_start_date") as string) || null
   const transfer_keywords = (formData.get("transfer_keywords") as string)?.trim().toLowerCase() || null
+  const goal_type = (formData.get("goal_type") as string) || "savings"
+  const debt_principal = formData.get("debt_principal") ? parseFloat(formData.get("debt_principal") as string) : null
+  const debt_interest_rate = formData.get("debt_interest_rate") ? parseFloat(formData.get("debt_interest_rate") as string) / 100 : null
+  const debt_monthly_payment = formData.get("debt_monthly_payment") ? parseFloat(formData.get("debt_monthly_payment") as string) : null
   const { data, error } = await supabase
     .from("savings_goals")
-    .insert({ user_id: user.id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account, tracking_start_date, transfer_keywords })
+    .insert({ user_id: user.id, name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account, tracking_start_date, transfer_keywords, goal_type, debt_principal, debt_interest_rate, debt_monthly_payment })
     .select()
     .single()
   if (error) return { error: error.message }
@@ -271,9 +275,13 @@ export async function updateSavingsGoal(id: string, formData: FormData) {
   const linked_account = (formData.get("linked_account") as string) || null
   const tracking_start_date = (formData.get("tracking_start_date") as string) || null
   const transfer_keywords = (formData.get("transfer_keywords") as string)?.trim().toLowerCase() || null
+  const goal_type = (formData.get("goal_type") as string) || "savings"
+  const debt_principal = formData.get("debt_principal") ? parseFloat(formData.get("debt_principal") as string) : null
+  const debt_interest_rate = formData.get("debt_interest_rate") ? parseFloat(formData.get("debt_interest_rate") as string) / 100 : null
+  const debt_monthly_payment = formData.get("debt_monthly_payment") ? parseFloat(formData.get("debt_monthly_payment") as string) : null
   const { error } = await supabase
     .from("savings_goals")
-    .update({ name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account, tracking_start_date, transfer_keywords })
+    .update({ name, target_amount, current_amount, target_date, color, monthly_contribution_type, monthly_contribution_value, linked_category, linked_account, tracking_start_date, transfer_keywords, goal_type, debt_principal, debt_interest_rate, debt_monthly_payment })
     .eq("id", id)
     .eq("user_id", user.id)
   if (error) return { error: error.message }
