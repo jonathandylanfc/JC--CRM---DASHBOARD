@@ -257,6 +257,8 @@ export function FinanceContent({
 
   // Confirm dismiss subscription
   const [confirmDismissId, setConfirmDismissId] = useState<string | null>(null)
+  const [txLimit, setTxLimit] = useState(5)
+  const [subLimit, setSubLimit] = useState(5)
 
   // Dismissed subscription IDs — persisted in localStorage
   const [dismissedSubs, setDismissedSubs] = useState<Set<string>>(() => {
@@ -322,6 +324,7 @@ export function FinanceContent({
   function changeRange(r: DateRange) {
     setDateRange(r)
     setMonthOffset(0)
+    setTxLimit(5)
     setChartPage(0)
   }
 
@@ -1385,7 +1388,7 @@ export function FinanceContent({
               {/* Category filter */}
               <Select
                 value={selectedCategory ?? "all"}
-                onValueChange={(v) => setSelectedCategory(v === "all" ? null : v)}
+                onValueChange={(v) => { setSelectedCategory(v === "all" ? null : v); setTxLimit(5) }}
               >
                 <SelectTrigger size="sm" className={`w-auto gap-1.5 bg-transparent text-xs ${selectedCategory ? "border-primary text-primary" : ""}`}>
                   <Filter className="w-3.5 h-3.5 shrink-0" />
@@ -1580,7 +1583,7 @@ export function FinanceContent({
             </Card>
           ) : (
             <div className="space-y-2">
-              {displayTransactions.map((tx) => {
+              {displayTransactions.slice(0, txLimit).map((tx) => {
                 const isSelected = selectedIds.has(tx.id)
                 return (
                   <Card
@@ -1692,6 +1695,22 @@ export function FinanceContent({
                   </Card>
                 )
               })}
+              {displayTransactions.length > txLimit && (
+                <button
+                  onClick={() => setTxLimit(n => n + 10)}
+                  className="w-full py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Show {Math.min(10, displayTransactions.length - txLimit)} more of {displayTransactions.length - txLimit} remaining
+                </button>
+              )}
+              {txLimit > 5 && displayTransactions.length <= txLimit && (
+                <button
+                  onClick={() => setTxLimit(5)}
+                  className="w-full py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Show less
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1764,7 +1783,7 @@ export function FinanceContent({
             </Card>
           ) : (
             <div className="space-y-2">
-              {visibleSubscriptions.map((sub) => (
+              {visibleSubscriptions.slice(0, subLimit).map((sub) => (
                 <Card key={sub.id} className="p-4 hover:shadow-md transition-all duration-200 group">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -1795,7 +1814,7 @@ export function FinanceContent({
                     </div>
                     <div className="shrink-0 flex flex-col items-end gap-1">
                       <p className="font-semibold text-foreground text-sm">{currency(sub.amount)}<span className="text-xs font-normal text-muted-foreground">/{sub.billingCycle === "yearly" ? "yr" : "mo"}</span></p>
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <Button
                           variant="ghost"
                           size="icon"
@@ -1817,6 +1836,22 @@ export function FinanceContent({
                   </div>
                 </Card>
               ))}
+              {visibleSubscriptions.length > subLimit && (
+                <button
+                  onClick={() => setSubLimit(n => n + 5)}
+                  className="w-full py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Show {Math.min(5, visibleSubscriptions.length - subLimit)} more of {visibleSubscriptions.length - subLimit} remaining
+                </button>
+              )}
+              {subLimit > 5 && visibleSubscriptions.length <= subLimit && (
+                <button
+                  onClick={() => setSubLimit(5)}
+                  className="w-full py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Show less
+                </button>
+              )}
             </div>
           )}
         </div>
