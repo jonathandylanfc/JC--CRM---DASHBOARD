@@ -242,7 +242,23 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
     const payMonthKey = format(payDate, "yyyy-MM")
     const rate = paySettings.hourly_rate
     const taxFactor = 1 - (paySettings.tax_rate ?? 25) / 100
+    const kw = (paySettings.shift_keyword ?? "work").toLowerCase()
+    const excKw = (paySettings.shift_exclude_keyword ?? "").toLowerCase().trim()
+
     async function computeMonthly() {
+      // Fetch all external calendar events once — they cover all dates, we filter per period below
+      type RawEvent = { id?: string | null; title: string; start: string | null; end?: string | null; allDay?: boolean }
+      const [gRes, caldavRes, icsRes] = await Promise.all([
+        fetch("/api/calendar/events"),
+        fetch("/api/calendar/caldav"),
+        fetch("/api/calendar/ics"),
+      ])
+      const allExternal: RawEvent[] = [
+        ...(gRes.ok ? ((await gRes.json()).events ?? []) : []),
+        ...(caldavRes.ok ? ((await caldavRes.json()).events ?? []) : []),
+        ...(icsRes.ok ? ((await icsRes.json()).events ?? []) : []),
+      ]
+
       let total = netPay
       for (const adj of [-2, -1, 1, 2]) {
         const adjOffset = periodOffset + adj
@@ -251,11 +267,41 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
           const res = await fetch(`/api/calendar/paycheck-shifts?offset=${adjOffset}`)
           if (!res.ok) continue
           const data = await res.json()
-          if (!data.periodEnd || !data.paySettings?.pay_delay_days) continue
+          if (!data.periodEnd || !data.periodStart || !data.paySettings?.pay_delay_days) continue
           const adjPay = new Date(data.periodEnd.slice(0, 10) + "T12:00:00")
           adjPay.setDate(adjPay.getDate() + data.paySettings.pay_delay_days)
           if (format(adjPay, "yyyy-MM") !== payMonthKey) continue
-          const adjHours = (data.shifts ?? []).reduce((s: number, sh: Shift) => s + hoursFromShift(sh), 0)
+
+          const pStart = data.periodStart.slice(0, 10)
+          const pEnd = data.periodEnd.slice(0, 10)
+
+          const externalForPeriod: Shift[] = allExternal
+            .filter(e => {
+              if (!e.start) return false
+              const d = e.start.slice(0, 10)
+              if (d < pStart || d > pEnd) return false
+              const t = e.title.toLowerCase()
+              if (!t.includes(kw)) return false
+              if (excKw && t.includes(excKw)) return false
+              return true
+            })
+            .map(e => ({
+              id: e.id ?? `ext-${e.start}`,
+              title: e.title,
+              start_at: e.start!,
+              end_at: e.end ?? null,
+              all_day: e.allDay ?? false,
+            }))
+
+          const seen = new Set<string>()
+          const merged = [...(data.shifts ?? []), ...externalForPeriod].filter((s: Shift) => {
+            const key = `${s.title.toLowerCase()}|${s.start_at.slice(0, 10)}`
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
+
+          const adjHours = merged.reduce((s, sh) => s + hoursFromShift(sh), 0)
           total += adjHours * rate * taxFactor
         } catch { /* skip */ }
       }
