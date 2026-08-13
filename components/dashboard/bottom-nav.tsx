@@ -21,7 +21,8 @@ export function BottomNav({ showInvestments = true }: { showInvestments?: boolea
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-card border-t border-border">
-      <div className="flex items-stretch h-16">
+      <div className="flex items-stretch h-16 justify-center">
+        <div className="flex items-stretch w-full max-w-lg">
         {tabs.map(({ icon: Icon, label, href }) => {
           const isActive = pathname === href
           return (
@@ -45,6 +46,7 @@ export function BottomNav({ showInvestments = true }: { showInvestments?: boolea
             </Link>
           )
         })}
+        </div>
       </div>
       {/* Safe area spacer — grows to cover iPhone home indicator without pushing icons up */}
       <div style={{ height: "env(safe-area-inset-bottom, 0px)" }} />
