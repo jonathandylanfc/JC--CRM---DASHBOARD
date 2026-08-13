@@ -193,12 +193,12 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
   const [reimburseCatId, setReimburseCatId] = useState<string | null>(null)
   const [reimburseSearch, setReimburseSearch] = useState("")
 
-  // Surplus banner dismiss — keyed by month so it reappears for a new month's surplus
+  // Surplus banner dismiss — keyed by month so each month has its own permanent dismissal
   const surplusDismissKey = `surplus_dismissed_${lastMonth}`
-  const [surplusDismissed, setSurplusDismissed] = useState(() => {
-    if (typeof window === "undefined") return false
-    return localStorage.getItem(surplusDismissKey) === "1"
-  })
+  const [surplusDismissed, setSurplusDismissed] = useState(false)
+  useEffect(() => {
+    setSurplusDismissed(localStorage.getItem(surplusDismissKey) === "1")
+  }, [surplusDismissKey])
   function dismissSurplus() {
     setSurplusDismissed(true)
     localStorage.setItem(surplusDismissKey, "1")
