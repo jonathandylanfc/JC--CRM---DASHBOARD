@@ -114,16 +114,23 @@ export async function POST(req: NextRequest) {
           ?? item.institution_name
           ?? "Bank"
 
+        // Incoming P2P payments (Zelle from someone) are always income, not transfers
+        const isZelleIncoming = /\bzelle\b.*\bfrom\b/i.test(title)
+
         // Detect internal transfers (credit card payments, account-to-account moves, P2P)
-        const isTransferCategory = category === "transfer"
+        const isTransferCategory = !isZelleIncoming && category === "transfer"
         const isTransferTitle = /payment\s+(to|from)\s+(crd|chk|checking|savings|credit)|mobile banking payment|credit card payment|transfer\s+(to|from)|from\s+chk|to\s+crd/i.test(title)
-        const txType = (isTransferCategory || isTransferTitle) ? "transfer" : (isIncome ? "income" : "expense")
+        const txType = isZelleIncoming ? "income"
+          : (isTransferCategory || isTransferTitle) ? "transfer"
+          : (isIncome ? "income" : "expense")
+
+        const finalCategory = isZelleIncoming && category === "transfer" ? "income" : category
 
         toInsert.push({
           title,
           amount,
           type: txType,
-          category,
+          category: finalCategory,
           date: tx.date,
           account_name: accountName,
         })
