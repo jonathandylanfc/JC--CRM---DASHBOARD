@@ -214,6 +214,17 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
   const netPay = grossPay * (1 - (paySettings?.tax_rate ?? 25) / 100)
   const monthlyNetEstimate = netPay * paychecksPerMonth
 
+  const periodLabel = periodStart && periodEnd
+    ? formatPayPeriodRange(new Date(periodStart), new Date(periodEnd))
+    : ""
+
+  const payDate = (() => {
+    if (!periodEnd || !(paySettings?.pay_delay_days)) return null
+    const d = new Date(periodEnd.slice(0, 10) + "T12:00:00")
+    d.setDate(d.getDate() + paySettings.pay_delay_days)
+    return d
+  })()
+
   // Compute monthly total by summing all paychecks whose pay date falls in the same calendar month
   const [monthlyTotal, setMonthlyTotal] = useState<number | null>(null)
   useEffect(() => {
@@ -251,17 +262,6 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
     lastSyncedEstimate.current = monthlyTotal
     setExpectedMonthlyIncome(monthlyTotal)
   }, [fetching, periodOffset, monthlyTotal])
-
-  const periodLabel = periodStart && periodEnd
-    ? formatPayPeriodRange(new Date(periodStart), new Date(periodEnd))
-    : ""
-
-  const payDate = (() => {
-    if (!periodEnd || !(paySettings?.pay_delay_days)) return null
-    const d = new Date(periodEnd.slice(0, 10) + "T12:00:00")
-    d.setDate(d.getDate() + paySettings.pay_delay_days)
-    return d
-  })()
 
   const weeklyHours = (() => {
     const weekMap = new Map<string, { label: string; hours: number }>()
