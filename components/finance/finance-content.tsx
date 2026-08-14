@@ -60,7 +60,6 @@ import {
 import {
   createTransaction,
   updateTransaction,
-  deleteTransaction,
   deleteAllTransactions,
   deleteAccountTransactions,
   deleteSelectedTransactions,
@@ -262,7 +261,6 @@ export function FinanceContent({
   }
 
   // Single-delete confirmation
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   // Confirm dismiss subscription
   const [confirmDismissId, setConfirmDismissId] = useState<string | null>(null)
@@ -624,15 +622,6 @@ export function FinanceContent({
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
-    })
-  }
-
-  function handleDelete(id: string) {
-    startTransition(async () => {
-      updateOptimistic({ type: "delete", id })
-      await deleteTransaction(id)
-      if (savedTx?.id === id) setSavedTx(null)
-      router.refresh()
     })
   }
 
@@ -1508,33 +1497,6 @@ export function FinanceContent({
           </Dialog>
 
           {/* Single delete confirmation dialog */}
-          <Dialog open={!!confirmDeleteId} onOpenChange={(o) => { if (!o) setConfirmDeleteId(null) }}>
-            <DialogContent className="sm:max-w-sm">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-destructive">
-                  <AlertTriangle className="w-5 h-5" />
-                  Delete transaction?
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 mt-2">
-                <p className="text-sm text-muted-foreground">This will permanently delete the transaction. This cannot be undone.</p>
-                <div className="flex gap-3">
-                  <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
-                  <Button
-                    variant="destructive"
-                    className="flex-1"
-                    onClick={() => {
-                      if (confirmDeleteId) handleDelete(confirmDeleteId)
-                      setConfirmDeleteId(null)
-                    }}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-
           {/* Edit transaction dialog */}
           <Dialog open={!!editingTx} onOpenChange={(o) => { if (!o) setEditingTx(null) }}>
             <DialogContent className="sm:max-w-md">
@@ -1701,14 +1663,6 @@ export function FinanceContent({
                               onClick={() => { setEditError(null); setEditingTx(tx) }}
                             >
                               <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="w-7 h-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => setConfirmDeleteId(tx.id)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </div>
                         )}
