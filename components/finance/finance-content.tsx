@@ -1265,7 +1265,12 @@ export function FinanceContent({
             <h2 className="text-lg font-semibold text-foreground shrink-0">Transactions</h2>
 
             {!selectMode ? (
-              /* Add Transaction dialog trigger */
+              /* Add Transaction + Select buttons */
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="outline" size="sm" className="gap-2 bg-transparent" onClick={() => setSelectMode(true)}>
+                  <CheckSquare className="w-4 h-4" />
+                  Select
+                </Button>
               <Dialog open={open} onOpenChange={setOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="gap-2 shrink-0">
@@ -1337,6 +1342,7 @@ export function FinanceContent({
                       </form>
                     </DialogContent>
                   </Dialog>
+              </div>
             ) : (
               /* ── Select mode buttons ─────────────────────────── */
               <div className="flex items-center gap-2">
@@ -1480,23 +1486,11 @@ export function FinanceContent({
                   Export
                 </Button>
                 <CsvImporter existingAccounts={allAccounts} />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 bg-transparent"
-                  onClick={() => setSelectMode(true)}
-                >
-                  <CheckSquare className="w-4 h-4" />
-                  Select
-                </Button>
               </div>
               {/* Mobile-only compact secondary actions */}
               <div className="flex sm:hidden items-center gap-1">
                 <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent" onClick={handleExportCSV} disabled={displayTransactions.length === 0} title="Export CSV">
                   <Download className="w-4 h-4" />
-                </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent" onClick={() => setSelectMode(true)} title="Select transactions">
-                  <CheckSquare className="w-4 h-4" />
                 </Button>
               </div>
             </div>
