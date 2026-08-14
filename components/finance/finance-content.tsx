@@ -1146,7 +1146,7 @@ export function FinanceContent({
           let bucket: string
           if (hasBudgetCats) {
             const txCatLower = tx.category.toLowerCase()
-            const matched = namedBudgetCats.find((c) => c.name.toLowerCase() === txCatLower)
+            const matched = namedBudgetCats.find((c) => getCatKeys(c).includes(txCatLower))
             bucket = matched ? matched.name : (catchallCat?.name ?? tx.category)
           } else {
             bucket = tx.category
