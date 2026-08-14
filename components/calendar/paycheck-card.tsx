@@ -195,6 +195,7 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
     const prevPayDate = new Date(prevEnd)
     prevPayDate.setDate(prevEnd.getDate() + paySettings.pay_delay_days)
     if (prevPayDate >= new Date()) {
+      setFetching(true) // batch with periodOffset so no render has mismatched period/data
       setPeriodOffset(-1)
     }
   }, [fetching, periodOffset, periodStart, paySettings])
