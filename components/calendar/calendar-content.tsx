@@ -106,6 +106,13 @@ export function CalendarContent() {
       return saved ? new Set(JSON.parse(saved) as string[]) : new Set()
     } catch { return new Set() }
   })
+  const [excludedCalIds, setExcludedCalIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set()
+    try {
+      const saved = localStorage.getItem("excludedCalIds")
+      return saved ? new Set(JSON.parse(saved) as string[]) : new Set()
+    } catch { return new Set() }
+  })
   const [googleEmail, setGoogleEmail] = useState<string | null>(null)
   const [connected, setConnected] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
@@ -590,15 +597,30 @@ export function CalendarContent() {
     })
   }
 
-  // Filter events by hidden calendars
+  function excludeCalendar(calId: string) {
+    setExcludedCalIds((prev) => {
+      const next = new Set(prev)
+      next.add(calId)
+      try { localStorage.setItem("excludedCalIds", JSON.stringify(Array.from(next))) } catch {}
+      return next
+    })
+  }
+
+  // Filter events by hidden/excluded calendars
   const visibleEvents = events.filter((e) => {
     const src = calendarSources.find(
       (c) => e.calendarName === c.name && e.source === c.source
     )
     if (!src) return true
     const key = src.id ?? src.name
+    if (excludedCalIds.has(key)) return false
     return !hiddenCalendars.has(key)
   })
+
+  // Only show calendars the user hasn't permanently removed
+  const visibleCalendarSources = calendarSources.filter(
+    (c) => !excludedCalIds.has(c.id ?? c.name)
+  )
 
   // Calendar grid
   const monthStart = startOfMonth(currentMonth)
@@ -695,7 +717,7 @@ export function CalendarContent() {
           >
             <ChevronRight className={`w-3 h-3 transition-transform ${calListOpen ? "rotate-90" : ""}`} />
             <span>My Calendars</span>
-            <span className="text-muted-foreground/50">({calendarSources.length + (icloudConnected ? 1 : 0) + (connected ? 1 : 0)})</span>
+            <span className="text-muted-foreground/50">({visibleCalendarSources.length + (icloudConnected ? 1 : 0) + (connected ? 1 : 0)})</span>
           </button>
 
           {calListOpen && (
@@ -741,7 +763,7 @@ export function CalendarContent() {
               )}
 
               {/* Individual calendars (Google sub-calendars + ICS) */}
-              {calendarSources.map((cal) => {
+              {visibleCalendarSources.map((cal) => {
                 const key = cal.id ?? cal.name
                 const hidden = hiddenCalendars.has(key)
                 return (
@@ -758,14 +780,20 @@ export function CalendarContent() {
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cal.color, opacity: hidden ? 0.4 : 1 }} />
                       <span className={hidden ? "line-through" : ""}>{cal.name === googleEmail ? "Primary" : cal.name}</span>
                     </button>
-                    {cal.source === "ics" && cal.icsId && (
-                      <button
-                        onClick={() => handleRemoveIcs(cal.icsId!, cal.name)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive -ml-1"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => {
+                        if (cal.source === "ics" && cal.icsId) {
+                          handleRemoveIcs(cal.icsId, cal.name)
+                        } else {
+                          excludeCalendar(key)
+                          toast.success(`"${cal.name}" removed from calendar`)
+                        }
+                      }}
+                      title="Remove calendar"
+                      className="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive -ml-1"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   </div>
                 )
               })}
