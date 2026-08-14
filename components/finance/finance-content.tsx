@@ -99,6 +99,13 @@ interface BudgetCat {
   value: number
   is_catchall?: boolean
   is_goal_mode?: boolean
+  category_aliases?: string | null
+}
+
+function getCatKeys(cat: BudgetCat): string[] {
+  const name = cat.name.toLowerCase()
+  const aliases = cat.category_aliases?.split(",").map((a) => a.trim().toLowerCase()).filter(Boolean) ?? []
+  return [...new Set([name, ...aliases])]
 }
 
 interface FinanceContentProps {
@@ -110,6 +117,7 @@ interface FinanceContentProps {
   budgetCategories?: BudgetCat[]
   currentMonthExpenses?: Record<string, number>
   connectedBankNames?: string[]
+  expectedMonthlyIncome?: number | null
 }
 
 const PIE_COLORS = ["#8b5cf6","#3b82f6","#10b981","#f59e0b","#ef4444","#ec4899","#06b6d4","#f97316","#84cc16","#14b8a6"]
@@ -191,6 +199,7 @@ export function FinanceContent({
   budgetCategories = [],
   currentMonthExpenses = {},
   connectedBankNames = [],
+  expectedMonthlyIncome,
 }: FinanceContentProps) {
   const router = useRouter()
 
@@ -1143,13 +1152,26 @@ export function FinanceContent({
 
         const totalSpent = pieData.reduce((s, d) => s + d.value, 0)
 
-        // Budget alerts
+        // Budget alerts — mirror Budget page logic exactly
+        // Use expected income (if higher than actual) for percentage budgets, same as Budget page
+        const effectiveIncome = Math.max(monthlyIncome, expectedMonthlyIncome ?? 0)
+        // Catchall spending = total expenses minus what named categories claim (same as Budget)
+        const namedCats = budgetCategories.filter((c) => !c.is_catchall && !c.is_goal_mode)
+        const namedSpending = namedCats.reduce(
+          (sum, c) => sum + getCatKeys(c).reduce((s, k) => s + (currentMonthExpenses[k] ?? 0), 0),
+          0,
+        )
+        const totalExpensesSum = Object.values(currentMonthExpenses).reduce((s, v) => s + v, 0)
+        const catchallSpending = Math.max(0, totalExpensesSum - namedSpending)
+
         const alerts: Array<{ name: string; spent: number; budget: number; pct: number }> = []
         for (const cat of budgetCategories) {
           if (cat.is_goal_mode) continue
-          const budget = cat.type === "percentage" ? (cat.value / 100) * monthlyIncome : cat.value
+          const budget = cat.type === "percentage" ? (cat.value / 100) * effectiveIncome : cat.value
           if (budget <= 0) continue
-          const spent = currentMonthExpenses[cat.name.toLowerCase()] ?? 0
+          const spent = cat.is_catchall
+            ? catchallSpending
+            : getCatKeys(cat).reduce((s, k) => s + (currentMonthExpenses[k] ?? 0), 0)
           const pct = spent / budget
           if (pct >= 0.8) alerts.push({ name: cat.name, spent, budget, pct })
         }

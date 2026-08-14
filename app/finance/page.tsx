@@ -11,6 +11,7 @@ import {
   getBudgetCategories,
   getMonthlyExpensesByCategory,
   getConnectedBankNames,
+  getExpectedMonthlyIncome,
 } from "@/lib/data"
 import { createClient } from "@/lib/supabase/server"
 
@@ -29,7 +30,7 @@ async function getUnreviewedTransactions() {
 }
 
 export default async function FinancePage() {
-  const [transactions, subscriptions, financeSummary, user, startingBalance, budgetCategories, currentMonthExpenses, connectedBankNames, unreviewedTransactions] = await Promise.all([
+  const [transactions, subscriptions, financeSummary, user, startingBalance, budgetCategories, currentMonthExpenses, connectedBankNames, unreviewedTransactions, expectedMonthlyIncome] = await Promise.all([
     getAllTransactions(),
     getAllSubscriptions(),
     getMonthlyFinanceSummary(),
@@ -39,6 +40,7 @@ export default async function FinancePage() {
     getMonthlyExpensesByCategory(),
     getConnectedBankNames(),
     getUnreviewedTransactions(),
+    getExpectedMonthlyIncome(),
   ])
 
   return (
@@ -66,6 +68,7 @@ export default async function FinancePage() {
             budgetCategories={budgetCategories}
             currentMonthExpenses={currentMonthExpenses}
             connectedBankNames={connectedBankNames}
+            expectedMonthlyIncome={expectedMonthlyIncome}
           />
         </div>
       </main>
