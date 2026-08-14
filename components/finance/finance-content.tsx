@@ -60,10 +60,10 @@ import {
 import {
   createTransaction,
   updateTransaction,
-  deleteTransaction,
   deleteAllTransactions,
   deleteAccountTransactions,
   deleteSelectedTransactions,
+  bulkSetAccountName,
   getTransactionCount,
   toggleTransfer,
   autoMarkTransfers,
@@ -99,6 +99,14 @@ interface BudgetCat {
   value: number
   is_catchall?: boolean
   is_goal_mode?: boolean
+  rollover?: boolean
+  category_aliases?: string | null
+}
+
+function getCatKeys(cat: BudgetCat): string[] {
+  const name = cat.name.toLowerCase()
+  const aliases = cat.category_aliases?.split(",").map((a) => a.trim().toLowerCase()).filter(Boolean) ?? []
+  return [...new Set([name, ...aliases])]
 }
 
 interface FinanceContentProps {
@@ -109,7 +117,9 @@ interface FinanceContentProps {
   initialStartingBalance: number
   budgetCategories?: BudgetCat[]
   currentMonthExpenses?: Record<string, number>
+  lastMonthExpenses?: Record<string, number>
   connectedBankNames?: string[]
+  expectedMonthlyIncome?: number | null
 }
 
 const PIE_COLORS = ["#8b5cf6","#3b82f6","#10b981","#f59e0b","#ef4444","#ec4899","#06b6d4","#f97316","#84cc16","#14b8a6"]
@@ -190,7 +200,9 @@ export function FinanceContent({
   initialStartingBalance,
   budgetCategories = [],
   currentMonthExpenses = {},
+  lastMonthExpenses = {},
   connectedBankNames = [],
+  expectedMonthlyIncome,
 }: FinanceContentProps) {
   const router = useRouter()
 
@@ -227,6 +239,9 @@ export function FinanceContent({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmDeleteSelectedOpen, setConfirmDeleteSelectedOpen] = useState(false)
   const [isDeletingSelected, startDeletingSelected] = useTransition()
+  const [setAccountOpen, setSetAccountOpen] = useState(false)
+  const [setAccountValue, setSetAccountValue] = useState("")
+  const [isSettingAccount, startSettingAccount] = useTransition()
 
   const [optimisticTransactions, updateOptimistic] = useOptimistic(
     initialTransactions,
@@ -253,7 +268,6 @@ export function FinanceContent({
   }
 
   // Single-delete confirmation
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   // Confirm dismiss subscription
   const [confirmDismissId, setConfirmDismissId] = useState<string | null>(null)
@@ -618,15 +632,6 @@ export function FinanceContent({
     })
   }
 
-  function handleDelete(id: string) {
-    startTransition(async () => {
-      updateOptimistic({ type: "delete", id })
-      await deleteTransaction(id)
-      if (savedTx?.id === id) setSavedTx(null)
-      router.refresh()
-    })
-  }
-
   function handleAutoMarkTransfers() {
     startAutoMarking(async () => {
       const result = await autoMarkTransfers()
@@ -684,6 +689,19 @@ export function FinanceContent({
       setConfirmDeleteSelectedOpen(false)
       if (result.error) { toast.error(result.error); return }
       toast.success(`${ids.length} transaction${ids.length !== 1 ? "s" : ""} deleted`)
+      exitSelectMode()
+      router.refresh()
+    })
+  }
+
+  function handleSetAccount() {
+    const ids = [...selectedIds]
+    startSettingAccount(async () => {
+      const result = await bulkSetAccountName(ids, setAccountValue)
+      setSetAccountOpen(false)
+      if (result.error) { toast.error(result.error); return }
+      toast.success(`Account updated for ${ids.length} transaction${ids.length !== 1 ? "s" : ""}`)
+      setSetAccountValue("")
       exitSelectMode()
       router.refresh()
     })
@@ -1143,13 +1161,31 @@ export function FinanceContent({
 
         const totalSpent = pieData.reduce((s, d) => s + d.value, 0)
 
-        // Budget alerts
+        // Budget alerts — mirror Budget page logic exactly
+        // Use expected income (if higher than actual) for percentage budgets, same as Budget page
+        const effectiveIncome = Math.max(monthlyIncome, expectedMonthlyIncome ?? 0)
+        // Catchall spending = total expenses minus what named (non-catchall) categories claim
+        // Include goal_mode categories in named, same as Budget page
+        const namedCats = budgetCategories.filter((c) => !c.is_catchall)
+        const namedSpending = namedCats.reduce(
+          (sum, c) => sum + getCatKeys(c).reduce((s, k) => s + (currentMonthExpenses[k] ?? 0), 0),
+          0,
+        )
+        const totalExpensesSum = Object.values(currentMonthExpenses).reduce((s, v) => s + v, 0)
+        const catchallSpending = Math.max(0, totalExpensesSum - namedSpending)
+
         const alerts: Array<{ name: string; spent: number; budget: number; pct: number }> = []
         for (const cat of budgetCategories) {
           if (cat.is_goal_mode) continue
-          const budget = cat.type === "percentage" ? (cat.value / 100) * monthlyIncome : cat.value
-          if (budget <= 0) continue
-          const spent = currentMonthExpenses[cat.name.toLowerCase()] ?? 0
+          const baseBudget = cat.type === "percentage" ? (cat.value / 100) * effectiveIncome : cat.value
+          if (baseBudget <= 0) continue
+          // Rollover: add last month's surplus to this month's budget, same as Budget page card
+          const lastMonthActual = getCatKeys(cat).reduce((s, k) => s + (lastMonthExpenses[k] ?? 0), 0)
+          const rollover = cat.rollover ? Math.max(0, baseBudget - lastMonthActual) : 0
+          const budget = baseBudget + rollover
+          const spent = cat.is_catchall
+            ? catchallSpending
+            : getCatKeys(cat).reduce((s, k) => s + (currentMonthExpenses[k] ?? 0), 0)
           const pct = spent / budget
           if (pct >= 0.8) alerts.push({ name: cat.name, spent, budget, pct })
         }
@@ -1237,7 +1273,12 @@ export function FinanceContent({
             <h2 className="text-lg font-semibold text-foreground shrink-0">Transactions</h2>
 
             {!selectMode ? (
-              /* Add Transaction dialog trigger */
+              /* Add Transaction + Select buttons */
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="outline" size="sm" className="gap-2 bg-transparent" onClick={() => setSelectMode(true)}>
+                  <CheckSquare className="w-4 h-4" />
+                  Select
+                </Button>
               <Dialog open={open} onOpenChange={setOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="gap-2 shrink-0">
@@ -1309,6 +1350,7 @@ export function FinanceContent({
                       </form>
                     </DialogContent>
                   </Dialog>
+              </div>
             ) : (
               /* ── Select mode buttons ─────────────────────────── */
               <div className="flex items-center gap-2">
@@ -1349,6 +1391,18 @@ export function FinanceContent({
                     </div>
                   </DialogContent>
                 </Dialog>
+
+                {/* Set Account for selected */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 bg-transparent"
+                  disabled={selectedIds.size === 0}
+                  onClick={() => { setSetAccountValue(""); setSetAccountOpen(true) }}
+                >
+                  <Pencil className="w-4 h-4" />
+                  <span className="hidden sm:inline">Set Account</span>
+                </Button>
 
                 {/* Delete Selected */}
                 <Button
@@ -1440,23 +1494,11 @@ export function FinanceContent({
                   Export
                 </Button>
                 <CsvImporter existingAccounts={allAccounts} />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 bg-transparent"
-                  onClick={() => setSelectMode(true)}
-                >
-                  <CheckSquare className="w-4 h-4" />
-                  Select
-                </Button>
               </div>
               {/* Mobile-only compact secondary actions */}
               <div className="flex sm:hidden items-center gap-1">
                 <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent" onClick={handleExportCSV} disabled={displayTransactions.length === 0} title="Export CSV">
                   <Download className="w-4 h-4" />
-                </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8 bg-transparent" onClick={() => setSelectMode(true)} title="Select transactions">
-                  <CheckSquare className="w-4 h-4" />
                 </Button>
               </div>
             </div>
@@ -1485,28 +1527,27 @@ export function FinanceContent({
             </DialogContent>
           </Dialog>
 
-          {/* Single delete confirmation dialog */}
-          <Dialog open={!!confirmDeleteId} onOpenChange={(o) => { if (!o) setConfirmDeleteId(null) }}>
+          {/* Set Account dialog */}
+          <Dialog open={setAccountOpen} onOpenChange={(o) => { if (!o) setSetAccountOpen(false) }}>
             <DialogContent className="sm:max-w-sm">
               <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-destructive">
-                  <AlertTriangle className="w-5 h-5" />
-                  Delete transaction?
-                </DialogTitle>
+                <DialogTitle>Set Account Name</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 mt-2">
-                <p className="text-sm text-muted-foreground">This will permanently delete the transaction. This cannot be undone.</p>
+                <p className="text-sm text-muted-foreground">
+                  Apply an account name to {selectedIds.size} selected transaction{selectedIds.size !== 1 ? "s" : ""}.
+                </p>
+                <Input
+                  value={setAccountValue}
+                  onChange={(e) => setSetAccountValue(e.target.value)}
+                  placeholder="e.g. Robinhood, TD Ameritrade"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSetAccount() }}
+                />
                 <div className="flex gap-3">
-                  <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
-                  <Button
-                    variant="destructive"
-                    className="flex-1"
-                    onClick={() => {
-                      if (confirmDeleteId) handleDelete(confirmDeleteId)
-                      setConfirmDeleteId(null)
-                    }}
-                  >
-                    Delete
+                  <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setSetAccountOpen(false)} disabled={isSettingAccount}>Cancel</Button>
+                  <Button className="flex-1" onClick={handleSetAccount} disabled={isSettingAccount || !setAccountValue.trim()}>
+                    {isSettingAccount ? "Saving…" : "Apply"}
                   </Button>
                 </div>
               </div>
@@ -1550,6 +1591,10 @@ export function FinanceContent({
                       <Label htmlFor="edit-date">Date</Label>
                       <Input id="edit-date" name="date" type="date" defaultValue={editingTx.date} />
                     </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-account">Account <span className="text-muted-foreground">(optional)</span></Label>
+                    <Input id="edit-account" name="account_name" defaultValue={editingTx.account_name ?? ""} placeholder="e.g. Robinhood, TD Ameritrade" />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="edit-notes">Notes <span className="text-muted-foreground">(optional)</span></Label>
@@ -1679,14 +1724,6 @@ export function FinanceContent({
                               onClick={() => { setEditError(null); setEditingTx(tx) }}
                             >
                               <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="w-7 h-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => setConfirmDeleteId(tx.id)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </div>
                         )}
