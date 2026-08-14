@@ -235,80 +235,101 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
     return prevPayDate < new Date()
   })()
 
-  // Compute monthly total by summing all paychecks whose pay date falls in the same calendar month
-  const [monthlyTotal, setMonthlyTotal] = useState<number | null>(null)
-  useEffect(() => {
-    if (fetching || !payDate || !paySettings?.hourly_rate) { setMonthlyTotal(null); return }
-    const payMonthKey = format(payDate, "yyyy-MM")
-    const rate = paySettings.hourly_rate
-    const taxFactor = 1 - (paySettings.tax_rate ?? 25) / 100
-    const kw = (paySettings.shift_keyword ?? "work").toLowerCase()
-    const excKw = (paySettings.shift_exclude_keyword ?? "").toLowerCase().trim()
+  // Full per-period fetch — same logic as fetchShifts but returns netPay without updating display state
+  const fetchNetPayOnly = useCallback(async (offset: number): Promise<number | null> => {
+    try {
+      const res = await fetch(`/api/calendar/paycheck-shifts?offset=${offset}`)
+      if (!res.ok) return null
+      const data = await res.json()
+      const ps: PaySettings = data.paySettings
+      if (!ps?.hourly_rate) return null
+      const pStart: string = data.periodStart ?? ""
+      const pEnd: string = data.periodEnd ?? ""
+      if (!pStart || !pEnd) return null
 
-    async function computeMonthly() {
-      // Fetch all external calendar events once — they cover all dates, we filter per period below
-      type RawEvent = { id?: string | null; title: string; start: string | null; end?: string | null; allDay?: boolean }
+      const kw = (ps.shift_keyword ?? "work").toLowerCase()
+      const excKw = (ps.shift_exclude_keyword ?? "").toLowerCase().trim()
+      function matchesKeyword(title: string) {
+        const t = title.toLowerCase()
+        if (!t.includes(kw)) return false
+        if (excKw && t.includes(excKw)) return false
+        return true
+      }
+      function inPeriod(start: string | null | undefined) {
+        if (!start) return false
+        const d = start.slice(0, 10)
+        return d >= pStart.slice(0, 10) && d <= pEnd.slice(0, 10)
+      }
+
       const [gRes, caldavRes, icsRes] = await Promise.all([
         fetch("/api/calendar/events"),
         fetch("/api/calendar/caldav"),
         fetch("/api/calendar/ics"),
       ])
-      const allExternal: RawEvent[] = [
-        ...(gRes.ok ? ((await gRes.json()).events ?? []) : []),
-        ...(caldavRes.ok ? ((await caldavRes.json()).events ?? []) : []),
-        ...(icsRes.ok ? ((await icsRes.json()).events ?? []) : []),
-      ]
+      const gData = gRes.ok ? await gRes.json() : {}
+      const caldavData = caldavRes.ok ? await caldavRes.json() : {}
+      const icsData = icsRes.ok ? await icsRes.json() : {}
 
+      type RawEvent = { id?: string | null; title: string; start: string | null; end?: string | null; allDay?: boolean }
+      const external: Shift[] = [
+        ...(gData.events ?? []) as RawEvent[],
+        ...(caldavData.events ?? []) as RawEvent[],
+        ...(icsData.events ?? []) as RawEvent[],
+      ]
+        .filter(e => inPeriod(e.start) && matchesKeyword(e.title))
+        .map(e => ({
+          id: e.id ?? `ext-${e.start}`,
+          title: e.title,
+          start_at: e.start!,
+          end_at: e.end ?? null,
+          all_day: e.allDay ?? false,
+        }))
+
+      const seen = new Set<string>()
+      const merged = [...(data.shifts ?? []), ...external].filter((s: Shift) => {
+        const key = `${s.title.toLowerCase()}|${s.start_at.slice(0, 10)}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      const hours = merged.reduce((s, sh) => s + hoursFromShift(sh), 0)
+      return hours * ps.hourly_rate * (1 - (ps.tax_rate ?? 25) / 100)
+    } catch {
+      return null
+    }
+  }, [])
+
+  // Compute monthly total by summing all paychecks whose pay date falls in the same calendar month
+  const [monthlyTotal, setMonthlyTotal] = useState<number | null>(null)
+  useEffect(() => {
+    if (fetching || !payDate || !paySettings?.hourly_rate) { setMonthlyTotal(null); return }
+    const payMonthKey = format(payDate, "yyyy-MM")
+
+    async function computeMonthly() {
       let total = netPay
       for (const adj of [-2, -1, 1, 2]) {
         const adjOffset = periodOffset + adj
         if (adjOffset > 0) continue
         try {
+          // Check pay date first to know if this period belongs in the same month
           const res = await fetch(`/api/calendar/paycheck-shifts?offset=${adjOffset}`)
           if (!res.ok) continue
           const data = await res.json()
-          if (!data.periodEnd || !data.periodStart || !data.paySettings?.pay_delay_days) continue
+          if (!data.periodEnd || !data.paySettings?.pay_delay_days) continue
           const adjPay = new Date(data.periodEnd.slice(0, 10) + "T12:00:00")
           adjPay.setDate(adjPay.getDate() + data.paySettings.pay_delay_days)
           if (format(adjPay, "yyyy-MM") !== payMonthKey) continue
 
-          const pStart = data.periodStart.slice(0, 10)
-          const pEnd = data.periodEnd.slice(0, 10)
-
-          const externalForPeriod: Shift[] = allExternal
-            .filter(e => {
-              if (!e.start) return false
-              const d = e.start.slice(0, 10)
-              if (d < pStart || d > pEnd) return false
-              const t = e.title.toLowerCase()
-              if (!t.includes(kw)) return false
-              if (excKw && t.includes(excKw)) return false
-              return true
-            })
-            .map(e => ({
-              id: e.id ?? `ext-${e.start}`,
-              title: e.title,
-              start_at: e.start!,
-              end_at: e.end ?? null,
-              all_day: e.allDay ?? false,
-            }))
-
-          const seen = new Set<string>()
-          const merged = [...(data.shifts ?? []), ...externalForPeriod].filter((s: Shift) => {
-            const key = `${s.title.toLowerCase()}|${s.start_at.slice(0, 10)}`
-            if (seen.has(key)) return false
-            seen.add(key)
-            return true
-          })
-
-          const adjHours = merged.reduce((s, sh) => s + hoursFromShift(sh), 0)
-          total += adjHours * rate * taxFactor
+          // Same-month period found — do a full independent fetch (same path as fetchShifts)
+          const adjNetPay = await fetchNetPayOnly(adjOffset)
+          if (adjNetPay !== null) total += adjNetPay
         } catch { /* skip */ }
       }
       setMonthlyTotal(total)
     }
     computeMonthly()
-  }, [fetching, payDate, periodOffset, paySettings, netPay])
+  }, [fetching, payDate, periodOffset, paySettings, netPay, fetchNetPayOnly])
 
   // Auto-sync monthly total to budget whenever current period is loaded
   const lastSyncedEstimate = useRef<number>(-1)
