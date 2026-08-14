@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useEffect, useCallback, useRef } from "react"
+import { useState, useTransition, useEffect, useCallback, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -218,12 +218,12 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
     ? formatPayPeriodRange(new Date(periodStart), new Date(periodEnd))
     : ""
 
-  const payDate = (() => {
+  const payDate = useMemo(() => {
     if (!periodEnd || !(paySettings?.pay_delay_days)) return null
     const d = new Date(periodEnd.slice(0, 10) + "T12:00:00")
     d.setDate(d.getDate() + paySettings.pay_delay_days)
     return d
-  })()
+  }, [periodEnd, paySettings?.pay_delay_days])
 
   // The period before this one pays sooner — if it's still upcoming, this one is "Following"
   const isNextPaycheck = (() => {
@@ -303,32 +303,33 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
   // Compute monthly total by summing all paychecks whose pay date falls in the same calendar month
   const [monthlyTotal, setMonthlyTotal] = useState<number | null>(null)
   useEffect(() => {
+    let cancelled = false
     if (fetching || !payDate || !paySettings?.hourly_rate) { setMonthlyTotal(null); return }
     const payMonthKey = format(payDate, "yyyy-MM")
 
     async function computeMonthly() {
       let total = netPay
       for (const adj of [-2, -1, 1, 2]) {
+        if (cancelled) return
         const adjOffset = periodOffset + adj
         if (adjOffset > 0) continue
         try {
-          // Check pay date first to know if this period belongs in the same month
           const res = await fetch(`/api/calendar/paycheck-shifts?offset=${adjOffset}`)
-          if (!res.ok) continue
+          if (!res.ok || cancelled) continue
           const data = await res.json()
           if (!data.periodEnd || !data.paySettings?.pay_delay_days) continue
           const adjPay = new Date(data.periodEnd.slice(0, 10) + "T12:00:00")
           adjPay.setDate(adjPay.getDate() + data.paySettings.pay_delay_days)
           if (format(adjPay, "yyyy-MM") !== payMonthKey) continue
 
-          // Same-month period found — do a full independent fetch (same path as fetchShifts)
           const adjNetPay = await fetchNetPayOnly(adjOffset)
-          if (adjNetPay !== null) total += adjNetPay
+          if (adjNetPay !== null && !cancelled) total += adjNetPay
         } catch { /* skip */ }
       }
-      setMonthlyTotal(total)
+      if (!cancelled) setMonthlyTotal(total)
     }
     computeMonthly()
+    return () => { cancelled = true }
   }, [fetching, payDate, periodOffset, paySettings, netPay, fetchNetPayOnly])
 
   // Auto-sync monthly total to budget whenever current period is loaded
