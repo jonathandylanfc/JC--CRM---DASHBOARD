@@ -75,6 +75,7 @@ export async function updateTransaction(id: string, formData: FormData) {
 
   const category = (formData.get("category") as string)?.trim() || "other"
   const date = (formData.get("date") as string) || new Date().toISOString().split("T")[0]
+  const accountName = (formData.get("account_name") as string)?.trim() || null
 
   const { data: saved, error } = await supabase
     .from("transactions")
@@ -85,6 +86,7 @@ export async function updateTransaction(id: string, formData: FormData) {
       category,
       date,
       notes: (formData.get("notes") as string) || null,
+      account_name: accountName,
     })
     .eq("id", id)
     .eq("user_id", user.id)
@@ -355,6 +357,26 @@ export async function deleteSelectedTransactions(
   const { error } = await supabase
     .from("transactions")
     .delete()
+    .eq("user_id", user.id)
+    .in("id", ids)
+  if (error) return { error: error.message }
+  revalidatePath("/finance")
+  revalidatePath("/")
+  return {}
+}
+
+export async function bulkSetAccountName(
+  ids: string[],
+  accountName: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  if (!ids.length) return {}
+
+  const { error } = await supabase
+    .from("transactions")
+    .update({ account_name: accountName.trim() || null })
     .eq("user_id", user.id)
     .in("id", ids)
   if (error) return { error: error.message }

@@ -1554,7 +1554,6 @@ export function FinanceContent({
             </DialogContent>
           </Dialog>
 
-
           {/* Edit transaction dialog */}
           <Dialog open={!!editingTx} onOpenChange={(o) => { if (!o) setEditingTx(null) }}>
             <DialogContent className="sm:max-w-md">
