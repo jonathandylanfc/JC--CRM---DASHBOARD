@@ -518,7 +518,7 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
                           <span className="text-sm font-medium tabular-nums">
                             {monthlyTotal !== null
                               ? `$${monthlyTotal.toFixed(2)}`
-                              : `×${paychecksPerMonth} = $${monthlyNetEstimate.toFixed(2)}`}
+                              : <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                           </span>
                         </div>
                         <Button
