@@ -6,13 +6,14 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Upload, Trash2, TrendingUp, TrendingDown, ImageIcon, Loader2, ChevronDown, ChevronRight, Plus, List, FileText } from "lucide-react"
+import { Upload, Trash2, TrendingUp, TrendingDown, ImageIcon, Loader2, ChevronDown, ChevronRight, Plus, List, FileText, CheckSquare, Pencil, X } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { format } from "date-fns"
-import { saveDayTrade, deleteDayTrade, updateTradeCommission, type DayTrade } from "@/app/investments/day-trades-actions"
+import { saveDayTrade, deleteDayTrade, updateTradeCommission, bulkDeleteDayTrades, bulkSetTradeAccount, type DayTrade } from "@/app/investments/day-trades-actions"
 
 interface Props {
   initialTrades: DayTrade[]
@@ -296,6 +297,11 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const [csvDupeIds, setCsvDupeIds] = useState<string[]>([])
   const [showDraftOrders, setShowDraftOrders] = useState(false)
   const [showPnlPreview, setShowPnlPreview] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [setAccountOpen, setSetAccountOpen] = useState(false)
+  const [setAccountValue, setSetAccountValue] = useState("")
+  const [isBulkSaving, setIsBulkSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const csvRef = useRef<HTMLInputElement>(null)
 
@@ -440,6 +446,29 @@ export function DayTradesTracker({ initialTrades }: Props) {
     toast.success("Trade deleted")
   }
 
+  async function handleBulkDelete() {
+    const ids = [...selectedIds]
+    setIsBulkSaving(true)
+    const result = await bulkDeleteDayTrades(ids)
+    setIsBulkSaving(false)
+    if (result.error) { toast.error(result.error); return }
+    setTrades((prev) => prev.filter((t) => !selectedIds.has(t.id)))
+    toast.success(`${ids.length} trade${ids.length !== 1 ? "s" : ""} deleted`)
+    setSelectMode(false); setSelectedIds(new Set())
+  }
+
+  async function handleBulkSetAccount() {
+    const ids = [...selectedIds]
+    setIsBulkSaving(true)
+    const result = await bulkSetTradeAccount(ids, setAccountValue)
+    setIsBulkSaving(false)
+    if (result.error) { toast.error(result.error); return }
+    setTrades((prev) => prev.map((t) => selectedIds.has(t.id) ? { ...t, account: setAccountValue.trim() || null } : t))
+    toast.success(`Account updated for ${ids.length} trade${ids.length !== 1 ? "s" : ""}`)
+    setSetAccountOpen(false); setSetAccountValue("")
+    setSelectMode(false); setSelectedIds(new Set())
+  }
+
   function openManual() {
     setDraft({ symbol: "", action: "buy", shares: 0, price: 0, traded_at: new Date().toISOString().slice(0, 16), notes: "" })
     setImagePreview(null); setOpen(true)
@@ -553,14 +582,35 @@ export function DayTradesTracker({ initialTrades }: Props) {
                 </div>
               )}
 
-              {/* View toggle */}
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <button onClick={() => setShowOrders(false)} className={`px-2.5 py-1 rounded-md transition-colors ${!showOrders ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
-                  Round Trips
-                </button>
-                <button onClick={() => setShowOrders(true)} className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 ${showOrders ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
-                  <List className="w-3 h-3" /> All Orders
-                </button>
+              {/* View toggle + Select */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <button onClick={() => { setShowOrders(false); setSelectMode(false); setSelectedIds(new Set()) }} className={`px-2.5 py-1 rounded-md transition-colors ${!showOrders ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
+                    Round Trips
+                  </button>
+                  <button onClick={() => setShowOrders(true)} className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 ${showOrders ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
+                    <List className="w-3 h-3" /> All Orders
+                  </button>
+                </div>
+                {showOrders && (
+                  selectMode ? (
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" className="gap-1.5 bg-transparent h-7 text-xs" disabled={selectedIds.size === 0 || isBulkSaving} onClick={() => { setSetAccountValue(""); setSetAccountOpen(true) }}>
+                        <Pencil className="w-3.5 h-3.5" /> Set Account
+                      </Button>
+                      <Button variant="destructive" size="sm" className="gap-1.5 h-7 text-xs" disabled={selectedIds.size === 0 || isBulkSaving} onClick={handleBulkDelete}>
+                        <Trash2 className="w-3.5 h-3.5" /> {selectedIds.size > 0 ? `Delete ${selectedIds.size}` : "Delete"}
+                      </Button>
+                      <Button variant="outline" size="sm" className="gap-1 bg-transparent h-7 text-xs" onClick={() => { setSelectMode(false); setSelectedIds(new Set()) }}>
+                        <X className="w-3.5 h-3.5" /> Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button variant="outline" size="sm" className="gap-1.5 bg-transparent h-7 text-xs" onClick={() => setSelectMode(true)}>
+                      <CheckSquare className="w-3.5 h-3.5" /> Select
+                    </Button>
+                  )
+                )}
               </div>
 
               {/* Round Trips view */}
@@ -727,73 +777,87 @@ export function DayTradesTracker({ initialTrades }: Props) {
                 <div className="rounded-xl border border-border overflow-hidden">
                   {/* Mobile card layout */}
                   <div className="sm:hidden divide-y divide-border/50">
-                    {[...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => (
-                      <div key={t.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                        <div className="space-y-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-sm">{t.symbol}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.action === "buy" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"}`}>
-                              {t.action.toUpperCase()}
-                            </span>
-                            {t.account && <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground border border-border">{t.account}</span>}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {t.shares} × {currency(t.price)} = <span className="font-medium text-foreground">{currency(t.total)}</span>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {format(new Date(t.traded_at), "MMM d, h:mm a")}
-                            {t.notes && <span className="ml-1 opacity-60 truncate">· {t.notes}</span>}
+                    {[...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => {
+                      const isSelected = selectedIds.has(t.id)
+                      return (
+                        <div
+                          key={t.id}
+                          className={`px-4 py-3 flex items-start gap-3 transition-colors ${selectMode ? "cursor-pointer" : ""} ${selectMode && isSelected ? "bg-primary/5" : ""}`}
+                          onClick={selectMode ? () => setSelectedIds((prev) => { const n = new Set(prev); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n }) : undefined}
+                        >
+                          {selectMode && (
+                            <Checkbox checked={isSelected} onCheckedChange={() => setSelectedIds((prev) => { const n = new Set(prev); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n })} onClick={(e) => e.stopPropagation()} className="shrink-0 mt-1" />
+                          )}
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-sm">{t.symbol}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.action === "buy" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"}`}>
+                                {t.action.toUpperCase()}
+                              </span>
+                              {t.account && <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground border border-border">{t.account}</span>}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {t.shares} × {currency(t.price)} = <span className="font-medium text-foreground">{currency(t.total)}</span>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {format(new Date(t.traded_at), "MMM d, h:mm a")}
+                              {t.notes && <span className="ml-1 opacity-60 truncate">· {t.notes}</span>}
+                            </div>
                           </div>
                         </div>
-                        <Button variant="ghost" size="icon" className="w-7 h-7 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => handleDelete(t.id)}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
 
                   {/* Desktop table */}
                   <table className="hidden sm:table w-full text-sm">
                     <thead>
                       <tr className="bg-muted/50 border-b border-border">
+                        {selectMode && <th className="px-3 py-2.5 w-8" />}
                         <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Symbol</th>
                         <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Action</th>
                         <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Qty</th>
                         <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Price</th>
                         <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Total</th>
                         <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Time</th>
-                        {knownAccounts.length > 0 && <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Account</th>}
-                        <th className="px-2 py-2.5" />
+                        {(knownAccounts.length > 0 || selectMode) && <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Account</th>}
                       </tr>
                     </thead>
                     <tbody>
-                      {[...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => (
-                        <tr key={t.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors">
-                          <td className="px-4 py-2.5 font-semibold">{t.symbol}</td>
-                          <td className="px-4 py-2.5">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.action === "buy" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"}`}>
-                              {t.action.toUpperCase()}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5 text-right">{t.shares}</td>
-                          <td className="px-4 py-2.5 text-right">{currency(t.price)}</td>
-                          <td className="px-4 py-2.5 text-right font-medium">{currency(t.total)}</td>
-                          <td className="px-4 py-2.5 text-muted-foreground text-xs">
-                            {format(new Date(t.traded_at), "MMM d, h:mm a")}
-                            {t.notes && <span className="block opacity-60 truncate max-w-[120px]">{t.notes}</span>}
-                          </td>
-                          {knownAccounts.length > 0 && (
+                      {[...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => {
+                        const isSelected = selectedIds.has(t.id)
+                        return (
+                          <tr
+                            key={t.id}
+                            className={`border-b border-border/50 last:border-0 transition-colors ${selectMode ? "cursor-pointer" : "hover:bg-muted/20"} ${selectMode && isSelected ? "bg-primary/5" : ""}`}
+                            onClick={selectMode ? () => setSelectedIds((prev) => { const n = new Set(prev); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n }) : undefined}
+                          >
+                            {selectMode && (
+                              <td className="px-3 py-2.5">
+                                <Checkbox checked={isSelected} onCheckedChange={() => setSelectedIds((prev) => { const n = new Set(prev); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n })} onClick={(e) => e.stopPropagation()} />
+                              </td>
+                            )}
+                            <td className="px-4 py-2.5 font-semibold">{t.symbol}</td>
                             <td className="px-4 py-2.5">
-                              {t.account && <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground border border-border">{t.account}</span>}
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.action === "buy" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"}`}>
+                                {t.action.toUpperCase()}
+                              </span>
                             </td>
-                          )}
-                          <td className="px-2 py-2.5">
-                            <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => handleDelete(t.id)}>
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
+                            <td className="px-4 py-2.5 text-right">{t.shares}</td>
+                            <td className="px-4 py-2.5 text-right">{currency(t.price)}</td>
+                            <td className="px-4 py-2.5 text-right font-medium">{currency(t.total)}</td>
+                            <td className="px-4 py-2.5 text-muted-foreground text-xs">
+                              {format(new Date(t.traded_at), "MMM d, h:mm a")}
+                              {t.notes && <span className="block opacity-60 truncate max-w-[120px]">{t.notes}</span>}
+                            </td>
+                            {(knownAccounts.length > 0 || selectMode) && (
+                              <td className="px-4 py-2.5">
+                                {t.account && <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground border border-border">{t.account}</span>}
+                              </td>
+                            )}
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -803,7 +867,39 @@ export function DayTradesTracker({ initialTrades }: Props) {
         </>
       )}
 
-      {/* Dialog */}
+      {/* Set Account dialog */}
+      <Dialog open={setAccountOpen} onOpenChange={setSetAccountOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Set Account</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-1">
+            <div className="space-y-1.5">
+              <Label>Account name</Label>
+              <Input
+                list="bulk-known-accounts"
+                placeholder="e.g. Webull, Tastytrade, Robinhood"
+                value={setAccountValue}
+                onChange={(e) => setSetAccountValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleBulkSetAccount() }}
+                autoFocus
+              />
+              <datalist id="bulk-known-accounts">
+                {knownAccounts.map((a) => <option key={a} value={a} />)}
+              </datalist>
+            </div>
+            <p className="text-xs text-muted-foreground">Applies to {selectedIds.size} selected trade{selectedIds.size !== 1 ? "s" : ""}.</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setSetAccountOpen(false)}>Cancel</Button>
+              <Button className="flex-1" onClick={handleBulkSetAccount} disabled={isBulkSaving}>
+                {isBulkSaving ? "Saving…" : "Apply"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Trade import dialog */}
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setDraft(null); setDrafts([]); setCsvDupeIds([]); setCsvFeePerFill(""); setImagePreview(null); setSkippedDupes(0); setShowDraftOrders(false); setShowPnlPreview(false) } }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>

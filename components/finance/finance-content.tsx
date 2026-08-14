@@ -99,6 +99,7 @@ interface BudgetCat {
   value: number
   is_catchall?: boolean
   is_goal_mode?: boolean
+  rollover?: boolean
   category_aliases?: string | null
 }
 
@@ -116,6 +117,7 @@ interface FinanceContentProps {
   initialStartingBalance: number
   budgetCategories?: BudgetCat[]
   currentMonthExpenses?: Record<string, number>
+  lastMonthExpenses?: Record<string, number>
   connectedBankNames?: string[]
   expectedMonthlyIncome?: number | null
 }
@@ -198,6 +200,7 @@ export function FinanceContent({
   initialStartingBalance,
   budgetCategories = [],
   currentMonthExpenses = {},
+  lastMonthExpenses = {},
   connectedBankNames = [],
   expectedMonthlyIncome,
 }: FinanceContentProps) {
@@ -1161,8 +1164,9 @@ export function FinanceContent({
         // Budget alerts — mirror Budget page logic exactly
         // Use expected income (if higher than actual) for percentage budgets, same as Budget page
         const effectiveIncome = Math.max(monthlyIncome, expectedMonthlyIncome ?? 0)
-        // Catchall spending = total expenses minus what named categories claim (same as Budget)
-        const namedCats = budgetCategories.filter((c) => !c.is_catchall && !c.is_goal_mode)
+        // Catchall spending = total expenses minus what named (non-catchall) categories claim
+        // Include goal_mode categories in named, same as Budget page
+        const namedCats = budgetCategories.filter((c) => !c.is_catchall)
         const namedSpending = namedCats.reduce(
           (sum, c) => sum + getCatKeys(c).reduce((s, k) => s + (currentMonthExpenses[k] ?? 0), 0),
           0,
@@ -1173,8 +1177,12 @@ export function FinanceContent({
         const alerts: Array<{ name: string; spent: number; budget: number; pct: number }> = []
         for (const cat of budgetCategories) {
           if (cat.is_goal_mode) continue
-          const budget = cat.type === "percentage" ? (cat.value / 100) * effectiveIncome : cat.value
-          if (budget <= 0) continue
+          const baseBudget = cat.type === "percentage" ? (cat.value / 100) * effectiveIncome : cat.value
+          if (baseBudget <= 0) continue
+          // Rollover: add last month's surplus to this month's budget, same as Budget page card
+          const lastMonthActual = getCatKeys(cat).reduce((s, k) => s + (lastMonthExpenses[k] ?? 0), 0)
+          const rollover = cat.rollover ? Math.max(0, baseBudget - lastMonthActual) : 0
+          const budget = baseBudget + rollover
           const spent = cat.is_catchall
             ? catchallSpending
             : getCatKeys(cat).reduce((s, k) => s + (currentMonthExpenses[k] ?? 0), 0)
