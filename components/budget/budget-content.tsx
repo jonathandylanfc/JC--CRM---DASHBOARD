@@ -194,8 +194,9 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
   const [reimburseSearch, setReimburseSearch] = useState("")
 
   // Surplus banner dismiss — keyed by month so each month has its own permanent dismissal
+  // Default true (hidden) to avoid SSR flash; useEffect reveals it only when not yet dismissed
   const surplusDismissKey = `surplus_dismissed_${lastMonth}`
-  const [surplusDismissed, setSurplusDismissed] = useState(false)
+  const [surplusDismissed, setSurplusDismissed] = useState(true)
   useEffect(() => {
     setSurplusDismissed(localStorage.getItem(surplusDismissKey) === "1")
   }, [surplusDismissKey])
