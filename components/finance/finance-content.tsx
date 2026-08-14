@@ -63,6 +63,7 @@ import {
   deleteAllTransactions,
   deleteAccountTransactions,
   deleteSelectedTransactions,
+  bulkSetAccountName,
   getTransactionCount,
   toggleTransfer,
   autoMarkTransfers,
@@ -235,6 +236,9 @@ export function FinanceContent({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmDeleteSelectedOpen, setConfirmDeleteSelectedOpen] = useState(false)
   const [isDeletingSelected, startDeletingSelected] = useTransition()
+  const [setAccountOpen, setSetAccountOpen] = useState(false)
+  const [setAccountValue, setSetAccountValue] = useState("")
+  const [isSettingAccount, startSettingAccount] = useTransition()
 
   const [optimisticTransactions, updateOptimistic] = useOptimistic(
     initialTransactions,
@@ -682,6 +686,19 @@ export function FinanceContent({
       setConfirmDeleteSelectedOpen(false)
       if (result.error) { toast.error(result.error); return }
       toast.success(`${ids.length} transaction${ids.length !== 1 ? "s" : ""} deleted`)
+      exitSelectMode()
+      router.refresh()
+    })
+  }
+
+  function handleSetAccount() {
+    const ids = [...selectedIds]
+    startSettingAccount(async () => {
+      const result = await bulkSetAccountName(ids, setAccountValue)
+      setSetAccountOpen(false)
+      if (result.error) { toast.error(result.error); return }
+      toast.success(`Account updated for ${ids.length} transaction${ids.length !== 1 ? "s" : ""}`)
+      setSetAccountValue("")
       exitSelectMode()
       router.refresh()
     })
@@ -1361,6 +1378,18 @@ export function FinanceContent({
                   </DialogContent>
                 </Dialog>
 
+                {/* Set Account for selected */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 bg-transparent"
+                  disabled={selectedIds.size === 0}
+                  onClick={() => { setSetAccountValue(""); setSetAccountOpen(true) }}
+                >
+                  <Pencil className="w-4 h-4" />
+                  <span className="hidden sm:inline">Set Account</span>
+                </Button>
+
                 {/* Delete Selected */}
                 <Button
                   variant="destructive"
@@ -1496,7 +1525,33 @@ export function FinanceContent({
             </DialogContent>
           </Dialog>
 
-          {/* Single delete confirmation dialog */}
+          {/* Set Account dialog */}
+          <Dialog open={setAccountOpen} onOpenChange={(o) => { if (!o) setSetAccountOpen(false) }}>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Set Account Name</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-2">
+                <p className="text-sm text-muted-foreground">
+                  Apply an account name to {selectedIds.size} selected transaction{selectedIds.size !== 1 ? "s" : ""}.
+                </p>
+                <Input
+                  value={setAccountValue}
+                  onChange={(e) => setSetAccountValue(e.target.value)}
+                  placeholder="e.g. Robinhood, TD Ameritrade"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSetAccount() }}
+                />
+                <div className="flex gap-3">
+                  <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setSetAccountOpen(false)} disabled={isSettingAccount}>Cancel</Button>
+                  <Button className="flex-1" onClick={handleSetAccount} disabled={isSettingAccount || !setAccountValue.trim()}>
+                    {isSettingAccount ? "Saving…" : "Apply"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           {/* Edit transaction dialog */}
           <Dialog open={!!editingTx} onOpenChange={(o) => { if (!o) setEditingTx(null) }}>
             <DialogContent className="sm:max-w-md">
@@ -1534,6 +1589,10 @@ export function FinanceContent({
                       <Label htmlFor="edit-date">Date</Label>
                       <Input id="edit-date" name="date" type="date" defaultValue={editingTx.date} />
                     </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-account">Account <span className="text-muted-foreground">(optional)</span></Label>
+                    <Input id="edit-account" name="account_name" defaultValue={editingTx.account_name ?? ""} placeholder="e.g. Robinhood, TD Ameritrade" />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="edit-notes">Notes <span className="text-muted-foreground">(optional)</span></Label>
