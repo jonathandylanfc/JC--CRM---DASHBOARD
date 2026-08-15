@@ -68,7 +68,7 @@ function classifyTransaction(
   const isTransferCat = cat === "transfer"
 
   const isZelleIncoming = /\bzelle\b.*\bfrom\b/i.test(title)
-  const isCardPayment = /payment\s+to\s+.{0,40}card(\s+ending)?|payment\s+(to|from)\s+(crd|chk|checking|savings|credit)|mobile banking payment|credit card payment|transfer\s+(to|from)|from\s+chk|to\s+crd/i.test(title)
+  const isCardPayment = /payment\s+to\s+.{0,40}card(\s+ending)?|payment\s+(to|from)\s+(crd|chk|checking|savings|credit)|mobile banking payment|credit card payment|transfer\s+(to|from)|from\s+chk|to\s+crd|payment\s*thank\s*you/i.test(title)
 
   if (isZelleIncoming) return { type: "income", category: "income" }
   if (isTransferCat || isCardPayment) return { type: "transfer", category: "transfer" }
@@ -222,15 +222,14 @@ export async function POST(req: NextRequest) {
     }, { onConflict: "plaid_item_id" })
   }
 
-  // Post-insert: catch any legacy transfers the PFC classifier may have missed
-  // (only needed for transactions already in DB before PFC was enabled)
-  if (totalAdded > 0) {
+  // Catch any transfers the PFC classifier may have missed (runs every sync to fix existing rows too)
+  {
     const { data: txns } = await supabase
       .from("transactions")
       .select("id, title")
       .eq("user_id", user.id)
       .eq("type", "expense")
-    const TRANSFER_RE = /payment\s+(to|from)\s+(crd|chk|checking|savings|credit)|mobile banking payment|credit card payment|transfer\s+(to|from)|from\s+chk|to\s+crd|payment\s+to\s+.{0,40}card(\s+ending)?|online\s+(banking\s+)?transfer|ach transfer|internal transfer|account transfer|autopay payment|automatic payment/i
+    const TRANSFER_RE = /payment\s+(to|from)\s+(crd|chk|checking|savings|credit)|mobile banking payment|credit card payment|transfer\s+(to|from)|from\s+chk|to\s+crd|payment\s+to\s+.{0,40}card(\s+ending)?|online\s+(banking\s+)?transfer|ach transfer|internal transfer|account transfer|autopay payment|automatic payment|payment\s*thank\s*you/i
     const toMark = (txns ?? []).filter((tx) => TRANSFER_RE.test(tx.title)).map((tx) => tx.id)
     if (toMark.length) {
       await supabase.from("transactions").update({ type: "transfer" }).in("id", toMark).eq("user_id", user.id)
