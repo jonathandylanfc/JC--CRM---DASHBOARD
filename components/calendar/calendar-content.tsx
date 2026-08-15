@@ -28,7 +28,9 @@ import {
   Check,
   X,
   Send,
+  GripVertical,
 } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   format,
   startOfMonth,
@@ -113,6 +115,15 @@ export function CalendarContent() {
       return saved ? new Set(JSON.parse(saved) as string[]) : new Set()
     } catch { return new Set() }
   })
+  const [calOrder, setCalOrder] = useState<string[]>(() => {
+    if (typeof window === "undefined") return []
+    try {
+      const saved = localStorage.getItem("calOrder")
+      return saved ? (JSON.parse(saved) as string[]) : []
+    } catch { return [] }
+  })
+  const [calManageMode, setCalManageMode] = useState(false)
+  const [calSelectedIds, setCalSelectedIds] = useState<Set<string>>(new Set())
   const [googleEmail, setGoogleEmail] = useState<string | null>(null)
   const [connected, setConnected] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
@@ -606,6 +617,34 @@ export function CalendarContent() {
     })
   }
 
+  function moveCalendar(key: string, direction: "up" | "down") {
+    const keys = visibleCalendarSources.map((c) => c.id ?? c.name)
+    const idx = keys.indexOf(key)
+    if (idx === -1) return
+    const newIdx = direction === "up" ? idx - 1 : idx + 1
+    if (newIdx < 0 || newIdx >= keys.length) return
+    const next = [...keys]
+    ;[next[idx], next[newIdx]] = [next[newIdx], next[idx]]
+    setCalOrder(next)
+    try { localStorage.setItem("calOrder", JSON.stringify(next)) } catch {}
+  }
+
+  function bulkDeleteSelectedCals() {
+    const toDelete: string[] = Array.from(calSelectedIds)
+    toDelete.forEach((key) => {
+      const cal = visibleCalendarSources.find((c) => (c.id ?? c.name) === key)
+      if (!cal) return
+      if (cal.source === "ics" && cal.icsId) {
+        handleRemoveIcs(cal.icsId, cal.name)
+      } else {
+        excludeCalendar(key)
+      }
+    })
+    if (toDelete.length > 0) toast.success(`Removed ${toDelete.length} calendar${toDelete.length !== 1 ? "s" : ""}`)
+    setCalSelectedIds(new Set())
+    setCalManageMode(false)
+  }
+
   // Filter events by hidden/excluded calendars
   const visibleEvents = events.filter((e) => {
     const src = calendarSources.find(
@@ -617,10 +656,18 @@ export function CalendarContent() {
     return !hiddenCalendars.has(key)
   })
 
-  // Only show calendars the user hasn't permanently removed
-  const visibleCalendarSources = calendarSources.filter(
-    (c) => !excludedCalIds.has(c.id ?? c.name)
-  )
+  // Only show calendars the user hasn't permanently removed, respecting custom order
+  const visibleCalendarSources = (() => {
+    const filtered = calendarSources.filter((c) => !excludedCalIds.has(c.id ?? c.name))
+    if (calOrder.length === 0) return filtered
+    const indexed = new Map<string, CalendarSource>(
+      filtered.map((c) => [c.id ?? c.name, c])
+    )
+    const ordered = calOrder.flatMap((k) => (indexed.has(k) ? [indexed.get(k)!] : []))
+    const inOrder = new Set(calOrder)
+    const rest = filtered.filter((c) => !inOrder.has(c.id ?? c.name))
+    return [...ordered, ...rest]
+  })()
 
   // Calendar grid
   const monthStart = startOfMonth(currentMonth)
@@ -711,92 +758,167 @@ export function CalendarContent() {
       {/* My Calendars — collapsible */}
       {(calendarSources.length > 0 || icloudConnected) && (
         <div>
-          <button
-            onClick={() => setCalListOpen((o) => !o)}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronRight className={`w-3 h-3 transition-transform ${calListOpen ? "rotate-90" : ""}`} />
-            <span>My Calendars</span>
-            <span className="text-muted-foreground/50">({visibleCalendarSources.length + (icloudConnected ? 1 : 0) + (connected ? 1 : 0)})</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setCalListOpen((o) => !o); if (calManageMode) { setCalManageMode(false); setCalSelectedIds(new Set()) } }}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronRight className={`w-3 h-3 transition-transform ${calListOpen ? "rotate-90" : ""}`} />
+              <span>My Calendars</span>
+              <span className="text-muted-foreground/50">({visibleCalendarSources.length + (icloudConnected ? 1 : 0) + (connected ? 1 : 0)})</span>
+            </button>
+            {calListOpen && visibleCalendarSources.length > 0 && (
+              <button
+                onClick={() => { setCalManageMode((m) => !m); setCalSelectedIds(new Set()) }}
+                className={`text-xs px-2 py-0.5 rounded-md border transition-colors ${calManageMode ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"}`}
+              >
+                {calManageMode ? "Done" : "Select"}
+              </button>
+            )}
+          </div>
 
           {calListOpen && (
-            <div className="flex flex-wrap items-center gap-2 mt-2">
-              {/* Google account pill */}
-              {connected && googleEmail && (
-                <div className="flex items-center gap-1 group">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border border-blue-400/40 bg-blue-400/10">
-                    <svg className="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                    </svg>
-                    <span>{googleEmail}</span>
-                  </div>
-                  <button
-                    onClick={handleDisconnect}
-                    disabled={disconnecting}
-                    title="Disconnect Google Calendar"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive -ml-1"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              )}
-
-              {/* iCloud account pill */}
-              {icloudConnected && icloudEmail && (
-                <div className="flex items-center gap-1 group">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border border-sky-400/40 bg-sky-400/10">
-                    <span>🍎</span>
-                    <span>{icloudEmail}</span>
-                  </div>
-                  <button
-                    onClick={handleDisconnectIcloud}
-                    title="Disconnect iCloud Calendar"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive -ml-1"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              )}
-
-              {/* Individual calendars (Google sub-calendars + ICS) */}
-              {visibleCalendarSources.map((cal) => {
-                const key = cal.id ?? cal.name
-                const hidden = hiddenCalendars.has(key)
-                return (
-                  <div key={key} className="flex items-center gap-1 group">
+            <div className="mt-2 space-y-1.5">
+              {/* Account-level pills (Google, iCloud) — always shown as pills */}
+              <div className="flex flex-wrap items-center gap-2">
+                {connected && googleEmail && (
+                  <div className="flex items-center gap-1 group">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border border-blue-400/40 bg-blue-400/10">
+                      <svg className="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                      </svg>
+                      <span>{googleEmail}</span>
+                    </div>
                     <button
-                      onClick={() => toggleCalendar(key)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all ${
-                        hidden
-                          ? "border-border text-muted-foreground bg-transparent opacity-50"
-                          : "border-transparent text-foreground"
-                      }`}
-                      style={{ backgroundColor: hidden ? undefined : cal.color + "22", borderColor: hidden ? undefined : cal.color + "66" }}
-                    >
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cal.color, opacity: hidden ? 0.4 : 1 }} />
-                      <span className={hidden ? "line-through" : ""}>{cal.name === googleEmail ? "Primary" : cal.name}</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (cal.source === "ics" && cal.icsId) {
-                          handleRemoveIcs(cal.icsId, cal.name)
-                        } else {
-                          excludeCalendar(key)
-                          toast.success(`"${cal.name}" removed from calendar`)
-                        }
-                      }}
-                      title="Remove calendar"
-                      className="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive -ml-1"
+                      onClick={handleDisconnect}
+                      disabled={disconnecting}
+                      title="Disconnect Google Calendar"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive -ml-1"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
-                )
-              })}
+                )}
+                {icloudConnected && icloudEmail && (
+                  <div className="flex items-center gap-1 group">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border border-sky-400/40 bg-sky-400/10">
+                      <span>🍎</span>
+                      <span>{icloudEmail}</span>
+                    </div>
+                    <button
+                      onClick={handleDisconnectIcloud}
+                      title="Disconnect iCloud Calendar"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive -ml-1"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Individual calendars — pills in normal mode, list in manage mode */}
+              {calManageMode ? (
+                <div className="space-y-1 border border-border rounded-lg p-2">
+                  {visibleCalendarSources.map((cal, idx) => {
+                    const key = cal.id ?? cal.name
+                    const isSelected = calSelectedIds.has(key)
+                    return (
+                      <div
+                        key={key}
+                        className={`flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors cursor-pointer ${isSelected ? "bg-primary/10" : "hover:bg-muted/50"}`}
+                        onClick={() => setCalSelectedIds((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => setCalSelectedIds((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })}
+                          onClick={(e) => e.stopPropagation()}
+                          className="shrink-0"
+                        />
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cal.color }} />
+                        <span className="flex-1 text-xs font-medium truncate">{cal.name === googleEmail ? "Primary" : cal.name}</span>
+                        <span className="text-[10px] text-muted-foreground/60 shrink-0">{cal.source === "ics" ? "ICS" : "Google"}</span>
+                        <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => moveCalendar(key, "up")}
+                            disabled={idx === 0}
+                            className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-25 transition-colors"
+                            title="Move up"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5 rotate-90" />
+                          </button>
+                          <button
+                            onClick={() => moveCalendar(key, "down")}
+                            disabled={idx === visibleCalendarSources.length - 1}
+                            className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-25 transition-colors"
+                            title="Move down"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5 rotate-90" />
+                          </button>
+                          <GripVertical className="w-3.5 h-3.5 text-muted-foreground/40 ml-0.5" />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  {visibleCalendarSources.map((cal) => {
+                    const key = cal.id ?? cal.name
+                    const hidden = hiddenCalendars.has(key)
+                    return (
+                      <div key={key} className="flex items-center gap-1 group">
+                        <button
+                          onClick={() => toggleCalendar(key)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all ${
+                            hidden
+                              ? "border-border text-muted-foreground bg-transparent opacity-50"
+                              : "border-transparent text-foreground"
+                          }`}
+                          style={{ backgroundColor: hidden ? undefined : cal.color + "22", borderColor: hidden ? undefined : cal.color + "66" }}
+                        >
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cal.color, opacity: hidden ? 0.4 : 1 }} />
+                          <span className={hidden ? "line-through" : ""}>{cal.name === googleEmail ? "Primary" : cal.name}</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (cal.source === "ics" && cal.icsId) {
+                              handleRemoveIcs(cal.icsId, cal.name)
+                            } else {
+                              excludeCalendar(key)
+                              toast.success(`"${cal.name}" removed from calendar`)
+                            }
+                          }}
+                          title="Remove calendar"
+                          className="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive -ml-1"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Manage mode action bar */}
+              {calManageMode && (
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-xs text-muted-foreground">
+                    {calSelectedIds.size > 0 ? `${calSelectedIds.size} selected` : "Tap to select"}
+                  </span>
+                  {calSelectedIds.size > 0 && (
+                    <button
+                      onClick={bulkDeleteSelectedCals}
+                      className="flex items-center gap-1.5 text-xs text-destructive hover:text-destructive/80 font-medium transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete {calSelectedIds.size}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
