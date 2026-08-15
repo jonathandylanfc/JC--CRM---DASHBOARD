@@ -1126,32 +1126,25 @@ export function FinanceContent({
 
       {/* Spending by category + budget alerts */}
       {(() => {
-        // Compute spending by category for current month from all transactions
-        const now = new Date()
-        const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
-        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-        const monthEndStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(monthEnd.getDate()).padStart(2, "0")}`
-
+        // Build catTotals from currentMonthExpenses so Finance and Budget pages show identical numbers.
         const catTotals: Record<string, number> = {}
-        // If budget categories exist, group transactions by budget category so Finance
-        // and Budget show the same breakdown. Transactions not matching any named
-        // budget category go into the catch-all bucket.
         const catchallCat = budgetCategories.find((c) => c.is_catchall)
         const namedBudgetCats = budgetCategories.filter((c) => !c.is_catchall)
         const hasBudgetCats = budgetCategories.length > 0
 
-        for (const tx of optimisticTransactions) {
-          if (tx.type !== "expense") continue
-          if (tx.date < monthStart || tx.date > monthEndStr) continue
-          let bucket: string
-          if (hasBudgetCats) {
-            const txCatLower = tx.category.toLowerCase()
-            const matched = namedBudgetCats.find((c) => getCatKeys(c).includes(txCatLower))
-            bucket = matched ? matched.name : (catchallCat?.name ?? tx.category)
-          } else {
-            bucket = tx.category
+        if (hasBudgetCats) {
+          for (const cat of namedBudgetCats) {
+            const spent = getCatKeys(cat).reduce((s, k) => s + (currentMonthExpenses[k] ?? 0), 0)
+            if (spent > 0) catTotals[cat.name] = spent
           }
-          catTotals[bucket] = (catTotals[bucket] ?? 0) + Number(tx.amount)
+          const totalExpensesSumPie = Object.values(currentMonthExpenses).reduce((s, v) => s + v, 0)
+          const namedTotalPie = Object.values(catTotals).reduce((s, v) => s + v, 0)
+          const catchallAmount = Math.max(0, totalExpensesSumPie - namedTotalPie)
+          if (catchallAmount > 0 && catchallCat) catTotals[catchallCat.name] = catchallAmount
+        } else {
+          for (const [cat, amount] of Object.entries(currentMonthExpenses)) {
+            if (amount > 0) catTotals[cat] = amount
+          }
         }
 
         const pieData = Object.entries(catTotals)
