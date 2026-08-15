@@ -387,18 +387,16 @@ export function CalendarContent() {
     if (!silent) setLoading(true)
     else setRefreshing(true)
     try {
-      const [gRes, icsRes, localRes, finRes, caldavRes] = await Promise.all([
+      const [gRes, icsRes, localRes, caldavRes] = await Promise.all([
         fetch("/api/calendar/events"),
         fetch("/api/calendar/ics"),
         fetch("/api/calendar/local-events"),
-        fetch("/api/calendar/finance-events"),
         fetch("/api/calendar/caldav"),
       ])
-      const gData = await gRes.json()
-      const icsData = await icsRes.json()
-      const localData = await localRes.json()
-      const finData = await finRes.json()
-      const caldavData = await caldavRes.json()
+      const gData = await gRes.json().catch(() => ({}))
+      const icsData = await icsRes.json().catch(() => ({}))
+      const localData = await localRes.json().catch(() => ({}))
+      const caldavData = await caldavRes.json().catch(() => ({}))
 
       // iCloud CalDAV
       setIcloudConnected(caldavData.connected ?? false)
@@ -463,6 +461,11 @@ export function CalendarContent() {
         const googleSources = (gData.calendarSources ?? []) as CalendarSource[]
         setCalendarSources([...googleSources, ...icsCalSources])
         setEvents(dedup([...gData.events, ...icsEvents, ...caldavEvents, ...localEvents]))
+      } else {
+        // Google returned an error (fetch_failed, auth issue, etc.) — still show ICS/local events
+        setConnected(true)
+        setCalendarSources([...icsCalSources])
+        setEvents(dedup([...icsEvents, ...caldavEvents, ...localEvents]))
       }
     } finally {
       setLoading(false)
@@ -497,9 +500,9 @@ export function CalendarContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: icsName.trim(), ics_url: icsUrl.trim(), color: icsColor }),
       })
-      const data = await res.json()
-      if (data.error) {
-        toast.error(data.error)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) {
+        toast.error(data.error ?? "Could not add calendar. Please try again.")
       } else {
         toast.success(`"${icsName}" added!`)
         setAddCalOpen(false)
@@ -508,6 +511,8 @@ export function CalendarContent() {
         setIcsColor(COLOR_OPTIONS[0])
         fetchAll(true)
       }
+    } catch {
+      toast.error("Could not add calendar. Please check your connection and try again.")
     } finally {
       setAddingIcs(false)
     }
