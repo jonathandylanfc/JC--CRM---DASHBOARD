@@ -127,11 +127,18 @@ export function parseIcs(text: string): IcsEvent[] {
 }
 
 export async function fetchAndParseIcs(url: string): Promise<IcsEvent[]> {
-  const res = await fetch(url, {
-    headers: { "User-Agent": "JDpro-Calendar/1.0" },
-    cache: "no-store",
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const text = await res.text()
-  return parseIcs(text)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 12000)
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "JDpro-Calendar/1.0" },
+      cache: "no-store",
+      signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const text = await res.text()
+    return parseIcs(text)
+  } finally {
+    clearTimeout(timeout)
+  }
 }
