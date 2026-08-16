@@ -53,7 +53,8 @@ function classifyTransaction(
 
     if (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") {
       // Incoming Zelle / P2P = income, not a transfer
-      if (primary === "TRANSFER_IN" && (detailed.includes("ZELLE") || detailed.includes("P2P"))) {
+      const isZelleIn = detailed.includes("ZELLE") || detailed.includes("P2P") || /\bzelle\b.*\bfrom\b/i.test(title)
+      if (primary === "TRANSFER_IN" && isZelleIn) {
         return { type: "income", category: "income" }
       }
       return { type: "transfer", category: "transfer" }
@@ -233,6 +234,20 @@ export async function POST(req: NextRequest) {
     const toMark = (txns ?? []).filter((tx) => TRANSFER_RE.test(tx.title)).map((tx) => tx.id)
     if (toMark.length) {
       await supabase.from("transactions").update({ type: "transfer" }).in("id", toMark).eq("user_id", user.id)
+    }
+  }
+
+  // Catch any incoming Zelle payments misclassified as transfer (runs every sync to fix existing rows)
+  {
+    const { data: txns } = await supabase
+      .from("transactions")
+      .select("id, title")
+      .eq("user_id", user.id)
+      .eq("type", "transfer")
+    const ZELLE_IN_RE = /\bzelle\b.*\bfrom\b/i
+    const toMark = (txns ?? []).filter((tx) => ZELLE_IN_RE.test(tx.title)).map((tx) => tx.id)
+    if (toMark.length) {
+      await supabase.from("transactions").update({ type: "income", category: "income" }).in("id", toMark).eq("user_id", user.id)
     }
   }
 
