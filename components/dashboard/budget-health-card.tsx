@@ -11,6 +11,7 @@ interface BudgetCategory {
   is_goal_mode?: boolean
   linked_account?: string | null
   rollover?: boolean
+  category_aliases?: string | null
 }
 
 interface BudgetHealthCardProps {
@@ -23,8 +24,16 @@ function currency(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n)
 }
 
+function getCatKeys(cat: BudgetCategory): string[] {
+  const name = cat.name.toLowerCase()
+  const aliases = (cat.category_aliases ?? "")
+    .split(",")
+    .map((a) => a.trim().toLowerCase())
+    .filter(Boolean)
+  return [name, ...aliases]
+}
+
 export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome }: BudgetHealthCardProps) {
-  // All categories with a value — resolve dollar amount for percentage types
   const expenseCats = categories
     .filter((c) => c.value > 0)
     .map((c) => ({
@@ -34,23 +43,31 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
         : c.value,
     }))
 
+  // Mirror Budget page catchall logic
+  const namedCats = expenseCats.filter((c) => !c.is_catchall)
+  const namedSpending = namedCats.reduce(
+    (sum, c) => sum + getCatKeys(c).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0),
+    0,
+  )
+  const totalExpensesSum = Object.values(expensesByCategory).reduce((s, v) => s + v, 0)
+  const catchallSpending = Math.max(0, totalExpensesSum - namedSpending)
+
+  function spentFor(cat: typeof expenseCats[number]): number {
+    if (cat.is_catchall) return catchallSpending
+    return getCatKeys(cat).reduce((s, k) => s + (expensesByCategory[k] ?? 0), 0)
+  }
+
   const totalBudgeted = expenseCats.reduce((sum, c) => sum + c.dollarValue, 0)
-  const totalSpent = expenseCats.reduce((sum, c) => sum + (expensesByCategory[c.name.toLowerCase()] ?? 0), 0)
+  const totalSpent = expenseCats.reduce((sum, c) => sum + spentFor(c), 0)
   const overallPct = totalBudgeted > 0 ? Math.min(Math.round((totalSpent / totalBudgeted) * 100), 100) : 0
 
-  // Top 3 categories by spending
   const top3 = [...expenseCats]
-    .sort((a, b) => {
-      const aSpent = expensesByCategory[a.name.toLowerCase()] ?? 0
-      const bSpent = expensesByCategory[b.name.toLowerCase()] ?? 0
-      return bSpent - aSpent
-    })
+    .sort((a, b) => spentFor(b) - spentFor(a))
     .slice(0, 3)
 
   const overBudget = expenseCats.filter((c) => {
     if (c.is_goal_mode) return false
-    const spent = expensesByCategory[c.name.toLowerCase()] ?? 0
-    return spent > c.dollarValue
+    return spentFor(c) > c.dollarValue
   })
 
   return (
@@ -86,7 +103,7 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
       {top3.length > 0 && (
         <div className="space-y-3">
           {top3.map((cat) => {
-            const spent = expensesByCategory[cat.name.toLowerCase()] ?? 0
+            const spent = spentFor(cat)
             const pct = cat.dollarValue > 0 ? Math.min(Math.round((spent / cat.dollarValue) * 100), 100) : 0
             const color = cat.is_goal_mode
               ? (pct >= 100 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-400" : "bg-rose-500")
