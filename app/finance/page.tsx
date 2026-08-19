@@ -9,11 +9,8 @@ import {
   getUserProfile,
   getStartingBalance,
   getBudgetCategories,
-  getMonthlyExpensesByCategory,
   getConnectedBankNames,
-  getExpectedMonthlyIncome,
 } from "@/lib/data"
-import { format, subMonths, startOfMonth } from "date-fns"
 import { createClient } from "@/lib/supabase/server"
 
 async function getUnreviewedTransactions() {
@@ -31,19 +28,15 @@ async function getUnreviewedTransactions() {
 }
 
 export default async function FinancePage() {
-  const lastMonth = format(startOfMonth(subMonths(new Date(), 1)), "yyyy-MM")
-  const [transactions, subscriptions, financeSummary, user, startingBalance, budgetCategories, currentMonthExpenses, connectedBankNames, unreviewedTransactions, expectedMonthlyIncome, lastMonthExpenses] = await Promise.all([
+  const [transactions, subscriptions, financeSummary, user, startingBalance, budgetCategories, connectedBankNames, unreviewedTransactions] = await Promise.all([
     getAllTransactions(),
     getAllSubscriptions(),
     getMonthlyFinanceSummary(),
     getUserProfile(),
     getStartingBalance(),
     getBudgetCategories(),
-    getMonthlyExpensesByCategory(),
     getConnectedBankNames(),
     getUnreviewedTransactions(),
-    getExpectedMonthlyIncome(),
-    getMonthlyExpensesByCategory(lastMonth),
   ])
 
   return (
@@ -68,11 +61,7 @@ export default async function FinancePage() {
             monthlyIncome={financeSummary.income}
             monthlyExpenses={financeSummary.expenses}
             initialStartingBalance={startingBalance}
-            budgetCategories={budgetCategories}
-            currentMonthExpenses={currentMonthExpenses}
-            lastMonthExpenses={lastMonthExpenses}
             connectedBankNames={connectedBankNames}
-            expectedMonthlyIncome={expectedMonthlyIncome}
           />
         </div>
       </main>
