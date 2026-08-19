@@ -1719,59 +1719,6 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
         )}
       </div>
 
-      {/* Transfer Review */}
-      {visibleTransferTxs.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <MoveRight className="w-5 h-5 text-primary" />
-            Transfer Transactions
-            {unmatchedTransfers.length > 0 && (
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
-                {unmatchedTransfers.length} unassigned
-              </span>
-            )}
-          </h2>
-          <div className="space-y-2">
-            {visibleTransferTxs.map((tx) => {
-              const matchedGoal = savingsGoals.find((g) => {
-                if (!g.transfer_keywords) return false
-                const t = tx.title.toLowerCase()
-                return g.transfer_keywords.split(",").map((k) => k.trim()).filter(Boolean).some((kw) => t.includes(kw))
-              })
-              const matchedCat = categories.find((c) => {
-                if (!c.transfer_keywords) return false
-                const t = tx.title.toLowerCase()
-                return c.transfer_keywords.split(",").map((k) => k.trim()).filter(Boolean).some((kw) => t.includes(kw))
-              })
-              const isMatched = !!(matchedGoal || matchedCat)
-
-              return (
-                <div key={tx.id} className={`flex items-center justify-between gap-3 p-3 rounded-lg border text-sm ${isMatched ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/10" : "border-border"}`}>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-foreground truncate">{tx.title}</p>
-                    <p className="text-xs text-muted-foreground">{format(new Date(tx.date + "T12:00:00"), "MMM d")}</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="font-semibold tabular-nums text-foreground">{currency(tx.amount)}</span>
-                    {isMatched ? (
-                      <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium whitespace-nowrap">
-                        ✓ {matchedGoal?.name ?? matchedCat?.name}
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => setAssignTransferOpen(tx)}
-                        className="text-xs text-primary underline underline-offset-2 hover:opacity-70 whitespace-nowrap"
-                      >
-                        Assign →
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Assign transfer dialog */}
       {assignTransferOpen && (
