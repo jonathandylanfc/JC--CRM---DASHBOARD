@@ -24,7 +24,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown, ChevronUp, GripVertical, X } from "lucide-react"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
 import { format, addMonths, subMonths, parseISO, differenceInDays } from "date-fns"
 import { toast } from "sonner"
 import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, moveSingleTransaction, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal, reorderBudgetCategories, setExpectedMonthlyIncome, tagReimbursement } from "@/app/budget/actions"
@@ -747,66 +746,49 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
 
       {/* Spending vs Budget chart */}
       {categories.length > 0 && (() => {
-        const chartData = categories
+        const rows = categories
           .filter((c) => !c.is_goal_mode)
           .map((c) => {
             const budgeted = budgetedAmount(c, monthlyIncome)
             const spent = getCatNet(c)
-            return { name: c.name.length > 14 ? c.name.slice(0, 13) + "…" : c.name, spent, budgeted, over: spent > budgeted }
+            return { name: c.name, spent, budgeted }
           })
           .filter((d) => d.budgeted > 0 || d.spent > 0)
           .sort((a, b) => b.spent - a.spent)
-        if (chartData.length === 0) return null
-        const maxVal = Math.max(...chartData.flatMap((d) => [d.spent, d.budgeted]))
+        if (rows.length === 0) return null
+        const maxVal = Math.max(...rows.flatMap((d) => [d.spent, d.budgeted]), 1)
         return (
           <Card className="p-5">
             <h3 className="text-sm font-semibold text-foreground mb-4">Spending vs Budget</h3>
-            <ResponsiveContainer width="100%" height={Math.max(chartData.length * 44, 120)}>
-              <BarChart
-                layout="vertical"
-                data={chartData}
-                margin={{ top: 0, right: 16, left: 0, bottom: 0 }}
-                barCategoryGap="30%"
-                barGap={3}
-              >
-                <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis
-                  type="number"
-                  domain={[0, maxVal * 1.05]}
-                  tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v}`}
-                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={90}
-                  tick={{ fontSize: 11, fill: "hsl(var(--foreground))" }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  cursor={{ fill: "hsl(var(--muted)/0.3)" }}
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                  labelStyle={{ fontWeight: 600, marginBottom: 4, color: "hsl(var(--foreground))" }}
-                  formatter={(val: number, key: string) => [`$${val.toFixed(2)}`, key === "spent" ? "Spent" : "Budgeted"]}
-                />
-                <Bar dataKey="budgeted" name="Budgeted" fill="hsl(var(--muted))" radius={[0, 3, 3, 0]}>
-                  {chartData.map((_, i) => <Cell key={i} fill="hsl(var(--muted))" />)}
-                </Bar>
-                <Bar dataKey="spent" name="Spent" radius={[0, 3, 3, 0]}>
-                  {chartData.map((d, i) => (
-                    <Cell key={i} fill={d.over ? "hsl(var(--destructive))" : d.spent / d.budgeted >= 0.8 ? "#f59e0b" : "#10b981"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-            <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm bg-muted inline-block" />Budgeted</span>
-              <span className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm bg-emerald-500 inline-block" />On track</span>
-              <span className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm bg-amber-400 inline-block" />Near limit</span>
-              <span className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm bg-destructive inline-block" />Over budget</span>
+            <div className="space-y-3">
+              {rows.map((d) => {
+                const pct = d.budgeted > 0 ? d.spent / d.budgeted : 1
+                const barColor = d.spent > d.budgeted ? "#ef4444" : pct >= 0.8 ? "#f59e0b" : "#10b981"
+                const budgetedWidth = `${(d.budgeted / maxVal) * 100}%`
+                const spentWidth = `${Math.min(d.spent / maxVal, 1) * 100}%`
+                return (
+                  <div key={d.name}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-medium text-foreground truncate max-w-[55%]">{d.name}</span>
+                      <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                        <span style={{ color: barColor }} className="font-semibold">{currency(d.spent)}</span>
+                        {d.budgeted > 0 && <span> / {currency(d.budgeted)}</span>}
+                      </span>
+                    </div>
+                    <div className="relative h-4 rounded-full overflow-hidden" style={{ background: "#e5e7eb" }}>
+                      {/* budget track */}
+                      <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: budgetedWidth, background: "#d1d5db" }} />
+                      {/* spent fill */}
+                      <div className="absolute inset-y-0 left-0 rounded-full transition-all duration-500" style={{ width: spentWidth, background: barColor }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-4 mt-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2 rounded-sm" style={{ background: "#10b981" }} />On track</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2 rounded-sm" style={{ background: "#f59e0b" }} />Near limit</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2 rounded-sm" style={{ background: "#ef4444" }} />Over budget</span>
             </div>
           </Card>
         )
