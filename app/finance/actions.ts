@@ -174,6 +174,30 @@ export async function approveTransactionWithCategoryAlways(id: string, title: st
   return { success: true }
 }
 
+export async function markAsTransfer(id: string, applyToAll: boolean, title?: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Not authenticated" }
+  const { error } = await supabase
+    .from("transactions")
+    .update({ reviewed: true, snoozed_until: null, type: "transfer", category: "transfer" })
+    .eq("id", id)
+    .eq("user_id", user.id)
+  if (error) return { error: error.message }
+  if (applyToAll && title) {
+    await supabase
+      .from("transactions")
+      .update({ type: "transfer", category: "transfer" })
+      .eq("user_id", user.id)
+      .ilike("title", title)
+      .neq("id", id)
+  }
+  revalidatePath("/finance")
+  revalidatePath("/budget")
+  revalidatePath("/")
+  return { success: true }
+}
+
 export async function snoozeTransaction(id: string, hours = 24) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

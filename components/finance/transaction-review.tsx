@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle2, Clock, TrendingUp, TrendingDown, ArrowLeftRight, ChevronDown, ChevronUp, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
-import { approveTransaction, approveTransactionWithCategory, approveTransactionWithCategoryAlways, snoozeTransaction, approveAllVisible } from "@/app/finance/actions"
+import { approveTransaction, approveTransactionWithCategory, approveTransactionWithCategoryAlways, snoozeTransaction, approveAllVisible, markAsTransfer } from "@/app/finance/actions"
 import { format } from "date-fns"
 
 interface Transaction {
@@ -92,6 +92,17 @@ export function TransactionReview({ transactions, budgetCategories = [] }: Props
         toast.success(`Moved to ${category}`)
         router.refresh()
       }
+    })
+  }
+
+  function handleMarkTransfer(tx: Transaction, applyToAll: boolean) {
+    setDismissed((prev) => new Set(prev).add(tx.id))
+    setRecatTxId(null)
+    startTransition(async () => {
+      const result = await markAsTransfer(tx.id, applyToAll, applyToAll ? tx.title : undefined)
+      if (result.error) toast.error(result.error)
+      else toast.success(applyToAll ? `All "${tx.title}" marked as Transfer` : "Marked as Transfer")
+      router.refresh()
     })
   }
 
@@ -245,7 +256,7 @@ export function TransactionReview({ transactions, budgetCategories = [] }: Props
                         disabled={isPending}
                         title="Change category"
                       >
-                        ↩ Move
+                        ↩ Move · <span className="opacity-60 capitalize">{tx.type === "transfer" ? "Transfer" : tx.category}</span>
                       </Button>
                       <Button
                         variant="outline"
@@ -266,11 +277,13 @@ export function TransactionReview({ transactions, budgetCategories = [] }: Props
                       {recatDest ? (
                         /* Step 2: pick scope */
                         <div className="space-y-2">
-                          <p className="text-xs text-muted-foreground">Move to <span className="font-medium text-foreground">{recatDest}</span>. Apply to:</p>
+                          <p className="text-xs text-muted-foreground">
+                            Mark as <span className="font-medium text-foreground">{recatDest === "__transfer__" ? "Transfer" : recatDest}</span>. Apply to:
+                          </p>
                           <div className="flex flex-col gap-1.5">
                             <button
                               disabled={isPending}
-                              onClick={() => handleRecatJustOne(tx, recatDest)}
+                              onClick={() => recatDest === "__transfer__" ? handleMarkTransfer(tx, false) : handleRecatJustOne(tx, recatDest)}
                               className="w-full flex items-start gap-2 p-2.5 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-all text-left"
                             >
                               <div>
@@ -280,7 +293,7 @@ export function TransactionReview({ transactions, budgetCategories = [] }: Props
                             </button>
                             <button
                               disabled={isPending}
-                              onClick={() => handleRecatAlways(tx, recatDest)}
+                              onClick={() => recatDest === "__transfer__" ? handleMarkTransfer(tx, true) : handleRecatAlways(tx, recatDest)}
                               className="w-full flex items-start gap-2 p-2.5 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/30 transition-all text-left"
                             >
                               <div>
@@ -294,6 +307,14 @@ export function TransactionReview({ transactions, budgetCategories = [] }: Props
                       ) : (
                         /* Step 1: pick category */
                         <div className="flex flex-wrap gap-1.5">
+                          {tx.type !== "transfer" && (
+                            <button
+                              onClick={() => setRecatDest("__transfer__")}
+                              className="text-xs px-2.5 py-1 rounded-full border border-muted-foreground/40 text-muted-foreground hover:border-primary/60 hover:text-foreground hover:bg-muted/40 transition-colors flex items-center gap-1"
+                            >
+                              <ArrowLeftRight className="w-3 h-3" /> Transfer
+                            </button>
+                          )}
                           {budgetCategories.map((c) => (
                             <button
                               key={c.id}
