@@ -16,10 +16,12 @@ function pct(n: number) {
 
 export async function POST(req: NextRequest) {
   try {
-  // Optional: protect with a secret so only Railway cron can call this
-  const secret = req.headers.get("x-briefing-secret")
+  // Require BRIEFING_SECRET on every call — set this in Railway environment variables
   const expectedSecret = process.env.BRIEFING_SECRET
-  if (expectedSecret && secret !== expectedSecret) {
+  if (!expectedSecret) {
+    return NextResponse.json({ error: "BRIEFING_SECRET env var not configured" }, { status: 500 })
+  }
+  if (req.headers.get("x-briefing-secret") !== expectedSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
