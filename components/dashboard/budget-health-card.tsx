@@ -86,11 +86,19 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
 
   return (
     <Card className="p-5 transition-all duration-500 hover:shadow-xl animate-slide-in-up" style={{ animationDelay: "300ms" }}>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-1">
         <h2 className="text-base font-semibold text-foreground">Budget</h2>
         <Link href="/budget" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
           View all
         </Link>
+      </div>
+
+      {/* Total spent */}
+      <div className="mb-4">
+        <span className="text-2xl font-bold text-foreground tabular-nums">{currency(totalSpent)}</span>
+        {totalBudgeted > 0 && (
+          <span className="text-xs text-muted-foreground ml-1.5">of {currency(totalBudgeted)} budgeted</span>
+        )}
       </div>
 
       {/* Next paycheck */}
