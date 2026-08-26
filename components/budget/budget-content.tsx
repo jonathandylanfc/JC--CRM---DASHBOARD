@@ -748,7 +748,6 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
           .filter((d) => d.budgeted > 0 || d.spent > 0)
           .sort((a, b) => b.spent - a.spent)
         if (rows.length === 0) return null
-        const maxVal = Math.max(...rows.flatMap((d) => [d.spent, d.budgeted]), 1)
         return (
           <Card className="p-5">
             <h3 className="text-sm font-semibold text-foreground mb-4">Spending vs Budget</h3>
@@ -756,8 +755,8 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
               {rows.map((d) => {
                 const pct = d.budgeted > 0 ? d.spent / d.budgeted : 1
                 const barColor = d.spent > d.budgeted ? "#ef4444" : pct >= 0.8 ? "#f59e0b" : "#10b981"
-                const budgetedWidth = `${(d.budgeted / maxVal) * 100}%`
-                const spentWidth = `${Math.min(d.spent / maxVal, 1) * 100}%`
+                // Each bar is self-contained: track = 100% (budget), fill = spent % of budget
+                const fillPct = d.budgeted > 0 ? Math.min(pct, 1) * 100 : 100
                 return (
                   <div key={d.name}>
                     <div className="flex items-center justify-between mb-1">
@@ -767,11 +766,8 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
                         {d.budgeted > 0 && <span> / {currency(d.budgeted)}</span>}
                       </span>
                     </div>
-                    <div className="relative h-4 rounded-full overflow-hidden" style={{ background: "#e5e7eb" }}>
-                      {/* budget track */}
-                      <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: budgetedWidth, background: "#d1d5db" }} />
-                      {/* spent fill */}
-                      <div className="absolute inset-y-0 left-0 rounded-full transition-all duration-500" style={{ width: spentWidth, background: barColor }} />
+                    <div className="relative h-4 rounded-full overflow-hidden" style={{ background: "#d1d5db" }}>
+                      <div className="absolute inset-y-0 left-0 rounded-full transition-all duration-500" style={{ width: `${fillPct}%`, background: barColor }} />
                     </div>
                   </div>
                 )
