@@ -17,7 +17,9 @@ import {
   getWeeklySpendingSummary,
   getLatestBriefing,
   getUpcomingCalendarEvents,
+  getPaySettings,
 } from "@/lib/data"
+import { computeCurrentPayPeriod } from "@/lib/pay-period"
 import { getSpendingChallenges, getLinkedAccounts } from "@/app/finance/spending-challenge-actions"
 import { SpendingChallengeCard } from "@/components/dashboard/spending-challenge-card"
 
@@ -42,6 +44,7 @@ export default async function DashboardPage() {
     upcomingEvents,
     spendingChallenges,
     plaidAccounts,
+    paySettings,
   ] = await Promise.all([
     getTaskStats(),
     getRecentTasks(),
@@ -58,7 +61,25 @@ export default async function DashboardPage() {
     getUpcomingCalendarEvents(),
     getSpendingChallenges(),
     getLinkedAccounts(),
+    getPaySettings(),
   ])
+
+  // Compute the next upcoming payday (end of pay period + delay days)
+  let nextPayday: string | null = null
+  if (paySettings) {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    for (let offset = 0; offset <= 2; offset++) {
+      const period = computeCurrentPayPeriod(paySettings.pay_period, paySettings.pay_period_start_date, offset)
+      const payday = new Date(period.end)
+      payday.setDate(payday.getDate() + (paySettings.pay_delay_days ?? 0))
+      payday.setHours(0, 0, 0, 0)
+      if (payday >= today) {
+        nextPayday = payday.toISOString().split("T")[0]
+        break
+      }
+    }
+  }
 
   return (
     <DashboardLayoutProvider>
@@ -91,6 +112,7 @@ export default async function DashboardPage() {
               upcomingBills={upcomingBills}
               savingsGoals={savingsGoals}
               weeklyRecap={weeklyRecap}
+              nextPayday={nextPayday}
             />
 
             <DashboardEditButton />

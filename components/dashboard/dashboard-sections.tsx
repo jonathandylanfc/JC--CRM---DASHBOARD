@@ -23,6 +23,7 @@ interface Props {
   upcomingBills: Array<{ id: string; name: string; amount: number; billing_cycle: string; next_billing_date: string; category: string | null }>
   savingsGoals: Array<{ id: string; name: string; target_amount: number; current_amount: number; color: string; monthly_contribution_value: number | null; monthly_contribution_type: string | null }>
   weeklyRecap: { thisWeek: Record<string, number>; lastWeek: Record<string, number>; thisTotal: number; lastTotal: number }
+  nextPayday: string | null
 }
 
 function WidgetContent({ id, props }: { id: WidgetId; props: Props }) {
@@ -47,6 +48,7 @@ function WidgetContent({ id, props }: { id: WidgetId; props: Props }) {
           categories={props.categories}
           expensesByCategory={props.expensesByCategory}
           monthlyIncome={props.financeSummary.income}
+          nextPayday={props.nextPayday}
         />
       )
     case "recent_transactions":

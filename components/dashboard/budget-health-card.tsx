@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { Card } from "@/components/ui/card"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle, CalendarDays } from "lucide-react"
 
 interface BudgetCategory {
   id: string
@@ -18,6 +18,7 @@ interface BudgetHealthCardProps {
   categories: BudgetCategory[]
   expensesByCategory: Record<string, number>
   monthlyIncome: number
+  nextPayday: string | null
 }
 
 function currency(n: number) {
@@ -33,7 +34,7 @@ function getCatKeys(cat: BudgetCategory): string[] {
   return [name, ...aliases]
 }
 
-export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome }: BudgetHealthCardProps) {
+export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome, nextPayday }: BudgetHealthCardProps) {
   const expenseCats = categories
     .filter((c) => c.value > 0)
     .map((c) => ({
@@ -70,6 +71,19 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
     return spentFor(c) > c.dollarValue
   })
 
+  const paydayLabel = (() => {
+    if (!nextPayday) return null
+    const payday = new Date(nextPayday + "T12:00:00")
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const diffMs = payday.getTime() - today.getTime()
+    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+    const dateStr = payday.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    if (diffDays === 0) return { date: dateStr, label: "today" }
+    if (diffDays === 1) return { date: dateStr, label: "tomorrow" }
+    return { date: dateStr, label: `in ${diffDays} days` }
+  })()
+
   return (
     <Card className="p-5 transition-all duration-500 hover:shadow-xl animate-slide-in-up" style={{ animationDelay: "300ms" }}>
       <div className="flex items-center justify-between mb-4">
@@ -78,6 +92,14 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
           View all
         </Link>
       </div>
+
+      {/* Next paycheck */}
+      {paydayLabel && (
+        <div className="flex items-center gap-1.5 mb-4 text-xs text-muted-foreground">
+          <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>Next paycheck <span className="font-medium text-foreground">{paydayLabel.date}</span> <span className="text-muted-foreground">({paydayLabel.label})</span></span>
+        </div>
+      )}
 
       {/* Overall bar */}
       <div className="mb-4">
