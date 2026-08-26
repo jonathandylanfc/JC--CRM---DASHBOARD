@@ -23,7 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, Percent, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown, ChevronUp, GripVertical, X } from "lucide-react"
+import { Plus, Pencil, Trash2, TrendingUp, DollarSign, PiggyBank, ChevronDown, Check, ChevronLeft, ChevronRight, MoveRight, Target, AlertTriangle, RotateCcw, TrendingDown, ChevronUp, GripVertical, X } from "lucide-react"
 import { format, addMonths, subMonths, parseISO, differenceInDays } from "date-fns"
 import { toast } from "sonner"
 import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkCreateBudgetCategories, assignTransactionToCategory, moveSingleTransaction, toggleBudgetRollover, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, logGoalContribution, seedBudgetFromExcel, assignTransferToGoal, reorderBudgetCategories, setExpectedMonthlyIncome, tagReimbursement } from "@/app/budget/actions"
@@ -657,7 +657,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
       </div>
 
       {/* Summary cards */}
-      <div className={`grid grid-cols-2 gap-4 ${usingExpectedIncome ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+      <div className={`grid grid-cols-2 gap-4 ${usingExpectedIncome ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
         {/* Income Received */}
         <Card className="p-5 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800">
           <div className="flex items-center justify-between mb-2">
@@ -734,14 +734,6 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
           <p className={`text-xs mt-1 ${overBudget ? "text-rose-600 dark:text-rose-500" : "text-blue-600 dark:text-blue-500"}`}>{totalPercent.toFixed(1)}% of {usingExpectedIncome ? "estimate" : "income"}{overBudget ? " — over budget!" : ""}</p>
         </Card>
 
-        <Card className="p-5 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Categories</p>
-            <Percent className="w-4 h-4 text-amber-600" />
-          </div>
-          <p className="text-2xl font-bold text-amber-800 dark:text-amber-300">{categories.length}</p>
-          <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">budget lines</p>
-        </Card>
       </div>
 
       {/* Spending vs Budget chart */}
