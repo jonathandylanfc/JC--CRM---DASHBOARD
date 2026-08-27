@@ -549,9 +549,17 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setFormError(null)
+    // Keep uncontrolled fields (transfer_keywords, category_aliases) from DOM,
+    // then explicitly set all controlled fields from React state
     const fd = new FormData(e.currentTarget)
+    fd.set("name", formName)
+    fd.set("type", formType)
+    fd.set("value", formValue)
     fd.set("is_catchall", String(formCatchall))
     fd.set("is_goal_mode", String(formGoalMode))
+    if (formType === "fixed_plus_percentage") {
+      fd.set("base_amount", formBaseAmount)
+    }
 
     // Cap only applies to percentage types
     const val = parseFloat(formValue)
