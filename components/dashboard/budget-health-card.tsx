@@ -7,6 +7,7 @@ interface BudgetCategory {
   name: string
   type: string
   value: number
+  base_amount?: number | null
   is_catchall?: boolean
   is_goal_mode?: boolean
   linked_account?: string | null
@@ -41,6 +42,8 @@ export function BudgetHealthCard({ categories, expensesByCategory, monthlyIncome
       ...c,
       dollarValue: c.type === "percentage"
         ? (c.value / 100) * monthlyIncome
+        : c.type === "fixed_plus_percentage"
+        ? (c.base_amount ?? 0) + (c.value / 100) * monthlyIncome
         : c.value,
     }))
 

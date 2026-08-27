@@ -12,10 +12,15 @@ export async function createBudgetCategory(formData: FormData) {
   if (!name) return { error: "Name is required" }
 
   const type = formData.get("type") as string
-  if (type !== "percentage" && type !== "fixed") return { error: "Invalid type" }
+  if (type !== "percentage" && type !== "fixed" && type !== "fixed_plus_percentage") return { error: "Invalid type" }
 
   const value = parseFloat(formData.get("value") as string)
   if (isNaN(value) || value < 0) return { error: "Valid value is required" }
+
+  const base_amount = type === "fixed_plus_percentage"
+    ? parseFloat(formData.get("base_amount") as string)
+    : null
+  if (type === "fixed_plus_percentage" && (isNaN(base_amount!) || base_amount! < 0)) return { error: "Valid base amount is required" }
 
   const { count } = await supabase
     .from("budget_categories")
@@ -30,8 +35,8 @@ export async function createBudgetCategory(formData: FormData) {
 
   const { data, error } = await supabase
     .from("budget_categories")
-    .insert({ user_id: user.id, name, type, value, sort_order: count ?? 0, is_catchall, linked_account, is_goal_mode, transfer_keywords, category_aliases })
-    .select("id, name, type, value, sort_order, is_catchall, linked_account, transfer_keywords, category_aliases")
+    .insert({ user_id: user.id, name, type, value, base_amount, sort_order: count ?? 0, is_catchall, linked_account, is_goal_mode, transfer_keywords, category_aliases })
+    .select("id, name, type, value, base_amount, sort_order, is_catchall, linked_account, transfer_keywords, category_aliases")
     .single()
 
   if (error) return { error: error.message }
@@ -48,10 +53,15 @@ export async function updateBudgetCategory(id: string, formData: FormData) {
   if (!name) return { error: "Name is required" }
 
   const type = formData.get("type") as string
-  if (type !== "percentage" && type !== "fixed") return { error: "Invalid type" }
+  if (type !== "percentage" && type !== "fixed" && type !== "fixed_plus_percentage") return { error: "Invalid type" }
 
   const value = parseFloat(formData.get("value") as string)
   if (isNaN(value) || value < 0) return { error: "Valid value is required" }
+
+  const base_amount = type === "fixed_plus_percentage"
+    ? parseFloat(formData.get("base_amount") as string)
+    : null
+  if (type === "fixed_plus_percentage" && (isNaN(base_amount!) || base_amount! < 0)) return { error: "Valid base amount is required" }
 
   const is_catchall = formData.get("is_catchall") === "true"
   const is_goal_mode = formData.get("is_goal_mode") === "true"
@@ -61,10 +71,10 @@ export async function updateBudgetCategory(id: string, formData: FormData) {
 
   const { data, error } = await supabase
     .from("budget_categories")
-    .update({ name, type, value, is_catchall, linked_account, is_goal_mode, transfer_keywords, category_aliases })
+    .update({ name, type, value, base_amount, is_catchall, linked_account, is_goal_mode, transfer_keywords, category_aliases })
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, name, type, value, sort_order, is_catchall, linked_account, transfer_keywords, category_aliases")
+    .select("id, name, type, value, base_amount, sort_order, is_catchall, linked_account, transfer_keywords, category_aliases")
     .single()
 
   if (error) return { error: error.message }

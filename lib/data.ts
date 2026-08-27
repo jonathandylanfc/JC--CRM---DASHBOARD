@@ -263,7 +263,7 @@ export async function getBudgetCategories() {
   if (!userId) return []
   const { data } = await supabase
     .from("budget_categories")
-    .select("id, name, type, value, sort_order, rollover, is_catchall, linked_account, is_goal_mode, transfer_keywords, category_aliases")
+    .select("id, name, type, value, base_amount, sort_order, rollover, is_catchall, linked_account, is_goal_mode, transfer_keywords, category_aliases")
     .eq("user_id", userId)
     .order("sort_order", { ascending: true })
   return data ?? []

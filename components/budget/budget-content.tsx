@@ -31,8 +31,9 @@ import { createBudgetCategory, updateBudgetCategory, deleteBudgetCategory, bulkC
 interface BudgetCategory {
   id: string
   name: string
-  type: "percentage" | "fixed"
+  type: "percentage" | "fixed" | "fixed_plus_percentage"
   value: number
+  base_amount: number | null
   sort_order: number
   rollover: boolean
   is_catchall: boolean
@@ -117,7 +118,9 @@ function currency(n: number) {
 }
 
 function budgetedAmount(cat: BudgetCategory, income: number): number {
-  return cat.type === "percentage" ? (cat.value / 100) * income : cat.value
+  if (cat.type === "percentage") return (cat.value / 100) * income
+  if (cat.type === "fixed_plus_percentage") return (cat.base_amount ?? 0) + (cat.value / 100) * income
+  return cat.value
 }
 
 function calcPayoffMonths(balance: number, annualRate: number, monthlyPayment: number): number | null {
@@ -504,8 +507,9 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
 
   // Form state
   const [formName, setFormName] = useState("")
-  const [formType, setFormType] = useState<"percentage" | "fixed">("percentage")
+  const [formType, setFormType] = useState<"percentage" | "fixed" | "fixed_plus_percentage">("percentage")
   const [formValue, setFormValue] = useState("")
+  const [formBaseAmount, setFormBaseAmount] = useState("")
   const [formCatchall, setFormCatchall] = useState(false)
   const [formGoalMode, setFormGoalMode] = useState(false)
 
@@ -514,6 +518,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
     setFormName("")
     setFormType("percentage")
     setFormValue("")
+    setFormBaseAmount("")
     setFormCatchall(false)
     setFormGoalMode(false)
     setFormError(null)
@@ -525,6 +530,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
     setFormName(cat.name)
     setFormType(cat.type)
     setFormValue(String(cat.value))
+    setFormBaseAmount(cat.base_amount != null ? String(cat.base_amount) : "")
     setFormCatchall(cat.is_catchall ?? false)
     setFormGoalMode(cat.is_goal_mode ?? false)
     setFormError(null)
@@ -560,6 +566,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
         name: formName,
         type: formType,
         value: parseFloat(formValue),
+        base_amount: formType === "fixed_plus_percentage" ? parseFloat(formBaseAmount) : null,
         is_catchall: formCatchall,
         is_goal_mode: formGoalMode,
       }
@@ -576,6 +583,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
         name: formName,
         type: formType,
         value: parseFloat(formValue),
+        base_amount: formType === "fixed_plus_percentage" ? parseFloat(formBaseAmount) : null,
         sort_order: categories.length,
         rollover: false,
         is_catchall: formCatchall,
@@ -1549,7 +1557,11 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
                         <p className="font-semibold text-foreground text-sm">{cat.name}</p>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <Badge variant="outline" className="text-[10px] h-4 px-1.5">
-                            {cat.type === "percentage" ? `${cat.value}% of income` : `${currency(cat.value)}/mo`}
+                            {cat.type === "percentage"
+                              ? `${cat.value}% of income`
+                              : cat.type === "fixed_plus_percentage"
+                              ? `${currency(cat.base_amount ?? 0)} + ${cat.value}%`
+                              : `${currency(cat.value)}/mo`}
                           </Badge>
                           {cat.rollover && (
                             <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-primary border-primary/40 gap-1">
@@ -2043,49 +2055,109 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
                   }`}
                 >
                   <DollarSign className="w-3.5 h-3.5" />
-                  Fixed $ amount
+                  Fixed $
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormType("fixed_plus_percentage")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
+                    formType === "fixed_plus_percentage"
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "border-border text-muted-foreground hover:border-primary/40"
+                  }`}
+                >
+                  <DollarSign className="w-3.5 h-3.5" />
+                  $ + %
                 </button>
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="budget-value">
-                  {formType === "percentage" ? "Percentage (%)" : "Monthly amount ($)"}
-                </Label>
-                <span className={`text-xs ${remainingPct < 5 ? "text-rose-500 font-medium" : "text-muted-foreground"}`}>
-                  {remainingPct.toFixed(1)}% remaining
-                </span>
+            {formType === "fixed_plus_percentage" ? (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="budget-base-amount">Base amount ($)</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                    <Input
+                      id="budget-base-amount"
+                      name="base_amount"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="440"
+                      value={formBaseAmount}
+                      onChange={(e) => setFormBaseAmount(e.target.value)}
+                      className="pl-7"
+                      required
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Fixed dollar amount (e.g. required car payment)</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="budget-value">Extra percentage (%)</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
+                    <Input
+                      id="budget-value"
+                      name="value"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="4"
+                      value={formValue}
+                      onChange={(e) => setFormValue(e.target.value)}
+                      className="pl-7"
+                      required
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Extra % of income on top</p>
+                </div>
+                {monthlyIncome > 0 && formBaseAmount && formValue && (
+                  <p className="text-xs text-muted-foreground">
+                    = {currency((parseFloat(formBaseAmount) || 0) + ((parseFloat(formValue) || 0) / 100) * monthlyIncome)}/mo based on current income
+                  </p>
+                )}
               </div>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                  {formType === "percentage" ? "%" : "$"}
-                </span>
-                <Input
-                  id="budget-value"
-                  name="value"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max={formType === "percentage" ? String(remainingPct) : undefined}
-                  placeholder={formType === "percentage" ? `up to ${remainingPct.toFixed(0)}` : "500"}
-                  value={formValue}
-                  onChange={(e) => setFormValue(e.target.value)}
-                  className="pl-7"
-                  required
-                />
+            ) : (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="budget-value">
+                    {formType === "percentage" ? "Percentage (%)" : "Monthly amount ($)"}
+                  </Label>
+                  <span className={`text-xs ${remainingPct < 5 ? "text-rose-500 font-medium" : "text-muted-foreground"}`}>
+                    {remainingPct.toFixed(1)}% remaining
+                  </span>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                    {formType === "percentage" ? "%" : "$"}
+                  </span>
+                  <Input
+                    id="budget-value"
+                    name="value"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={formType === "percentage" ? String(remainingPct) : undefined}
+                    placeholder={formType === "percentage" ? `up to ${remainingPct.toFixed(0)}` : "500"}
+                    value={formValue}
+                    onChange={(e) => setFormValue(e.target.value)}
+                    className="pl-7"
+                    required
+                  />
+                </div>
+                {formType === "percentage" && monthlyIncome > 0 && formValue && (
+                  <p className="text-xs text-muted-foreground">
+                    = {currency((parseFloat(formValue) / 100) * monthlyIncome)}/mo based on current income
+                  </p>
+                )}
+                {formType === "fixed" && monthlyIncome > 0 && formValue && (
+                  <p className="text-xs text-muted-foreground">
+                    = {((parseFloat(formValue) / monthlyIncome) * 100).toFixed(1)}% of this month's income
+                  </p>
+                )}
               </div>
-              {formType === "percentage" && monthlyIncome > 0 && formValue && (
-                <p className="text-xs text-muted-foreground">
-                  = {currency((parseFloat(formValue) / 100) * monthlyIncome)}/mo based on current income
-                </p>
-              )}
-              {formType === "fixed" && monthlyIncome > 0 && formValue && (
-                <p className="text-xs text-muted-foreground">
-                  = {((parseFloat(formValue) / monthlyIncome) * 100).toFixed(1)}% of this month's income
-                </p>
-              )}
-            </div>
+            )}
 
             {/* Goal mode toggle */}
             <div className="flex items-center justify-between rounded-lg border border-border p-3 bg-muted/30">

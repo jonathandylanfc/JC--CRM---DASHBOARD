@@ -18,7 +18,7 @@ interface Props {
   financeSummary: { income: number; expenses: number }
   lastMonthSummary: { income: number; expenses: number }
   expensesByCategory: Record<string, number>
-  categories: Array<{ id: string; name: string; type: "percentage" | "fixed"; value: number; sort_order: number; rollover: boolean; is_catchall: boolean; linked_account: string | null }>
+  categories: Array<{ id: string; name: string; type: "percentage" | "fixed" | "fixed_plus_percentage"; value: number; base_amount: number | null; sort_order: number; rollover: boolean; is_catchall: boolean; linked_account: string | null }>
   recentTransactions: Array<{ id: string; title: string; amount: number; type: string; category: string; date: string; account_name: string | null }>
   upcomingBills: Array<{ id: string; name: string; amount: number; billing_cycle: string; next_billing_date: string; category: string | null }>
   savingsGoals: Array<{ id: string; name: string; target_amount: number; current_amount: number; color: string; monthly_contribution_value: number | null; monthly_contribution_type: string | null }>
