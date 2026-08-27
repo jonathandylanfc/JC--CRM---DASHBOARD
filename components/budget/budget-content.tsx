@@ -2011,11 +2011,12 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
 
       {/* Add / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={(o) => { if (!o) setDialogOpen(false) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md max-h-[90dvh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>{editingCategory ? "Edit Category" : "New Budget Category"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="space-y-4 mt-2 overflow-y-auto flex-1 pr-1">
             <div className="space-y-1.5">
               <Label htmlFor="budget-name">Category name</Label>
               <Input
@@ -2211,8 +2212,9 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
             </div>
 
             {formError && <p className="text-sm text-destructive">{formError}</p>}
+          </div>
 
-            <div className="flex gap-3 pt-1">
+            <div className="flex gap-3 pt-3 shrink-0">
               <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>
