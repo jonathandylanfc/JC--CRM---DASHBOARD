@@ -77,6 +77,10 @@ function classifyTransaction(
 }
 
 export async function POST(req: NextRequest) {
+  if (process.env.PLAID_SYNC_PAUSED === "true") {
+    return NextResponse.json({ paused: true, count: 0 })
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
