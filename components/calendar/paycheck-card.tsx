@@ -461,8 +461,8 @@ export function PaycheckCard({ initialPaySettings }: PaycheckCardProps) {
                     )}
                   </p>
                   <button
-                    onClick={() => setPeriodOffset(o => Math.min(0, o + 1))}
-                    className={`p-1 rounded hover:bg-muted transition-colors ${periodOffset >= 0 ? "opacity-30 pointer-events-none" : ""}`}
+                    onClick={() => setPeriodOffset(o => Math.min(1, o + 1))}
+                    className={`p-1 rounded hover:bg-muted transition-colors ${periodOffset >= 1 ? "opacity-30 pointer-events-none" : ""}`}
                   >
                     <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
