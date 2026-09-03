@@ -41,6 +41,7 @@ import {
   ArrowLeftRight,
   ArrowUpDown,
   RefreshCw,
+  Coins,
 } from "lucide-react"
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns"
 import { toast } from "sonner"
@@ -590,6 +591,17 @@ export function FinanceContent({
     return list
   }, [accountTransactions, savedTx, dateRange, monthOffset, selectedCategory, searchQuery, sortBy])
 
+  const { roundUpTotal, roundUpCount } = useMemo(() => {
+    const expenses = displayTransactions.filter((tx) => tx.type === "expense")
+    let totalCents = 0
+    for (const tx of expenses) {
+      const cents = Math.round(Number(tx.amount) * 100)
+      const remainder = cents % 100
+      if (remainder > 0) totalCents += 100 - remainder
+    }
+    return { roundUpTotal: totalCents / 100, roundUpCount: expenses.length }
+  }, [displayTransactions])
+
   function exitSelectMode() {
     setSelectMode(false)
     setSelectedIds(new Set())
@@ -1024,6 +1036,21 @@ export function FinanceContent({
           )
         })()}
       </div>
+
+      {/* Round-Up Savings */}
+      {roundUpTotal > 0 && (
+        <Card className="p-4 flex items-center gap-4 bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800">
+          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
+            <Coins className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-violet-700 dark:text-violet-400 uppercase tracking-wide">Round-Up Savings</p>
+            <p className="text-sm text-violet-600/80 dark:text-violet-400/70 mt-0.5">
+              Deposit <span className="font-bold text-violet-800 dark:text-violet-300 text-base">{currency(roundUpTotal)}</span> to save the change from {roundUpCount} purchase{roundUpCount !== 1 ? "s" : ""}
+            </p>
+          </div>
+        </Card>
+      )}
 
       {/* Spending chart */}
       <Card className="p-5">
