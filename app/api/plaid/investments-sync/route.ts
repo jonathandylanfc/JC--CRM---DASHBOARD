@@ -12,7 +12,7 @@ const SKIP_CODES = new Set([
 ])
 
 export async function POST(req: NextRequest) {
-  if (process.env.PLAID_SYNC_PAUSED === "true") {
+  if (process.env.PLAID_SYNC_PAUSED === "true" || process.env.PLAID_INVESTMENTS_PAUSED === "true") {
     return NextResponse.json({ paused: true, count: 0 })
   }
 
