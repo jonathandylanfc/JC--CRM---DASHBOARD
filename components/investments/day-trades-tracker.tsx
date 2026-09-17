@@ -297,6 +297,8 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const [csvDupeIds, setCsvDupeIds] = useState<string[]>([])
   const [showDraftOrders, setShowDraftOrders] = useState(false)
   const [showPnlPreview, setShowPnlPreview] = useState(false)
+  const [showAllTrips, setShowAllTrips] = useState(false)
+  const [showAllOrders, setShowAllOrders] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [setAccountOpen, setSetAccountOpen] = useState(false)
@@ -615,8 +617,10 @@ export function DayTradesTracker({ initialTrades }: Props) {
 
               {/* Round Trips view */}
               {!showOrders && (() => {
+                const PREVIEW = 3
+                const visibleTrips = showAllTrips ? trips : trips.slice(0, PREVIEW)
                 const byDate: Record<string, RoundTrip[]> = {}
-                for (const t of trips) {
+                for (const t of visibleTrips) {
                   const d = t.closedAt.slice(0, 10)
                   if (!byDate[d]) byDate[d] = []
                   byDate[d].push(t)
@@ -768,16 +772,29 @@ export function DayTradesTracker({ initialTrades }: Props) {
                       </tbody>
                     </table>
                   </div>
+                  {trips.length > PREVIEW && (
+                    <button
+                      onClick={() => setShowAllTrips((v) => !v)}
+                      className="mt-2 w-full text-xs text-muted-foreground hover:text-foreground transition-colors text-center"
+                    >
+                      {showAllTrips ? "Show fewer" : `Show all ${trips.length} trades`}
+                    </button>
+                  )}
                   </>
                 )
               })()}
 
               {/* All Orders view */}
-              {showOrders && (
+              {showOrders && (() => {
+                const PREVIEW_ORDERS = 3
+                const sortedOrders = [...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime())
+                const visibleOrders = showAllOrders ? sortedOrders : sortedOrders.slice(0, PREVIEW_ORDERS)
+                return (
+                <>
                 <div className="rounded-xl border border-border overflow-hidden">
                   {/* Mobile card layout */}
                   <div className="sm:hidden divide-y divide-border/50">
-                    {[...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => {
+                    {visibleOrders.map((t) => {
                       const isSelected = selectedIds.has(t.id)
                       return (
                         <div
@@ -824,7 +841,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {[...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => {
+                      {visibleOrders.map((t) => {
                         const isSelected = selectedIds.has(t.id)
                         return (
                           <tr
@@ -861,7 +878,17 @@ export function DayTradesTracker({ initialTrades }: Props) {
                     </tbody>
                   </table>
                 </div>
-              )}
+                {sortedOrders.length > PREVIEW_ORDERS && (
+                  <button
+                    onClick={() => setShowAllOrders((v) => !v)}
+                    className="mt-2 w-full text-xs text-muted-foreground hover:text-foreground transition-colors text-center"
+                  >
+                    {showAllOrders ? "Show fewer" : `Show all ${sortedOrders.length} orders`}
+                  </button>
+                )}
+                </>
+                )
+              })()}
             </>
           )}
         </>
