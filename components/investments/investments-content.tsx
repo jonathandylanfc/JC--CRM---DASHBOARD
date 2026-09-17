@@ -55,6 +55,7 @@ import { AnalystRatings } from "./analyst-ratings"
 import { AiMarketInsights } from "./ai-market-insights"
 import { MorningBriefingButton } from "./morning-briefing-button"
 import { DayTradesTracker } from "./day-trades-tracker"
+import { EconomicCalendar } from "./economic-calendar"
 import type { DayTrade } from "@/app/investments/day-trades-actions"
 
 
@@ -563,6 +564,9 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
     <div className="space-y-6">
       {/* Market Pulse — live indices */}
       <MarketPulse holdingSymbols={holdingSymbols} />
+
+      {/* Economic Calendar — macro events, earnings, Fed speak */}
+      <EconomicCalendar />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
