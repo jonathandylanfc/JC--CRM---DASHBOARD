@@ -621,7 +621,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
   }
 
   // Summary calculations
-  const { totalBudgeted, totalPercent, catchallSpending } = useMemo(() => {
+  const { totalBudgeted, totalPercent, catchallSpending, totalSpending } = useMemo(() => {
     const totalBudgeted = categories.reduce((sum, cat) => sum + budgetedAmount(cat, monthlyIncome), 0)
     const totalPercent = monthlyIncome > 0 ? (totalBudgeted / monthlyIncome) * 100 : 0
 
@@ -632,7 +632,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
     const totalExpenses = Object.values(expensesByCategory).reduce((s, v) => s + v, 0)
     const catchallSpending = Math.max(0, totalExpenses - namedSpending)
 
-    return { totalBudgeted, totalPercent, catchallSpending }
+    return { totalBudgeted, totalPercent, catchallSpending, totalSpending: totalExpenses }
   }, [categories, monthlyIncome, expensesByCategory])
 
   function getCatNet(cat: BudgetCategory): number {
@@ -675,7 +675,7 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
       </div>
 
       {/* Summary cards */}
-      <div className={`grid grid-cols-2 gap-4 ${usingExpectedIncome ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+      <div className={`grid grid-cols-2 gap-4 ${usingExpectedIncome ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
         {/* Income Received */}
         <Card className="p-5 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800">
           <div className="flex items-center justify-between mb-2">
@@ -702,6 +702,30 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
             </p>
           )}
         </Card>
+
+        {/* Total Spending */}
+        {(() => {
+          const overSpend = totalBudgeted > 0 && totalSpending > totalBudgeted
+          const nearLimit = !overSpend && totalBudgeted > 0 && totalSpending / totalBudgeted >= 0.8
+          const spendPct = monthlyIncome > 0 ? (totalSpending / monthlyIncome) * 100 : 0
+          const color = overSpend
+            ? { card: "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800", label: "text-rose-700 dark:text-rose-400", value: "text-rose-800 dark:text-rose-300", sub: "text-rose-600 dark:text-rose-500", icon: "text-rose-600" }
+            : nearLimit
+            ? { card: "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800", label: "text-amber-700 dark:text-amber-400", value: "text-amber-800 dark:text-amber-300", sub: "text-amber-600 dark:text-amber-500", icon: "text-amber-600" }
+            : { card: "bg-muted/60 border-border", label: "text-muted-foreground", value: "text-foreground", sub: "text-muted-foreground", icon: "text-muted-foreground" }
+          return (
+            <Card className={`p-5 ${color.card}`}>
+              <div className="flex items-center justify-between mb-2">
+                <p className={`text-sm font-medium ${color.label}`}>Total Spending</p>
+                <TrendingDown className={`w-4 h-4 ${color.icon}`} />
+              </div>
+              <p className={`text-2xl font-bold ${color.value}`}>{currency(totalSpending)}</p>
+              <p className={`text-xs mt-1 ${color.sub}`}>
+                {spendPct.toFixed(1)}% of income{overSpend ? " — over budget!" : nearLimit ? " — near limit" : ""}
+              </p>
+            </Card>
+          )
+        })()}
 
         {/* Estimated Income — only when synced */}
         {usingExpectedIncome && (
