@@ -260,6 +260,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
   const [historyRange, setHistoryRange] = useState<"1d" | "1w" | "30d" | "6m" | "1y" | "all">("1w")
   const [historyNoKey, setHistoryNoKey] = useState(false)
   const [historyRateLimited, setHistoryRateLimited] = useState(false)
+  const [activeTab, setActiveTab] = useState<"trading" | "investments">("trading")
 
   const fetchHistory = useCallback(async () => {
     if (investments.length === 0) return
@@ -562,11 +563,44 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
 
   return (
     <div className="space-y-6">
-      {/* Market Pulse — live indices */}
-      <MarketPulse holdingSymbols={holdingSymbols} />
+      {/* Tab switcher */}
+      <div className="flex items-center gap-0 border-b border-border">
+        <button
+          onClick={() => setActiveTab("trading")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === "trading" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+        >
+          Trading
+        </button>
+        <button
+          onClick={() => setActiveTab("investments")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === "investments" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+        >
+          Investments
+        </button>
+      </div>
 
-      {/* Economic Calendar — macro events, earnings, Fed speak */}
-      <EconomicCalendar />
+      {/* ── Trading tab ────────────────────────────────────── */}
+      {activeTab === "trading" && (
+        <div className="space-y-6">
+          <MarketPulse holdingSymbols={holdingSymbols} />
+          <EconomicCalendar />
+          <Card className="p-4 md:p-6">
+            <DayTradesTracker initialTrades={initialDayTrades} />
+          </Card>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2">
+              <MarketNews holdingSymbols={holdingSymbols} />
+            </div>
+            <div>
+              <AnalystRatings holdingSymbols={holdingSymbols} sharesMap={sharesMap} avgCostMap={avgCostMap} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Investments tab ────────────────────────────────── */}
+      {activeTab === "investments" && (
+        <div className="space-y-6">
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -985,27 +1019,11 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
         </div>
       )}
 
-      {/* Day Trades Tracker */}
-      <Card className="p-4 md:p-6">
-        <DayTradesTracker initialTrades={initialDayTrades} />
-      </Card>
-
       {/* AI Insights — full width */}
       {investments.length > 0 && <AiMarketInsights />}
 
-      {/* News + Analyst Ratings — bottom of page */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <MarketNews holdingSymbols={holdingSymbols} />
         </div>
-        <div>
-          <AnalystRatings
-            holdingSymbols={holdingSymbols}
-            sharesMap={sharesMap}
-            avgCostMap={avgCostMap}
-          />
-        </div>
-      </div>
+      )}
 
       {/* Buy More dialog */}
       <Dialog open={!!buyMoreTarget} onOpenChange={(o) => { if (!o) setBuyMoreTarget(null) }}>
