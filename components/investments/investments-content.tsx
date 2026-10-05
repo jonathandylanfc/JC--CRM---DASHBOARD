@@ -569,13 +569,13 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
           onClick={() => setActiveTab("trading")}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === "trading" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
         >
-          Trading
+          Day Trading
         </button>
         <button
           onClick={() => setActiveTab("investments")}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === "investments" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
         >
-          Investments
+          Long Term Investments
         </button>
       </div>
 
