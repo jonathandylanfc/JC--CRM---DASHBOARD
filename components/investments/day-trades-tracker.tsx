@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Upload, Trash2, TrendingUp, TrendingDown, ImageIcon, Loader2, ChevronDown, ChevronRight, Plus, List, FileText, CheckSquare, Pencil, X } from "lucide-react"
+import { Upload, Trash2, TrendingUp, TrendingDown, ImageIcon, Loader2, ChevronDown, ChevronRight, ChevronLeft, Plus, List, CalendarDays, FileText, CheckSquare, Pencil, X } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { format } from "date-fns"
@@ -297,6 +297,13 @@ export function DayTradesTracker({ initialTrades }: Props) {
   const [csvDupeIds, setCsvDupeIds] = useState<string[]>([])
   const [showDraftOrders, setShowDraftOrders] = useState(false)
   const [showPnlPreview, setShowPnlPreview] = useState(false)
+  const [showAllTrips, setShowAllTrips] = useState(false)
+  const [showAllOrders, setShowAllOrders] = useState(false)
+  const [tradeViewMode, setTradeViewMode] = useState<"list" | "calendar">("list")
+  const [calendarMonth, setCalendarMonth] = useState<{ year: number; month: number }>(() => {
+    const d = new Date()
+    return { year: d.getFullYear(), month: d.getMonth() }
+  })
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [setAccountOpen, setSetAccountOpen] = useState(false)
@@ -592,31 +599,120 @@ export function DayTradesTracker({ initialTrades }: Props) {
                     <List className="w-3 h-3" /> All Orders
                   </button>
                 </div>
-                {showOrders && (
-                  selectMode ? (
-                    <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" className="gap-1.5 bg-transparent h-7 text-xs" disabled={selectedIds.size === 0 || isBulkSaving} onClick={() => { setSetAccountValue(""); setSetAccountOpen(true) }}>
-                        <Pencil className="w-3.5 h-3.5" /> Set Account
-                      </Button>
-                      <Button variant="destructive" size="sm" className="gap-1.5 h-7 text-xs" disabled={selectedIds.size === 0 || isBulkSaving} onClick={handleBulkDelete}>
-                        <Trash2 className="w-3.5 h-3.5" /> {selectedIds.size > 0 ? `Delete ${selectedIds.size}` : "Delete"}
-                      </Button>
-                      <Button variant="outline" size="sm" className="gap-1 bg-transparent h-7 text-xs" onClick={() => { setSelectMode(false); setSelectedIds(new Set()) }}>
-                        <X className="w-3.5 h-3.5" /> Cancel
-                      </Button>
+                <div className="flex items-center gap-1.5">
+                  {!showOrders && (
+                    <div className="flex items-center border border-border rounded-md overflow-hidden">
+                      <button
+                        onClick={() => setTradeViewMode("list")}
+                        title="List view"
+                        className={`px-2 py-1 transition-colors ${tradeViewMode === "list" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50"}`}
+                      >
+                        <List className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setTradeViewMode("calendar")}
+                        title="Calendar view"
+                        className={`px-2 py-1 transition-colors ${tradeViewMode === "calendar" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50"}`}
+                      >
+                        <CalendarDays className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  ) : (
-                    <Button variant="outline" size="sm" className="gap-1.5 bg-transparent h-7 text-xs" onClick={() => setSelectMode(true)}>
-                      <CheckSquare className="w-3.5 h-3.5" /> Select
-                    </Button>
-                  )
-                )}
+                  )}
+                  {showOrders && (
+                    selectMode ? (
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" className="gap-1.5 bg-transparent h-7 text-xs" disabled={selectedIds.size === 0 || isBulkSaving} onClick={() => { setSetAccountValue(""); setSetAccountOpen(true) }}>
+                          <Pencil className="w-3.5 h-3.5" /> Set Account
+                        </Button>
+                        <Button variant="destructive" size="sm" className="gap-1.5 h-7 text-xs" disabled={selectedIds.size === 0 || isBulkSaving} onClick={handleBulkDelete}>
+                          <Trash2 className="w-3.5 h-3.5" /> {selectedIds.size > 0 ? `Delete ${selectedIds.size}` : "Delete"}
+                        </Button>
+                        <Button variant="outline" size="sm" className="gap-1 bg-transparent h-7 text-xs" onClick={() => { setSelectMode(false); setSelectedIds(new Set()) }}>
+                          <X className="w-3.5 h-3.5" /> Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button variant="outline" size="sm" className="gap-1.5 bg-transparent h-7 text-xs" onClick={() => setSelectMode(true)}>
+                        <CheckSquare className="w-3.5 h-3.5" /> Select
+                      </Button>
+                    )
+                  )}
+                </div>
               </div>
 
               {/* Round Trips view */}
               {!showOrders && (() => {
+                // Calendar view
+                if (tradeViewMode === "calendar") {
+                  const { year, month } = calendarMonth
+                  const firstDow = new Date(year, month, 1).getDay()
+                  const daysInMonth = new Date(year, month + 1, 0).getDate()
+                  const monthLabel = new Date(year, month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+                  const todayStr = new Date().toISOString().slice(0, 10)
+                  const dailyMap: Record<string, number> = {}
+                  for (const t of trips) {
+                    const d = t.closedAt.slice(0, 10)
+                    dailyMap[d] = (dailyMap[d] ?? 0) + t.pnl
+                  }
+                  type DayCell = { day: number; date: string; pnl: number | null }
+                  const cells: Array<DayCell | null> = []
+                  for (let i = 0; i < firstDow; i++) cells.push(null)
+                  for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+                    cells.push({ day: d, date: dateStr, pnl: dailyMap[dateStr] !== undefined ? dailyMap[dateStr] : null })
+                  }
+                  const prevMo = () => setCalendarMonth(({ year: y, month: m }) => m === 0 ? { year: y - 1, month: 11 } : { year: y, month: m - 1 })
+                  const nextMo = () => setCalendarMonth(({ year: y, month: m }) => m === 11 ? { year: y + 1, month: 0 } : { year: y, month: m + 1 })
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between px-1">
+                        <button onClick={prevMo} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <span className="text-sm font-semibold">{monthLabel}</span>
+                        <button onClick={nextMo} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-7 gap-1">
+                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                          <div key={d} className="text-center text-[10px] font-medium text-muted-foreground py-1">{d}</div>
+                        ))}
+                        {cells.map((cell, i) => {
+                          if (!cell) return <div key={`e-${i}`} />
+                          const isToday = cell.date === todayStr
+                          const pos = cell.pnl !== null && cell.pnl > 0
+                          const neg = cell.pnl !== null && cell.pnl < 0
+                          const hasTrades = cell.pnl !== null
+                          const amt = cell.pnl ?? 0
+                          const compact = Math.abs(amt) >= 1000
+                            ? `${amt >= 0 ? "+" : "-"}$${(Math.abs(amt) / 1000).toFixed(1)}k`
+                            : `${amt >= 0 ? "+" : ""}$${Math.abs(amt).toFixed(0)}`
+                          return (
+                            <div
+                              key={cell.date}
+                              className={`rounded-lg p-1 min-h-[48px] flex flex-col items-center gap-0.5 border transition-colors ${
+                                isToday ? "border-primary/60" : hasTrades ? "border-border/60" : "border-transparent"
+                              } ${pos ? "bg-emerald-500/10" : neg ? "bg-rose-500/10" : hasTrades ? "bg-muted/20" : ""}`}
+                            >
+                              <span className={`text-[11px] font-medium ${isToday ? "text-primary font-bold" : "text-muted-foreground"}`}>{cell.day}</span>
+                              {hasTrades && (
+                                <span className={`text-[9px] font-semibold leading-tight text-center ${pos ? "text-emerald-600 dark:text-emerald-400" : neg ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"}`}>
+                                  {compact}
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                }
+
+                const PREVIEW = 5
+                const visibleTrips = showAllTrips ? trips : trips.slice(0, PREVIEW)
                 const byDate: Record<string, RoundTrip[]> = {}
-                for (const t of trips) {
+                for (const t of visibleTrips) {
                   const d = t.closedAt.slice(0, 10)
                   if (!byDate[d]) byDate[d] = []
                   byDate[d].push(t)
@@ -768,16 +864,29 @@ export function DayTradesTracker({ initialTrades }: Props) {
                       </tbody>
                     </table>
                   </div>
+                  {trips.length > PREVIEW && (
+                    <button
+                      onClick={() => setShowAllTrips((v) => !v)}
+                      className="mt-2 w-full text-xs text-muted-foreground hover:text-foreground transition-colors text-center"
+                    >
+                      {showAllTrips ? "Show fewer" : `Show all ${trips.length} trades`}
+                    </button>
+                  )}
                   </>
                 )
               })()}
 
               {/* All Orders view */}
-              {showOrders && (
+              {showOrders && (() => {
+                const PREVIEW_ORDERS = 5
+                const sortedOrders = [...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime())
+                const visibleOrders = showAllOrders ? sortedOrders : sortedOrders.slice(0, PREVIEW_ORDERS)
+                return (
+                <>
                 <div className="rounded-xl border border-border overflow-hidden">
                   {/* Mobile card layout */}
                   <div className="sm:hidden divide-y divide-border/50">
-                    {[...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => {
+                    {visibleOrders.map((t) => {
                       const isSelected = selectedIds.has(t.id)
                       return (
                         <div
@@ -824,7 +933,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {[...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime()).map((t) => {
+                      {visibleOrders.map((t) => {
                         const isSelected = selectedIds.has(t.id)
                         return (
                           <tr
@@ -861,7 +970,17 @@ export function DayTradesTracker({ initialTrades }: Props) {
                     </tbody>
                   </table>
                 </div>
-              )}
+                {sortedOrders.length > PREVIEW_ORDERS && (
+                  <button
+                    onClick={() => setShowAllOrders((v) => !v)}
+                    className="mt-2 w-full text-xs text-muted-foreground hover:text-foreground transition-colors text-center"
+                  >
+                    {showAllOrders ? "Show fewer" : `Show all ${sortedOrders.length} orders`}
+                  </button>
+                )}
+                </>
+                )
+              })()}
             </>
           )}
         </>
