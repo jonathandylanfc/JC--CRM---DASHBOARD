@@ -709,7 +709,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
                   )
                 }
 
-                const PREVIEW = 5
+                const PREVIEW = 3
                 const visibleTrips = showAllTrips ? trips : trips.slice(0, PREVIEW)
                 const byDate: Record<string, RoundTrip[]> = {}
                 for (const t of visibleTrips) {
@@ -878,7 +878,7 @@ export function DayTradesTracker({ initialTrades }: Props) {
 
               {/* All Orders view */}
               {showOrders && (() => {
-                const PREVIEW_ORDERS = 5
+                const PREVIEW_ORDERS = 3
                 const sortedOrders = [...filteredTrades].sort((a, b) => new Date(b.traded_at).getTime() - new Date(a.traded_at).getTime())
                 const visibleOrders = showAllOrders ? sortedOrders : sortedOrders.slice(0, PREVIEW_ORDERS)
                 return (
