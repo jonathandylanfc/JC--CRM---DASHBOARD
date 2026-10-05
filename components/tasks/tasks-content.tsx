@@ -630,7 +630,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="w-8 h-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                          className="hidden sm:inline-flex w-8 h-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
                           onClick={() => handleSendToCalendar(task)}
                           disabled={calendarPending === task.id}
                           title="Send to Google Calendar"
@@ -641,7 +641,7 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="w-8 h-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        className="hidden sm:inline-flex w-8 h-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         onClick={() => setConfirmDeleteTaskId(task.id)}
                         title="Delete task"
                       >
@@ -947,6 +947,14 @@ export function TasksContent({ initialTasks }: TasksContentProps) {
               </div>
               {editError && <p className="text-sm text-destructive">{editError}</p>}
               <div className="flex gap-3 pt-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10 px-3"
+                  onClick={() => { setConfirmDeleteTaskId(editingTask.id); setEditingTask(null) }}
+                >
+                  Delete
+                </Button>
                 <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => setEditingTask(null)}>
                   Cancel
                 </Button>
