@@ -123,6 +123,40 @@ function budgetedAmount(cat: BudgetCategory, income: number): number {
   return cat.value
 }
 
+const INVEST_KEYWORDS = ["401k", "ira", "roth", "stock", "invest", "brokerage", "espp", "hsa", "retirement", "fidelity", "vanguard", "schwab", "webull", "acorns", "etf"]
+
+function isInvestmentCategory(name: string): boolean {
+  const n = name.toLowerCase()
+  return INVEST_KEYWORDS.some((kw) => n.includes(kw))
+}
+
+function parseInvestMeta(keywords: string | null) {
+  const parts = (keywords ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+  let matchPct: number | null = null
+  let currentBalance: number | null = null
+  const real: string[] = []
+  for (const p of parts) {
+    if (p.startsWith("~em:")) { const v = parseFloat(p.slice(4)); if (!isNaN(v)) matchPct = v }
+    else if (p.startsWith("~cb:")) { const v = parseFloat(p.slice(4)); if (!isNaN(v)) currentBalance = v }
+    else real.push(p)
+  }
+  return { matchPct, currentBalance, realKeywords: real.join(",") }
+}
+
+function mergeInvestMeta(realKw: string, matchPct: number | null, cb: number | null): string {
+  const parts = realKw.split(",").map((s) => s.trim()).filter(Boolean)
+  if (matchPct != null && matchPct > 0) parts.push(`~em:${matchPct}`)
+  if (cb != null) parts.push(`~cb:${cb}`)
+  return parts.join(",")
+}
+
+function projectBalance(current: number, monthly: number, years: number, rate = 0.07): number {
+  const r = rate / 12
+  const n = years * 12
+  if (r === 0) return current + monthly * n
+  return current * Math.pow(1 + r, n) + monthly * (Math.pow(1 + r, n) - 1) / r
+}
+
 function calcPayoffMonths(balance: number, annualRate: number, monthlyPayment: number): number | null {
   if (monthlyPayment <= 0 || balance <= 0) return null
   const r = annualRate / 12
@@ -512,6 +546,9 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
   const [formBaseAmount, setFormBaseAmount] = useState("")
   const [formCatchall, setFormCatchall] = useState(false)
   const [formGoalMode, setFormGoalMode] = useState(false)
+  const [formTransferKeywords, setFormTransferKeywords] = useState("")
+  const [formInvestMatch, setFormInvestMatch] = useState("")
+  const [formInvestBalance, setFormInvestBalance] = useState("")
 
   function openAdd() {
     setEditingCategory(null)
@@ -521,6 +558,9 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
     setFormBaseAmount("")
     setFormCatchall(false)
     setFormGoalMode(false)
+    setFormTransferKeywords("")
+    setFormInvestMatch("")
+    setFormInvestBalance("")
     setFormError(null)
     setDialogOpen(true)
   }
@@ -533,6 +573,10 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
     setFormBaseAmount(cat.base_amount != null ? String(cat.base_amount) : "")
     setFormCatchall(cat.is_catchall ?? false)
     setFormGoalMode(cat.is_goal_mode ?? false)
+    const { matchPct, currentBalance, realKeywords } = parseInvestMeta(cat.transfer_keywords)
+    setFormTransferKeywords(realKeywords)
+    setFormInvestMatch(matchPct != null ? String(matchPct) : "")
+    setFormInvestBalance(currentBalance != null ? String(currentBalance) : "")
     setFormError(null)
     setDialogOpen(true)
   }
@@ -549,14 +593,18 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setFormError(null)
-    // Keep uncontrolled fields (transfer_keywords, category_aliases) from DOM,
-    // then explicitly set all controlled fields from React state
+    // Keep uncontrolled fields (category_aliases) from DOM,
+    // explicitly set all controlled fields from React state
     const fd = new FormData(e.currentTarget)
     fd.set("name", formName)
     fd.set("type", formType)
     fd.set("value", formValue)
     fd.set("is_catchall", String(formCatchall))
     fd.set("is_goal_mode", String(formGoalMode))
+    // Merge investment meta markers into transfer_keywords
+    const matchVal = formInvestMatch ? parseFloat(formInvestMatch) : null
+    const cbVal = formInvestBalance !== "" ? parseFloat(formInvestBalance) : null
+    fd.set("transfer_keywords", mergeInvestMeta(formTransferKeywords, matchVal !== null && isNaN(matchVal) ? null : matchVal, cbVal !== null && isNaN(cbVal) ? null : cbVal))
     if (formType === "fixed_plus_percentage") {
       fd.set("base_amount", formBaseAmount)
     }
@@ -1422,6 +1470,103 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Investment Breakdown */}
+      {(() => {
+        const investCats = categories.filter((c) => isInvestmentCategory(c.name))
+        if (investCats.length === 0) return null
+        const totalMonthly = investCats.reduce((sum, c) => {
+          const { matchPct } = parseInvestMeta(c.transfer_keywords)
+          const m = budgetedAmount(c, monthlyIncome)
+          return sum + m + (matchPct != null ? m * (matchPct / 100) : 0)
+        }, 0)
+        return (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-primary" />
+                Investment Breakdown
+              </h2>
+              <span className="text-xs text-muted-foreground">{currency(totalMonthly)}/mo total</span>
+            </div>
+            <Card className="p-5">
+              <div className="space-y-5">
+                {investCats.map((cat) => {
+                  const { matchPct, currentBalance } = parseInvestMeta(cat.transfer_keywords)
+                  const monthly = budgetedAmount(cat, monthlyIncome)
+                  const matchMonthly = matchPct != null ? monthly * (matchPct / 100) : 0
+                  const totalMo = monthly + matchMonthly
+                  const cb = currentBalance ?? 0
+                  const proj5 = projectBalance(cb, totalMo, 5)
+                  const proj10 = projectBalance(cb, totalMo, 10)
+                  const proj30 = projectBalance(cb, totalMo, 30)
+                  return (
+                    <div key={cat.id} className="pb-5 border-b border-border last:border-0 last:pb-0">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="font-semibold text-sm">{cat.name}</p>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[10px]">
+                            {cat.type === "percentage" ? `${cat.value}% of income` : `${currency(cat.value)}/mo`}
+                          </Badge>
+                          <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-foreground" onClick={() => openEdit(cat)}>
+                            <Pencil className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-3">
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Your monthly</p>
+                          <p className="font-semibold tabular-nums">{currency(monthly)}</p>
+                          <p className="text-muted-foreground">{currency(monthly * 12)}/yr</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">
+                            {matchPct != null && matchPct > 0 ? `Employer match (${matchPct}%)` : "Employer match"}
+                          </p>
+                          <p className={`font-semibold tabular-nums ${matchPct != null && matchPct > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                            {matchPct != null && matchPct > 0 ? `+${currency(matchMonthly)}` : "—"}
+                          </p>
+                          {matchPct != null && matchPct > 0 && <p className="text-muted-foreground">+{currency(matchMonthly * 12)}/yr free</p>}
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Total monthly</p>
+                          <p className="font-semibold tabular-nums">{currency(totalMo)}</p>
+                          <p className="text-muted-foreground">{currency(totalMo * 12)}/yr</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Current balance</p>
+                          {currentBalance != null ? (
+                            <p className="font-semibold tabular-nums">{currency(currentBalance)}</p>
+                          ) : (
+                            <button onClick={() => openEdit(cat)} className="text-[10px] text-primary underline underline-offset-2 hover:opacity-70">tap pencil to add</button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div className="rounded-md bg-muted/50 p-2">
+                          <p className="text-muted-foreground mb-0.5">5yr est.</p>
+                          <p className="font-semibold tabular-nums">{currency(proj5)}</p>
+                        </div>
+                        <div className="rounded-md bg-muted/50 p-2">
+                          <p className="text-muted-foreground mb-0.5">10yr est.</p>
+                          <p className="font-semibold tabular-nums">{currency(proj10)}</p>
+                        </div>
+                        <div className="rounded-md bg-primary/10 border border-primary/20 p-2">
+                          <p className="text-muted-foreground mb-0.5">30yr est.</p>
+                          <p className="font-semibold tabular-nums text-primary">{currency(proj30)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-4 pt-3 border-t border-border">
+                Projections assume 7% average annual return, compounded monthly, with consistent contributions. Edit each category to add current balance and employer match.
+              </p>
+            </Card>
+          </div>
+        )
+      })()}
+
       {/* Category list */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -2227,7 +2372,8 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
               <Input
                 id="cat-transfer-kw"
                 name="transfer_keywords"
-                defaultValue={editingCategory?.transfer_keywords ?? ""}
+                value={formTransferKeywords}
+                onChange={(e) => setFormTransferKeywords(e.target.value)}
                 placeholder="e.g. honda, car payment"
               />
               <p className="text-xs text-muted-foreground">Separate multiple keywords with commas — any match counts (e.g. "honda, car payment" catches either).</p>
@@ -2242,6 +2388,39 @@ export function BudgetContent({ initialCategories, monthlyIncome: actualMonthlyI
               />
               <p className="text-xs text-muted-foreground">Comma-separated transaction category names that should count toward this budget slot (e.g. "shopping" rolls Costco purchases in here).</p>
             </div>
+
+            {isInvestmentCategory(formName) && (
+              <div className="space-y-3 p-3 rounded-lg border border-border bg-muted/20">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Investment Details</p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cat-invest-balance">Current balance ($)</Label>
+                  <Input
+                    id="cat-invest-balance"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="e.g. 12000"
+                    value={formInvestBalance}
+                    onChange={(e) => setFormInvestBalance(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">What's already in this account — growth projections start from here.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cat-invest-match">Employer match (% of your contribution)</Label>
+                  <Input
+                    id="cat-invest-match"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="200"
+                    placeholder="e.g. 50 means employer adds $0.50 per $1 you put in"
+                    value={formInvestMatch}
+                    onChange={(e) => setFormInvestMatch(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">Leave blank if no employer match (e.g. stock account, Roth IRA).</p>
+                </div>
+              </div>
+            )}
 
             {formError && <p className="text-sm text-destructive">{formError}</p>}
           </div>
