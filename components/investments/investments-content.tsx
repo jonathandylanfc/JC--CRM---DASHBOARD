@@ -197,14 +197,56 @@ function parseWebullCsv(text: string): Array<{ symbol: string; name?: string; sh
   return Array.from(results.values()).filter((r) => r.shares > 0)
 }
 
+interface BudgetCat {
+  id: string
+  name: string
+  type: "percentage" | "fixed" | "fixed_plus_percentage"
+  value: number
+  base_amount: number | null
+  transfer_keywords: string | null
+}
+
 interface Props {
   initialInvestments: Investment[]
   prevCloseMap?: Record<string, number>
   initialDayTrades?: DayTrade[]
   initialAutoContribs?: AutoContrib[]
+  budgetCategories?: BudgetCat[]
+  budgetMonthlyIncome?: number
 }
 
-export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [], initialAutoContribs = [] }: Props) {
+const INVEST_KEYWORDS = ["401k", "ira", "roth", "stock", "invest", "brokerage", "espp", "hsa", "retirement", "fidelity", "vanguard", "schwab", "webull", "acorns", "etf"]
+
+function isInvestmentCategory(name: string): boolean {
+  const n = name.toLowerCase()
+  return INVEST_KEYWORDS.some((kw) => n.includes(kw))
+}
+
+function parseInvestMeta(keywords: string | null) {
+  const parts = (keywords ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+  let matchPct: number | null = null
+  let currentBalance: number | null = null
+  for (const p of parts) {
+    if (p.startsWith("~em:")) { const v = parseFloat(p.slice(4)); if (!isNaN(v)) matchPct = v }
+    else if (p.startsWith("~cb:")) { const v = parseFloat(p.slice(4)); if (!isNaN(v)) currentBalance = v }
+  }
+  return { matchPct, currentBalance }
+}
+
+function budgetedAmount(cat: BudgetCat, income: number): number {
+  if (cat.type === "percentage") return (cat.value / 100) * income
+  if (cat.type === "fixed_plus_percentage") return (cat.base_amount ?? 0) + (cat.value / 100) * income
+  return cat.value
+}
+
+function projectBalance(current: number, monthly: number, years: number, rate = 0.07): number {
+  const r = rate / 12
+  const n = years * 12
+  if (r === 0) return current + monthly * n
+  return current * Math.pow(1 + r, n) + monthly * (Math.pow(1 + r, n) - 1) / r
+}
+
+export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [], initialAutoContribs = [], budgetCategories = [], budgetMonthlyIncome = 0 }: Props) {
   const router = useRouter()
 
   // Take full control of scroll restoration — browser auto-restore misfires on this page
@@ -601,6 +643,96 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       {/* ── Investments tab ────────────────────────────────── */}
       {activeTab === "investments" && (
         <div className="space-y-6">
+
+      {/* Funded from Budget */}
+      {(() => {
+        const investCats = budgetCategories.filter((c) => isInvestmentCategory(c.name))
+        if (investCats.length === 0 || budgetMonthlyIncome === 0) return null
+        const totalMonthly = investCats.reduce((sum, c) => {
+          const { matchPct } = parseInvestMeta(c.transfer_keywords)
+          const m = budgetedAmount(c, budgetMonthlyIncome)
+          return sum + m + (matchPct != null ? m * (matchPct / 100) : 0)
+        }, 0)
+        return (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-primary" />
+                Funded from Budget
+              </h2>
+              <span className="text-xs text-muted-foreground">{currency(totalMonthly)}/mo total</span>
+            </div>
+            <Card className="p-4">
+              <div className="space-y-4">
+                {investCats.map((cat) => {
+                  const { matchPct, currentBalance } = parseInvestMeta(cat.transfer_keywords)
+                  const monthly = budgetedAmount(cat, budgetMonthlyIncome)
+                  const matchMonthly = matchPct != null ? monthly * (matchPct / 100) : 0
+                  const totalMo = monthly + matchMonthly
+                  const cb = currentBalance ?? 0
+                  const proj5 = projectBalance(cb, totalMo, 5)
+                  const proj10 = projectBalance(cb, totalMo, 10)
+                  const proj30 = projectBalance(cb, totalMo, 30)
+                  return (
+                    <div key={cat.id} className="pb-4 border-b border-border last:border-0 last:pb-0">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="font-semibold text-sm">{cat.name}</p>
+                        <Badge variant="outline" className="text-[10px]">
+                          {cat.type === "percentage" ? `${cat.value}% of income` : `${currency(cat.value)}/mo`}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-3">
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Your monthly</p>
+                          <p className="font-semibold tabular-nums">{currency(monthly)}</p>
+                          <p className="text-muted-foreground">{currency(monthly * 12)}/yr</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">
+                            {matchPct != null && matchPct > 0 ? `Employer match (${matchPct}%)` : "Employer match"}
+                          </p>
+                          <p className={`font-semibold tabular-nums ${matchPct != null && matchPct > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                            {matchPct != null && matchPct > 0 ? `+${currency(matchMonthly)}` : "—"}
+                          </p>
+                          {matchPct != null && matchPct > 0 && <p className="text-muted-foreground">+{currency(matchMonthly * 12)}/yr</p>}
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Total monthly</p>
+                          <p className="font-semibold tabular-nums">{currency(totalMo)}</p>
+                          <p className="text-muted-foreground">{currency(totalMo * 12)}/yr</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Current balance</p>
+                          <p className="font-semibold tabular-nums">
+                            {currentBalance != null ? currency(currentBalance) : <span className="text-muted-foreground/60 text-[10px]">set in Budget</span>}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div className="rounded-md bg-muted/50 p-2">
+                          <p className="text-muted-foreground mb-0.5">5yr est.</p>
+                          <p className="font-semibold tabular-nums">{currency(proj5)}</p>
+                        </div>
+                        <div className="rounded-md bg-muted/50 p-2">
+                          <p className="text-muted-foreground mb-0.5">10yr est.</p>
+                          <p className="font-semibold tabular-nums">{currency(proj10)}</p>
+                        </div>
+                        <div className="rounded-md bg-primary/10 border border-primary/20 p-2">
+                          <p className="text-muted-foreground mb-0.5">30yr est.</p>
+                          <p className="font-semibold tabular-nums text-primary">{currency(proj30)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-3 pt-3 border-t border-border">
+                Projections assume 7% avg annual return, compounded monthly. Edit balance and employer match in the Budget page.
+              </p>
+            </Card>
+          </div>
+        )
+      })()}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
