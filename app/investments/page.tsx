@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { getUserProfile, getBudgetCategories, getExpectedMonthlyIncome } from "@/lib/data"
 import type { DayTrade } from "./day-trades-actions"
 import { applyAutoContributions } from "./actions"
+import { getRetirementContributions } from "./retirement-actions"
 
 
 async function getInvestments() {
@@ -79,9 +80,9 @@ export default async function InvestmentsPage() {
   // Apply any pending paycheck contributions before loading data
   try { await applyAutoContributions() } catch { /* table may not exist yet */ }
 
-  const [investments, user, dayTrades, autoContribs, budgetCategories, expectedIncome] = await Promise.all([
+  const [investments, user, dayTrades, autoContribs, budgetCategories, expectedIncome, retirementContribs] = await Promise.all([
     getInvestments(), getUserProfile(), getDayTrades(), getAutoContribs(),
-    getBudgetCategories(), getExpectedMonthlyIncome(),
+    getBudgetCategories(), getExpectedMonthlyIncome(), getRetirementContributions(),
   ])
 
   const symbols = investments.map((i) => i.symbol.toUpperCase())
@@ -106,6 +107,7 @@ export default async function InvestmentsPage() {
             initialAutoContribs={autoContribs}
             budgetCategories={budgetCategories}
             budgetMonthlyIncome={expectedIncome ?? 0}
+            initialRetirementContribs={retirementContribs}
           />
         </div>
       </main>

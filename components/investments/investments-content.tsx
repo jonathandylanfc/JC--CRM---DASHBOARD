@@ -47,6 +47,8 @@ import {
   AreaChart,
 } from "recharts"
 import { upsertInvestment, deleteInvestment, deleteAllInvestments, bulkUpsertInvestments, refreshPrices, upsertAutoContribution, deleteAutoContribution, buyMoreShares } from "@/app/investments/actions"
+import { upsertRetirementContribution, deleteRetirementContribution } from "@/app/investments/retirement-actions"
+import type { RetirementContrib } from "@/app/investments/retirement-actions"
 import { PlaidInvestmentsConnect } from "./plaid-investments-connect"
 import { ConnectedBrokerages } from "./connected-brokerages"
 import { MarketPulse } from "./market-pulse"
@@ -206,6 +208,20 @@ interface BudgetCat {
   transfer_keywords: string | null
 }
 
+const PAY_FREQ_LABELS: Record<string, string> = {
+  weekly: "Weekly",
+  biweekly: "Bi-weekly",
+  semimonthly: "Semi-monthly (2×/mo)",
+  monthly: "Monthly",
+}
+
+const PAY_FREQ_MULTIPLIER: Record<string, number> = {
+  weekly: 52 / 12,
+  biweekly: 26 / 12,
+  semimonthly: 2,
+  monthly: 1,
+}
+
 interface Props {
   initialInvestments: Investment[]
   prevCloseMap?: Record<string, number>
@@ -213,6 +229,7 @@ interface Props {
   initialAutoContribs?: AutoContrib[]
   budgetCategories?: BudgetCat[]
   budgetMonthlyIncome?: number
+  initialRetirementContribs?: RetirementContrib[]
 }
 
 const INVEST_KEYWORDS = ["401k", "ira", "roth", "stock", "invest", "brokerage", "espp", "hsa", "retirement", "fidelity", "vanguard", "schwab", "webull", "acorns", "etf"]
@@ -246,7 +263,7 @@ function projectBalance(current: number, monthly: number, years: number, rate = 
   return current * Math.pow(1 + r, n) + monthly * (Math.pow(1 + r, n) - 1) / r
 }
 
-export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [], initialAutoContribs = [], budgetCategories = [], budgetMonthlyIncome = 0 }: Props) {
+export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [], initialAutoContribs = [], budgetCategories = [], budgetMonthlyIncome = 0, initialRetirementContribs = [] }: Props) {
   const router = useRouter()
 
   // Take full control of scroll restoration — browser auto-restore misfires on this page
@@ -295,6 +312,68 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
   const [contribKeyword, setContribKeyword] = useState("paycheck")
   const [isSavingContrib, startSavingContrib] = useTransition()
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Retirement / payroll-deducted accounts
+  const [retirementContribs, setRetirementContribs] = useState<RetirementContrib[]>(initialRetirementContribs)
+  useEffect(() => { setRetirementContribs(initialRetirementContribs) }, [initialRetirementContribs])
+  const [retirementOpen, setRetirementOpen] = useState(false)
+  const [editingRetirement, setEditingRetirement] = useState<RetirementContrib | null>(null)
+  const [confirmDeleteRetirement, setConfirmDeleteRetirement] = useState<string | null>(null)
+  const [isSavingRetirement, startSavingRetirement] = useTransition()
+  const [isDeletingRetirement, startDeletingRetirement] = useTransition()
+  const [retirementForm, setRetirementForm] = useState({
+    name: "",
+    contribution_per_paycheck: "",
+    pay_frequency: "biweekly",
+    employer_match_pct: "",
+    current_balance: "",
+  })
+
+  function openAddRetirement() {
+    setEditingRetirement(null)
+    setRetirementForm({ name: "", contribution_per_paycheck: "", pay_frequency: "biweekly", employer_match_pct: "", current_balance: "" })
+    setRetirementOpen(true)
+  }
+
+  function openEditRetirement(rc: RetirementContrib) {
+    setEditingRetirement(rc)
+    setRetirementForm({
+      name: rc.name,
+      contribution_per_paycheck: String(rc.contribution_per_paycheck),
+      pay_frequency: rc.pay_frequency,
+      employer_match_pct: rc.employer_match_pct > 0 ? String(rc.employer_match_pct) : "",
+      current_balance: rc.current_balance > 0 ? String(rc.current_balance) : "",
+    })
+    setRetirementOpen(true)
+  }
+
+  function handleRetirementSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    startSavingRetirement(async () => {
+      const fd = new FormData()
+      if (editingRetirement) fd.set("id", editingRetirement.id)
+      fd.set("name", retirementForm.name)
+      fd.set("contribution_per_paycheck", retirementForm.contribution_per_paycheck)
+      fd.set("pay_frequency", retirementForm.pay_frequency)
+      fd.set("employer_match_pct", retirementForm.employer_match_pct || "0")
+      fd.set("current_balance", retirementForm.current_balance || "0")
+      const result = await upsertRetirementContribution(fd)
+      if (result.error) { toast.error(result.error); return }
+      toast.success(`${retirementForm.name} saved`)
+      setRetirementOpen(false)
+      setEditingRetirement(null)
+      refreshKeepScroll()
+    })
+  }
+
+  function handleRetirementDelete(id: string) {
+    startDeletingRetirement(async () => {
+      const result = await deleteRetirementContribution(id)
+      if (result.error) { toast.error(result.error); return }
+      setRetirementContribs((prev) => prev.filter((r) => r.id !== id))
+      setConfirmDeleteRetirement(null)
+    })
+  }
 
   // Portfolio history for line chart
   const [history, setHistory] = useState<Array<{ date: string; label: string; value: number }>>([])
@@ -733,6 +812,103 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
           </div>
         )
       })()}
+
+      {/* Payroll-Deducted Accounts (401k, etc.) */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-primary" />
+            Payroll-Deducted Accounts
+          </h2>
+          <Button size="sm" variant="outline" className="gap-1.5 bg-transparent text-xs h-7" onClick={openAddRetirement}>
+            <Plus className="w-3.5 h-3.5" />
+            Add Account
+          </Button>
+        </div>
+        {retirementContribs.length === 0 ? (
+          <Card className="p-6 text-center">
+            <p className="text-sm font-medium text-foreground mb-1">No payroll-deducted accounts yet</p>
+            <p className="text-xs text-muted-foreground mb-3">Add your 401k, HSA, or any account funded by payroll deductions to track contributions and projections.</p>
+            <Button size="sm" className="gap-2" onClick={openAddRetirement}><Plus className="w-4 h-4" />Add Account</Button>
+          </Card>
+        ) : (
+          <Card className="p-4">
+            <div className="space-y-4">
+              {retirementContribs.map((rc) => {
+                const mult = PAY_FREQ_MULTIPLIER[rc.pay_frequency] ?? (26 / 12)
+                const monthly = rc.contribution_per_paycheck * mult
+                const matchMonthly = monthly * (rc.employer_match_pct / 100)
+                const totalMo = monthly + matchMonthly
+                const proj5 = projectBalance(rc.current_balance, totalMo, 5)
+                const proj10 = projectBalance(rc.current_balance, totalMo, 10)
+                const proj30 = projectBalance(rc.current_balance, totalMo, 30)
+                return (
+                  <div key={rc.id} className="pb-4 border-b border-border last:border-0 last:pb-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="font-semibold text-sm">{rc.name}</p>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className="text-[10px]">
+                          {currency(rc.contribution_per_paycheck)}/{PAY_FREQ_LABELS[rc.pay_frequency]?.split(" ")[0].toLowerCase() ?? rc.pay_frequency}
+                        </Badge>
+                        <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-foreground" onClick={() => openEditRetirement(rc)}>
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-destructive" onClick={() => setConfirmDeleteRetirement(rc.id)}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-3">
+                      <div>
+                        <p className="text-muted-foreground mb-0.5">Per paycheck</p>
+                        <p className="font-semibold tabular-nums">{currency(rc.contribution_per_paycheck)}</p>
+                        <p className="text-muted-foreground">{PAY_FREQ_LABELS[rc.pay_frequency]}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-0.5">Monthly (est.)</p>
+                        <p className="font-semibold tabular-nums">{currency(monthly)}</p>
+                        <p className="text-muted-foreground">{currency(monthly * 12)}/yr</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-0.5">
+                          {rc.employer_match_pct > 0 ? `Employer match (${rc.employer_match_pct}%)` : "Employer match"}
+                        </p>
+                        <p className={`font-semibold tabular-nums ${rc.employer_match_pct > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                          {rc.employer_match_pct > 0 ? `+${currency(matchMonthly)}/mo` : "—"}
+                        </p>
+                        {rc.employer_match_pct > 0 && <p className="text-muted-foreground">+{currency(matchMonthly * 12)}/yr</p>}
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-0.5">Current balance</p>
+                        <p className="font-semibold tabular-nums">
+                          {rc.current_balance > 0 ? currency(rc.current_balance) : <span className="text-muted-foreground/60">—</span>}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="rounded-md bg-muted/50 p-2">
+                        <p className="text-muted-foreground mb-0.5">5yr est.</p>
+                        <p className="font-semibold tabular-nums">{currency(proj5)}</p>
+                      </div>
+                      <div className="rounded-md bg-muted/50 p-2">
+                        <p className="text-muted-foreground mb-0.5">10yr est.</p>
+                        <p className="font-semibold tabular-nums">{currency(proj10)}</p>
+                      </div>
+                      <div className="rounded-md bg-primary/10 border border-primary/20 p-2">
+                        <p className="text-muted-foreground mb-0.5">30yr est.</p>
+                        <p className="font-semibold tabular-nums text-primary">{currency(proj30)}</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-3 pt-3 border-t border-border">
+              Projections assume 7% avg annual return, compounded monthly.
+            </p>
+          </Card>
+        )}
+      </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1277,6 +1453,138 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                 }}
               >
                 {isDeletingAll ? "Deleting…" : "Delete All"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit retirement contribution */}
+      <Dialog open={retirementOpen} onOpenChange={(o) => { if (!o) { setRetirementOpen(false); setEditingRetirement(null) } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingRetirement ? `Edit ${editingRetirement.name}` : "Add Payroll-Deducted Account"}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleRetirementSubmit} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="rc-name">Account name</Label>
+              <Input
+                id="rc-name"
+                placeholder="e.g. 401k, HSA, Roth IRA"
+                value={retirementForm.name}
+                onChange={(e) => setRetirementForm((f) => ({ ...f, name: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="rc-cpp">Per-paycheck contribution ($)</Label>
+                <Input
+                  id="rc-cpp"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g. 200"
+                  value={retirementForm.contribution_per_paycheck}
+                  onChange={(e) => setRetirementForm((f) => ({ ...f, contribution_per_paycheck: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="rc-freq">Pay frequency</Label>
+                <Select
+                  value={retirementForm.pay_frequency}
+                  onValueChange={(v) => setRetirementForm((f) => ({ ...f, pay_frequency: v }))}
+                >
+                  <SelectTrigger id="rc-freq"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(PAY_FREQ_LABELS).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="rc-match">Employer match % <span className="text-muted-foreground">(optional)</span></Label>
+                <Input
+                  id="rc-match"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="200"
+                  placeholder="e.g. 50"
+                  value={retirementForm.employer_match_pct}
+                  onChange={(e) => setRetirementForm((f) => ({ ...f, employer_match_pct: e.target.value }))}
+                />
+                <p className="text-[11px] text-muted-foreground">% of your contribution matched by employer</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="rc-bal">Current balance ($) <span className="text-muted-foreground">(optional)</span></Label>
+                <Input
+                  id="rc-bal"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g. 12000"
+                  value={retirementForm.current_balance}
+                  onChange={(e) => setRetirementForm((f) => ({ ...f, current_balance: e.target.value }))}
+                />
+              </div>
+            </div>
+            {retirementForm.contribution_per_paycheck && (
+              <div className="rounded-md bg-muted/50 p-3 text-xs space-y-1">
+                {(() => {
+                  const cpp = parseFloat(retirementForm.contribution_per_paycheck) || 0
+                  const mult = PAY_FREQ_MULTIPLIER[retirementForm.pay_frequency] ?? (26 / 12)
+                  const monthly = cpp * mult
+                  const matchPct = parseFloat(retirementForm.employer_match_pct) || 0
+                  const matchMo = monthly * (matchPct / 100)
+                  return (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Est. monthly contribution</span>
+                        <span className="font-semibold">{currency(monthly)}</span>
+                      </div>
+                      {matchPct > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Est. employer match</span>
+                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{currency(matchMo)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between border-t border-border pt-1">
+                        <span className="text-muted-foreground">Total per month</span>
+                        <span className="font-semibold">{currency(monthly + matchMo)}</span>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+            )}
+            <div className="flex gap-3 pt-1">
+              <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => { setRetirementOpen(false); setEditingRetirement(null) }}>Cancel</Button>
+              <Button type="submit" className="flex-1" disabled={isSavingRetirement}>{isSavingRetirement ? "Saving…" : "Save"}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete retirement confirmation */}
+      <Dialog open={!!confirmDeleteRetirement} onOpenChange={(o) => { if (!o) setConfirmDeleteRetirement(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Remove account?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <p className="text-sm text-muted-foreground">This will remove the account and its contribution data. This cannot be undone.</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1 bg-transparent" onClick={() => setConfirmDeleteRetirement(null)}>Cancel</Button>
+              <Button variant="destructive" className="flex-1" disabled={isDeletingRetirement} onClick={() => confirmDeleteRetirement && handleRetirementDelete(confirmDeleteRetirement)}>
+                {isDeletingRetirement ? "Removing…" : "Remove"}
               </Button>
             </div>
           </div>
