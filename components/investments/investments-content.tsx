@@ -475,7 +475,9 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
   const totalMonthlyContrib = (() => {
     const fromRetirement = retirementContribs.reduce((s, r) => {
       const mult = PAY_FREQ_MULTIPLIER[r.pay_frequency] ?? (26 / 12)
-      const mo = r.contribution_per_paycheck * mult
+      const mo = r.contribution_pct != null && r.contribution_pct > 0 && budgetMonthlyIncome > 0
+        ? budgetMonthlyIncome * (r.contribution_pct / 100)
+        : r.contribution_per_paycheck * mult
       return s + mo + mo * (r.employer_match_pct / 100)
     }, 0)
     const fromBudget = budgetMonthlyIncome > 0
@@ -886,7 +888,13 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
             <div className="space-y-4">
               {retirementContribs.map((rc) => {
                 const mult = PAY_FREQ_MULTIPLIER[rc.pay_frequency] ?? (26 / 12)
-                const monthly = rc.contribution_per_paycheck * mult
+                // If saved as %, derive from current income so it stays in sync with income updates
+                const monthly = rc.contribution_pct != null && rc.contribution_pct > 0 && budgetMonthlyIncome > 0
+                  ? budgetMonthlyIncome * (rc.contribution_pct / 100)
+                  : rc.contribution_per_paycheck * mult
+                const livePerPaycheck = rc.contribution_pct != null && rc.contribution_pct > 0 && budgetMonthlyIncome > 0
+                  ? monthly / mult
+                  : rc.contribution_per_paycheck
                 const matchMonthly = monthly * (rc.employer_match_pct / 100)
                 const totalMo = monthly + matchMonthly
                 const proj5 = projectBalance(rc.current_balance, totalMo, 5)
@@ -913,12 +921,12 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-3">
                       <div>
                         <p className="text-muted-foreground mb-0.5">Per paycheck</p>
-                        <p className="font-semibold tabular-nums">{currency(rc.contribution_per_paycheck)}</p>
+                        <p className="font-semibold tabular-nums">{currency(livePerPaycheck)}</p>
                         {rc.contribution_pct != null && rc.contribution_pct > 0 ? (
                           <p className="text-muted-foreground">{rc.contribution_pct}% of paycheck</p>
                         ) : rc.tax_bracket_pct > 0 ? (
                           <p className="text-emerald-600 dark:text-emerald-400">
-                            costs you {currency(rc.contribution_per_paycheck * (1 - rc.tax_bracket_pct / 100))}
+                            costs you {currency(livePerPaycheck * (1 - rc.tax_bracket_pct / 100))}
                           </p>
                         ) : (
                           <p className="text-muted-foreground">{PAY_FREQ_LABELS[rc.pay_frequency]}</p>
