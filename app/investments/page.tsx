@@ -2,7 +2,7 @@ import { SidebarServer as Sidebar } from "@/components/dashboard/sidebar-server"
 import { Header } from "@/components/dashboard/header"
 import { InvestmentsContent } from "@/components/investments/investments-content"
 import { createClient } from "@/lib/supabase/server"
-import { getUserProfile, getBudgetCategories, getExpectedMonthlyIncome } from "@/lib/data"
+import { getUserProfile, getBudgetCategories, getExpectedMonthlyIncome, getPaySettings } from "@/lib/data"
 import type { DayTrade } from "./day-trades-actions"
 import { applyAutoContributions } from "./actions"
 import { getRetirementContributions } from "./retirement-actions"
@@ -80,9 +80,9 @@ export default async function InvestmentsPage() {
   // Apply any pending paycheck contributions before loading data
   try { await applyAutoContributions() } catch { /* table may not exist yet */ }
 
-  const [investments, user, dayTrades, autoContribs, budgetCategories, expectedIncome, retirementContribs] = await Promise.all([
+  const [investments, user, dayTrades, autoContribs, budgetCategories, expectedIncome, retirementContribs, paySettings] = await Promise.all([
     getInvestments(), getUserProfile(), getDayTrades(), getAutoContribs(),
-    getBudgetCategories(), getExpectedMonthlyIncome(), getRetirementContributions(),
+    getBudgetCategories(), getExpectedMonthlyIncome(), getRetirementContributions(), getPaySettings(),
   ])
 
   const symbols = investments.map((i) => i.symbol.toUpperCase())
@@ -108,6 +108,7 @@ export default async function InvestmentsPage() {
             budgetCategories={budgetCategories}
             budgetMonthlyIncome={expectedIncome ?? 0}
             initialRetirementContribs={retirementContribs}
+            paySettings={paySettings}
           />
         </div>
       </main>
