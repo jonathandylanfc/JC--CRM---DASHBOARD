@@ -10,6 +10,7 @@ export interface RetirementContrib {
   pay_frequency: "weekly" | "biweekly" | "semimonthly" | "monthly"
   employer_match_pct: number
   current_balance: number
+  tax_bracket_pct: number
 }
 
 export async function getRetirementContributions(): Promise<RetirementContrib[]> {
@@ -19,7 +20,7 @@ export async function getRetirementContributions(): Promise<RetirementContrib[]>
     if (!user) return []
     const { data } = await supabase
       .from("retirement_contributions")
-      .select("id, name, contribution_per_paycheck, pay_frequency, employer_match_pct, current_balance")
+      .select("id, name, contribution_per_paycheck, pay_frequency, employer_match_pct, current_balance, tax_bracket_pct")
       .eq("user_id", user.id)
       .order("created_at")
     return (data ?? []) as RetirementContrib[]
@@ -39,6 +40,7 @@ export async function upsertRetirementContribution(fd: FormData) {
   const pay_frequency = fd.get("pay_frequency") as string
   const employer_match_pct = parseFloat(fd.get("employer_match_pct") as string) || 0
   const current_balance = parseFloat(fd.get("current_balance") as string) || 0
+  const tax_bracket_pct = parseFloat(fd.get("tax_bracket_pct") as string) || 0
 
   if (!name) return { error: "Name is required" }
   if (isNaN(contribution_per_paycheck) || contribution_per_paycheck < 0) return { error: "Invalid contribution amount" }
@@ -51,6 +53,7 @@ export async function upsertRetirementContribution(fd: FormData) {
     pay_frequency,
     employer_match_pct,
     current_balance,
+    tax_bracket_pct,
     updated_at: new Date().toISOString(),
   }
 

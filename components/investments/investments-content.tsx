@@ -327,11 +327,12 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
     pay_frequency: "biweekly",
     employer_match_pct: "",
     current_balance: "",
+    tax_bracket_pct: "",
   })
 
   function openAddRetirement() {
     setEditingRetirement(null)
-    setRetirementForm({ name: "", contribution_per_paycheck: "", pay_frequency: "biweekly", employer_match_pct: "", current_balance: "" })
+    setRetirementForm({ name: "", contribution_per_paycheck: "", pay_frequency: "biweekly", employer_match_pct: "", current_balance: "", tax_bracket_pct: "" })
     setRetirementOpen(true)
   }
 
@@ -343,6 +344,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       pay_frequency: rc.pay_frequency,
       employer_match_pct: rc.employer_match_pct > 0 ? String(rc.employer_match_pct) : "",
       current_balance: rc.current_balance > 0 ? String(rc.current_balance) : "",
+      tax_bracket_pct: rc.tax_bracket_pct > 0 ? String(rc.tax_bracket_pct) : "",
     })
     setRetirementOpen(true)
   }
@@ -357,6 +359,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       fd.set("pay_frequency", retirementForm.pay_frequency)
       fd.set("employer_match_pct", retirementForm.employer_match_pct || "0")
       fd.set("current_balance", retirementForm.current_balance || "0")
+      fd.set("tax_bracket_pct", retirementForm.tax_bracket_pct || "0")
       const result = await upsertRetirementContribution(fd)
       if (result.error) { toast.error(result.error); return }
       toast.success(`${retirementForm.name} saved`)
@@ -432,11 +435,38 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
     return () => clearInterval(interval)
   }, [fetchHistory])
 
-  // Summary stats
+  // Summary stats — market holdings
   const totalCost = investments.reduce((s, inv) => s + inv.shares * inv.avg_cost, 0)
-  const totalValue = investments.reduce((s, inv) => s + inv.shares * (inv.current_price ?? inv.avg_cost), 0)
-  const totalGain = totalValue - totalCost
+  const holdingsValue = investments.reduce((s, inv) => s + inv.shares * (inv.current_price ?? inv.avg_cost), 0)
+  const totalGain = holdingsValue - totalCost
   const totalGainPct = totalCost > 0 ? (totalGain / totalCost) * 100 : 0
+
+  // Retirement / payroll-deducted balances
+  const retirementTotal = retirementContribs.reduce((s, r) => s + r.current_balance, 0)
+
+  // Budget investment category balances (encoded as ~cb: in transfer_keywords)
+  const budgetInvestTotal = budgetCategories
+    .filter((c) => isInvestmentCategory(c.name))
+    .reduce((s, c) => { const { currentBalance } = parseInvestMeta(c.transfer_keywords); return s + (currentBalance ?? 0) }, 0)
+
+  const totalValue = holdingsValue + retirementTotal + budgetInvestTotal
+
+  // Total monthly contributions across all sources
+  const totalMonthlyContrib = (() => {
+    const fromRetirement = retirementContribs.reduce((s, r) => {
+      const mult = PAY_FREQ_MULTIPLIER[r.pay_frequency] ?? (26 / 12)
+      const mo = r.contribution_per_paycheck * mult
+      return s + mo + mo * (r.employer_match_pct / 100)
+    }, 0)
+    const fromBudget = budgetMonthlyIncome > 0
+      ? budgetCategories.filter((c) => isInvestmentCategory(c.name)).reduce((s, c) => {
+          const { matchPct } = parseInvestMeta(c.transfer_keywords)
+          const m = budgetedAmount(c, budgetMonthlyIncome)
+          return s + m + (matchPct != null ? m * (matchPct / 100) : 0)
+        }, 0)
+      : 0
+    return fromRetirement + fromBudget
+  })()
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -862,12 +892,22 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                       <div>
                         <p className="text-muted-foreground mb-0.5">Per paycheck</p>
                         <p className="font-semibold tabular-nums">{currency(rc.contribution_per_paycheck)}</p>
-                        <p className="text-muted-foreground">{PAY_FREQ_LABELS[rc.pay_frequency]}</p>
+                        {rc.tax_bracket_pct > 0 ? (
+                          <p className="text-emerald-600 dark:text-emerald-400">
+                            costs you {currency(rc.contribution_per_paycheck * (1 - rc.tax_bracket_pct / 100))}
+                          </p>
+                        ) : (
+                          <p className="text-muted-foreground">{PAY_FREQ_LABELS[rc.pay_frequency]}</p>
+                        )}
                       </div>
                       <div>
                         <p className="text-muted-foreground mb-0.5">Monthly (est.)</p>
                         <p className="font-semibold tabular-nums">{currency(monthly)}</p>
-                        <p className="text-muted-foreground">{currency(monthly * 12)}/yr</p>
+                        {rc.tax_bracket_pct > 0 ? (
+                          <p className="text-emerald-600 dark:text-emerald-400">saves {currency(monthly * 12 * (rc.tax_bracket_pct / 100))}/yr tax</p>
+                        ) : (
+                          <p className="text-muted-foreground">{currency(monthly * 12)}/yr</p>
+                        )}
                       </div>
                       <div>
                         <p className="text-muted-foreground mb-0.5">
@@ -913,25 +953,34 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="p-4">
-          <p className="text-xs text-muted-foreground mb-1">Total Invested</p>
-          <p className="text-xl font-bold">{currency(totalCost)}</p>
+          <p className="text-xs text-muted-foreground mb-1">Total Portfolio</p>
+          <p className="text-xl font-bold">{currency(totalValue)}</p>
+          {(retirementTotal > 0 || budgetInvestTotal > 0) && (
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {currency(holdingsValue)} holdings
+              {retirementTotal > 0 && ` · ${currency(retirementTotal)} retirement`}
+              {budgetInvestTotal > 0 && ` · ${currency(budgetInvestTotal)} savings`}
+            </p>
+          )}
         </Card>
         <Card className="p-4">
-          <p className="text-xs text-muted-foreground mb-1">Current Value</p>
-          <p className="text-xl font-bold">{currency(totalValue)}</p>
+          <p className="text-xs text-muted-foreground mb-1">Holdings Value</p>
+          <p className="text-xl font-bold">{currency(holdingsValue)}</p>
         </Card>
         <Card className={`p-4 ${totalGain >= 0 ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800" : "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800"}`}>
-          <p className={`text-xs mb-1 ${totalGain >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>Total Gain/Loss</p>
+          <p className={`text-xs mb-1 ${totalGain >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>Holdings Gain/Loss</p>
           <p className={`text-xl font-bold ${totalGain >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}>
             {totalGain >= 0 ? "+" : ""}{currency(totalGain)}
           </p>
-        </Card>
-        <Card className={`p-4 ${totalGainPct >= 0 ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800" : "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800"}`}>
-          <p className={`text-xs mb-1 ${totalGainPct >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>Return</p>
-          <p className={`text-xl font-bold flex items-center gap-1 ${totalGainPct >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}>
-            {totalGainPct >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+          <p className={`text-xs font-medium flex items-center gap-0.5 mt-0.5 ${totalGainPct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+            {totalGainPct >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
             {pct(totalGainPct)}
           </p>
+        </Card>
+        <Card className="p-4 bg-primary/5 border-primary/20">
+          <p className="text-xs text-muted-foreground mb-1">Monthly Contributions</p>
+          <p className="text-xl font-bold text-primary">{currency(totalMonthlyContrib)}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">{currency(totalMonthlyContrib * 12)}/yr across all accounts</p>
         </Card>
       </div>
 
@@ -1533,6 +1582,20 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                 />
               </div>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rc-tax">Your income tax bracket % <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                id="rc-tax"
+                type="number"
+                step="1"
+                min="0"
+                max="60"
+                placeholder="e.g. 22"
+                value={retirementForm.tax_bracket_pct}
+                onChange={(e) => setRetirementForm((f) => ({ ...f, tax_bracket_pct: e.target.value }))}
+              />
+              <p className="text-[11px] text-muted-foreground">Used to show the real after-tax cost of your 401k contribution (pre-tax accounts only)</p>
+            </div>
             {retirementForm.contribution_per_paycheck && (
               <div className="rounded-md bg-muted/50 p-3 text-xs space-y-1">
                 {(() => {
@@ -1541,8 +1604,20 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                   const monthly = cpp * mult
                   const matchPct = parseFloat(retirementForm.employer_match_pct) || 0
                   const matchMo = monthly * (matchPct / 100)
+                  const taxPct = parseFloat(retirementForm.tax_bracket_pct) || 0
+                  const afterTaxCpp = taxPct > 0 ? cpp * (1 - taxPct / 100) : null
                   return (
                     <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Per paycheck (pre-tax)</span>
+                        <span className="font-semibold">{currency(cpp)}</span>
+                      </div>
+                      {afterTaxCpp != null && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">After-tax cost to you</span>
+                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">{currency(afterTaxCpp)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Est. monthly contribution</span>
                         <span className="font-semibold">{currency(monthly)}</span>
@@ -1553,8 +1628,14 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                           <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{currency(matchMo)}</span>
                         </div>
                       )}
+                      {taxPct > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Annual tax savings</span>
+                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">{currency(monthly * 12 * (taxPct / 100))}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between border-t border-border pt-1">
-                        <span className="text-muted-foreground">Total per month</span>
+                        <span className="text-muted-foreground">Total going in/month</span>
                         <span className="font-semibold">{currency(monthly + matchMo)}</span>
                       </div>
                     </>
