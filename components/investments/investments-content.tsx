@@ -222,6 +222,11 @@ const PAY_FREQ_MULTIPLIER: Record<string, number> = {
   monthly: 1,
 }
 
+interface PaySettings {
+  hourly_rate: number | null
+  pay_period: string
+}
+
 interface Props {
   initialInvestments: Investment[]
   prevCloseMap?: Record<string, number>
@@ -230,6 +235,7 @@ interface Props {
   budgetCategories?: BudgetCat[]
   budgetMonthlyIncome?: number
   initialRetirementContribs?: RetirementContrib[]
+  paySettings?: PaySettings | null
 }
 
 const INVEST_KEYWORDS = ["401k", "ira", "roth", "stock", "invest", "brokerage", "espp", "hsa", "retirement", "fidelity", "vanguard", "schwab", "webull", "acorns", "etf"]
@@ -263,7 +269,7 @@ function projectBalance(current: number, monthly: number, years: number, rate = 
   return current * Math.pow(1 + r, n) + monthly * (Math.pow(1 + r, n) - 1) / r
 }
 
-export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [], initialAutoContribs = [], budgetCategories = [], budgetMonthlyIncome = 0, initialRetirementContribs = [] }: Props) {
+export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, initialDayTrades = [], initialAutoContribs = [], budgetCategories = [], budgetMonthlyIncome = 0, initialRetirementContribs = [], paySettings = null }: Props) {
   const router = useRouter()
 
   // Take full control of scroll restoration — browser auto-restore misfires on this page
@@ -332,7 +338,14 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
     tax_bracket_pct: "",
   })
 
+  // Standard hours per pay period (based on 2080 annual hours)
+  const STANDARD_HOURS: Record<string, number> = { weekly: 40, biweekly: 80, semimonthly: 86.67, monthly: 173.33 }
+
   function grossPerPaycheck(freq: string) {
+    if (paySettings?.hourly_rate) {
+      const hrs = STANDARD_HOURS[freq] ?? 80
+      return paySettings.hourly_rate * hrs
+    }
     if (!budgetMonthlyIncome) return null
     const mult = PAY_FREQ_MULTIPLIER[freq] ?? (26 / 12)
     return budgetMonthlyIncome / mult
@@ -475,8 +488,10 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
   const totalMonthlyContrib = (() => {
     const fromRetirement = retirementContribs.reduce((s, r) => {
       const mult = PAY_FREQ_MULTIPLIER[r.pay_frequency] ?? (26 / 12)
-      const mo = r.contribution_pct != null && r.contribution_pct > 0 && budgetMonthlyIncome > 0
-        ? budgetMonthlyIncome * (r.contribution_pct / 100)
+      const liveGross = grossPerPaycheck(r.pay_frequency)
+      const liveGrossMonthly = liveGross != null ? liveGross * mult : null
+      const mo = r.contribution_pct != null && r.contribution_pct > 0 && liveGrossMonthly != null
+        ? liveGrossMonthly * (r.contribution_pct / 100)
         : r.contribution_per_paycheck * mult
       return s + mo + mo * (r.employer_match_pct / 100)
     }, 0)
@@ -888,12 +903,14 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
             <div className="space-y-4">
               {retirementContribs.map((rc) => {
                 const mult = PAY_FREQ_MULTIPLIER[rc.pay_frequency] ?? (26 / 12)
-                // If saved as %, derive from current income so it stays in sync with income updates
-                const monthly = rc.contribution_pct != null && rc.contribution_pct > 0 && budgetMonthlyIncome > 0
-                  ? budgetMonthlyIncome * (rc.contribution_pct / 100)
+                const liveGrossPerPaycheck = grossPerPaycheck(rc.pay_frequency)
+                const liveGrossMonthly = liveGrossPerPaycheck != null ? liveGrossPerPaycheck * mult : null
+                // If saved as %, derive from current gross so it stays in sync with pay rate updates
+                const monthly = rc.contribution_pct != null && rc.contribution_pct > 0 && liveGrossMonthly != null
+                  ? liveGrossMonthly * (rc.contribution_pct / 100)
                   : rc.contribution_per_paycheck * mult
-                const livePerPaycheck = rc.contribution_pct != null && rc.contribution_pct > 0 && budgetMonthlyIncome > 0
-                  ? monthly / mult
+                const livePerPaycheck = rc.contribution_pct != null && rc.contribution_pct > 0 && liveGrossPerPaycheck != null
+                  ? liveGrossPerPaycheck * (rc.contribution_pct / 100)
                   : rc.contribution_per_paycheck
                 const matchMonthly = monthly * (rc.employer_match_pct / 100)
                 const totalMo = monthly + matchMonthly
@@ -1604,13 +1621,14 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                       onChange={(e) => setRetirementForm((f) => ({ ...f, contribution_pct: e.target.value }))}
                       required
                     />
-                    {budgetMonthlyIncome > 0 && retirementForm.contribution_pct && (
+                    {(paySettings?.hourly_rate || budgetMonthlyIncome > 0) && retirementForm.contribution_pct && (
                       <p className="text-[11px] text-muted-foreground">
                         ≈ {currency(((grossPerPaycheck(retirementForm.pay_frequency) ?? 0) * (parseFloat(retirementForm.contribution_pct) || 0)) / 100)}/paycheck
+                        {paySettings?.hourly_rate && <span className="ml-1 opacity-60">(based on ${paySettings.hourly_rate}/hr)</span>}
                       </p>
                     )}
-                    {!budgetMonthlyIncome && (
-                      <p className="text-[11px] text-amber-600 dark:text-amber-400">Set expected income in Settings to use % mode</p>
+                    {!paySettings?.hourly_rate && !budgetMonthlyIncome && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400">Set your hourly rate in Settings to use % mode</p>
                     )}
                   </>
                 )}

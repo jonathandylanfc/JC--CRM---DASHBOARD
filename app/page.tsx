@@ -20,8 +20,6 @@ import {
   getPaySettings,
 } from "@/lib/data"
 import { computeCurrentPayPeriod } from "@/lib/pay-period"
-import { getSpendingChallenges, getLinkedAccounts } from "@/app/finance/spending-challenge-actions"
-import { SpendingChallengeCard } from "@/components/dashboard/spending-challenge-card"
 
 export default async function DashboardPage() {
   const now = new Date()
@@ -42,8 +40,6 @@ export default async function DashboardPage() {
     weeklyRecap,
     latestBriefing,
     upcomingEvents,
-    spendingChallenges,
-    plaidAccounts,
     paySettings,
   ] = await Promise.all([
     getTaskStats(),
@@ -59,8 +55,6 @@ export default async function DashboardPage() {
     getWeeklySpendingSummary(),
     getLatestBriefing(),
     getUpcomingCalendarEvents(),
-    getSpendingChallenges(),
-    getLinkedAccounts(),
     getPaySettings(),
   ])
 
@@ -98,8 +92,6 @@ export default async function DashboardPage() {
           <div className="mt-4 space-y-4">
             <MorningBriefingCard briefing={latestBriefing} />
             <UpcomingEventsCard events={upcomingEvents} />
-
-            <SpendingChallengeCard initialChallenges={spendingChallenges} plaidAccounts={plaidAccounts} />
 
             <DashboardSections
               taskStats={taskStats}
