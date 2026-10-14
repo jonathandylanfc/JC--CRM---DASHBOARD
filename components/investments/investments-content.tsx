@@ -321,26 +321,38 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
   const [confirmDeleteRetirement, setConfirmDeleteRetirement] = useState<string | null>(null)
   const [isSavingRetirement, startSavingRetirement] = useTransition()
   const [isDeletingRetirement, startDeletingRetirement] = useTransition()
+  const [retirementContribMode, setRetirementContribMode] = useState<"dollar" | "percent">("dollar")
   const [retirementForm, setRetirementForm] = useState({
     name: "",
     contribution_per_paycheck: "",
+    contribution_pct: "",
     pay_frequency: "biweekly",
     employer_match_pct: "",
     current_balance: "",
     tax_bracket_pct: "",
   })
 
+  function grossPerPaycheck(freq: string) {
+    if (!budgetMonthlyIncome) return null
+    const mult = PAY_FREQ_MULTIPLIER[freq] ?? (26 / 12)
+    return budgetMonthlyIncome / mult
+  }
+
   function openAddRetirement() {
     setEditingRetirement(null)
-    setRetirementForm({ name: "", contribution_per_paycheck: "", pay_frequency: "biweekly", employer_match_pct: "", current_balance: "", tax_bracket_pct: "" })
+    setRetirementContribMode("dollar")
+    setRetirementForm({ name: "", contribution_per_paycheck: "", contribution_pct: "", pay_frequency: "biweekly", employer_match_pct: "", current_balance: "", tax_bracket_pct: "" })
     setRetirementOpen(true)
   }
 
   function openEditRetirement(rc: RetirementContrib) {
     setEditingRetirement(rc)
+    const isPct = rc.contribution_pct != null && rc.contribution_pct > 0
+    setRetirementContribMode(isPct ? "percent" : "dollar")
     setRetirementForm({
       name: rc.name,
-      contribution_per_paycheck: String(rc.contribution_per_paycheck),
+      contribution_per_paycheck: rc.contribution_per_paycheck > 0 && !isPct ? String(rc.contribution_per_paycheck) : "",
+      contribution_pct: isPct ? String(rc.contribution_pct) : "",
       pay_frequency: rc.pay_frequency,
       employer_match_pct: rc.employer_match_pct > 0 ? String(rc.employer_match_pct) : "",
       current_balance: rc.current_balance > 0 ? String(rc.current_balance) : "",
@@ -355,11 +367,19 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       const fd = new FormData()
       if (editingRetirement) fd.set("id", editingRetirement.id)
       fd.set("name", retirementForm.name)
-      fd.set("contribution_per_paycheck", retirementForm.contribution_per_paycheck)
       fd.set("pay_frequency", retirementForm.pay_frequency)
       fd.set("employer_match_pct", retirementForm.employer_match_pct || "0")
       fd.set("current_balance", retirementForm.current_balance || "0")
       fd.set("tax_bracket_pct", retirementForm.tax_bracket_pct || "0")
+      if (retirementContribMode === "percent") {
+        const pct = parseFloat(retirementForm.contribution_pct) || 0
+        const gross = grossPerPaycheck(retirementForm.pay_frequency) ?? 0
+        fd.set("contribution_pct", String(pct))
+        fd.set("contribution_per_paycheck", String((gross * pct) / 100))
+      } else {
+        fd.set("contribution_pct", "")
+        fd.set("contribution_per_paycheck", retirementForm.contribution_per_paycheck || "0")
+      }
       const result = await upsertRetirementContribution(fd)
       if (result.error) { toast.error(result.error); return }
       toast.success(`${retirementForm.name} saved`)
@@ -878,7 +898,9 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                       <p className="font-semibold text-sm">{rc.name}</p>
                       <div className="flex items-center gap-1">
                         <Badge variant="outline" className="text-[10px]">
-                          {currency(rc.contribution_per_paycheck)}/{PAY_FREQ_LABELS[rc.pay_frequency]?.split(" ")[0].toLowerCase() ?? rc.pay_frequency}
+                          {rc.contribution_pct != null && rc.contribution_pct > 0
+                            ? `${rc.contribution_pct}% of paycheck`
+                            : `${currency(rc.contribution_per_paycheck)}/${PAY_FREQ_LABELS[rc.pay_frequency]?.split(" ")[0].toLowerCase() ?? rc.pay_frequency}`}
                         </Badge>
                         <Button variant="ghost" size="icon" className="w-6 h-6 text-muted-foreground hover:text-foreground" onClick={() => openEditRetirement(rc)}>
                           <Pencil className="w-3 h-3" />
@@ -892,7 +914,9 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                       <div>
                         <p className="text-muted-foreground mb-0.5">Per paycheck</p>
                         <p className="font-semibold tabular-nums">{currency(rc.contribution_per_paycheck)}</p>
-                        {rc.tax_bracket_pct > 0 ? (
+                        {rc.contribution_pct != null && rc.contribution_pct > 0 ? (
+                          <p className="text-muted-foreground">{rc.contribution_pct}% of paycheck</p>
+                        ) : rc.tax_bracket_pct > 0 ? (
                           <p className="text-emerald-600 dark:text-emerald-400">
                             costs you {currency(rc.contribution_per_paycheck * (1 - rc.tax_bracket_pct / 100))}
                           </p>
@@ -1525,19 +1549,63 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                 required
               />
             </div>
+            {/* Contribution mode toggle */}
+            <div className="flex items-center gap-0 rounded-lg border border-border overflow-hidden w-fit">
+              <button
+                type="button"
+                onClick={() => setRetirementContribMode("dollar")}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${retirementContribMode === "dollar" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                $ per paycheck
+              </button>
+              <button
+                type="button"
+                onClick={() => setRetirementContribMode("percent")}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${retirementContribMode === "percent" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                % of paycheck
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="rc-cpp">Per-paycheck contribution ($)</Label>
-                <Input
-                  id="rc-cpp"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="e.g. 200"
-                  value={retirementForm.contribution_per_paycheck}
-                  onChange={(e) => setRetirementForm((f) => ({ ...f, contribution_per_paycheck: e.target.value }))}
-                  required
-                />
+                {retirementContribMode === "dollar" ? (
+                  <>
+                    <Label htmlFor="rc-cpp">Per-paycheck contribution ($)</Label>
+                    <Input
+                      id="rc-cpp"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="e.g. 200"
+                      value={retirementForm.contribution_per_paycheck}
+                      onChange={(e) => setRetirementForm((f) => ({ ...f, contribution_per_paycheck: e.target.value }))}
+                      required
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Label htmlFor="rc-pct">% of gross paycheck</Label>
+                    <Input
+                      id="rc-pct"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                      placeholder="e.g. 6"
+                      value={retirementForm.contribution_pct}
+                      onChange={(e) => setRetirementForm((f) => ({ ...f, contribution_pct: e.target.value }))}
+                      required
+                    />
+                    {budgetMonthlyIncome > 0 && retirementForm.contribution_pct && (
+                      <p className="text-[11px] text-muted-foreground">
+                        ≈ {currency(((grossPerPaycheck(retirementForm.pay_frequency) ?? 0) * (parseFloat(retirementForm.contribution_pct) || 0)) / 100)}/paycheck
+                      </p>
+                    )}
+                    {!budgetMonthlyIncome && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400">Set expected income in Settings to use % mode</p>
+                    )}
+                  </>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="rc-freq">Pay frequency</Label>
@@ -1596,10 +1664,12 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
               />
               <p className="text-[11px] text-muted-foreground">Used to show the real after-tax cost of your 401k contribution (pre-tax accounts only)</p>
             </div>
-            {retirementForm.contribution_per_paycheck && (
+            {(retirementForm.contribution_per_paycheck || retirementForm.contribution_pct) && (
               <div className="rounded-md bg-muted/50 p-3 text-xs space-y-1">
                 {(() => {
-                  const cpp = parseFloat(retirementForm.contribution_per_paycheck) || 0
+                  const cpp = retirementContribMode === "percent"
+                    ? ((grossPerPaycheck(retirementForm.pay_frequency) ?? 0) * (parseFloat(retirementForm.contribution_pct) || 0)) / 100
+                    : parseFloat(retirementForm.contribution_per_paycheck) || 0
                   const mult = PAY_FREQ_MULTIPLIER[retirementForm.pay_frequency] ?? (26 / 12)
                   const monthly = cpp * mult
                   const matchPct = parseFloat(retirementForm.employer_match_pct) || 0
