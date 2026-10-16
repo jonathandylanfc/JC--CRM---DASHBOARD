@@ -12,6 +12,7 @@ export interface RetirementContrib {
   employer_match_pct: number
   current_balance: number
   tax_bracket_pct: number
+  pending_cash: number
 }
 
 export async function getRetirementContributions(): Promise<RetirementContrib[]> {
@@ -21,7 +22,7 @@ export async function getRetirementContributions(): Promise<RetirementContrib[]>
     if (!user) return []
     const { data } = await supabase
       .from("retirement_contributions")
-      .select("id, name, contribution_per_paycheck, contribution_pct, pay_frequency, employer_match_pct, current_balance, tax_bracket_pct")
+      .select("id, name, contribution_per_paycheck, contribution_pct, pay_frequency, employer_match_pct, current_balance, tax_bracket_pct, pending_cash")
       .eq("user_id", user.id)
       .order("created_at")
     return (data ?? []) as RetirementContrib[]
@@ -42,6 +43,7 @@ export async function upsertRetirementContribution(fd: FormData) {
   const employer_match_pct = parseFloat(fd.get("employer_match_pct") as string) || 0
   const current_balance = parseFloat(fd.get("current_balance") as string) || 0
   const tax_bracket_pct = parseFloat(fd.get("tax_bracket_pct") as string) || 0
+  const pending_cash = parseFloat(fd.get("pending_cash") as string) || 0
   const contribution_pct_raw = fd.get("contribution_pct") as string | null
   const contribution_pct = contribution_pct_raw ? (parseFloat(contribution_pct_raw) || null) : null
 
@@ -58,6 +60,7 @@ export async function upsertRetirementContribution(fd: FormData) {
     employer_match_pct,
     current_balance,
     tax_bracket_pct,
+    pending_cash,
     updated_at: new Date().toISOString(),
   }
 

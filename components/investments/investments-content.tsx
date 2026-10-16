@@ -336,6 +336,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
     employer_match_pct: "",
     current_balance: "",
     tax_bracket_pct: "",
+    pending_cash: "",
   })
 
   // Standard hours per pay period (based on 2080 annual hours)
@@ -354,7 +355,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
   function openAddRetirement() {
     setEditingRetirement(null)
     setRetirementContribMode("dollar")
-    setRetirementForm({ name: "", contribution_per_paycheck: "", contribution_pct: "", pay_frequency: "biweekly", employer_match_pct: "", current_balance: "", tax_bracket_pct: "" })
+    setRetirementForm({ name: "", contribution_per_paycheck: "", contribution_pct: "", pay_frequency: "biweekly", employer_match_pct: "", current_balance: "", tax_bracket_pct: "", pending_cash: "" })
     setRetirementOpen(true)
   }
 
@@ -370,6 +371,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       employer_match_pct: rc.employer_match_pct > 0 ? String(rc.employer_match_pct) : "",
       current_balance: rc.current_balance > 0 ? String(rc.current_balance) : "",
       tax_bracket_pct: rc.tax_bracket_pct > 0 ? String(rc.tax_bracket_pct) : "",
+      pending_cash: rc.pending_cash > 0 ? String(rc.pending_cash) : "",
     })
     setRetirementOpen(true)
   }
@@ -384,6 +386,7 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
       fd.set("employer_match_pct", retirementForm.employer_match_pct || "0")
       fd.set("current_balance", retirementForm.current_balance || "0")
       fd.set("tax_bracket_pct", retirementForm.tax_bracket_pct || "0")
+      fd.set("pending_cash", retirementForm.pending_cash || "0")
       if (retirementContribMode === "percent") {
         const pct = parseFloat(retirementForm.contribution_pct) || 0
         const gross = grossPerPaycheck(retirementForm.pay_frequency) ?? 0
@@ -973,6 +976,13 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                           {rc.current_balance > 0 ? currency(rc.current_balance) : <span className="text-muted-foreground/60">—</span>}
                         </p>
                       </div>
+                      {rc.pending_cash > 0 && (
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Pending cash</p>
+                          <p className="font-semibold tabular-nums text-amber-600 dark:text-amber-400">{currency(rc.pending_cash)}</p>
+                          <p className="text-muted-foreground/70">waiting to buy</p>
+                        </div>
+                      )}
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-xs">
                       <div className="rounded-md bg-muted/50 p-2">
@@ -1675,6 +1685,19 @@ export function InvestmentsContent({ initialInvestments, prevCloseMap = {}, init
                   onChange={(e) => setRetirementForm((f) => ({ ...f, current_balance: e.target.value }))}
                 />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rc-pending">Cash held in plan <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                id="rc-pending"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="e.g. 1200"
+                value={retirementForm.pending_cash}
+                onChange={(e) => setRetirementForm((f) => ({ ...f, pending_cash: e.target.value }))}
+              />
+              <p className="text-[11px] text-muted-foreground">Cash accumulated this period, waiting to buy shares at the end of the offering period (e.g. ESPP)</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="rc-tax">Your income tax bracket % <span className="text-muted-foreground">(optional)</span></Label>
