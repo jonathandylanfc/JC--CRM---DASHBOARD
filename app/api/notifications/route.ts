@@ -4,7 +4,7 @@ import { format, addMonths, addDays, endOfMonth, startOfMonth } from "date-fns"
 
 export interface AppNotification {
   id: string
-  type: "budget" | "payday" | "bill" | "transaction" | "goal"
+  type: "budget" | "payday" | "bill" | "transaction" | "goal" | "espp"
   title: string
   message: string
   severity: "info" | "warning" | "error" | "success"
@@ -212,6 +212,36 @@ export async function GET() {
         type: "goal",
         title: `${goal.name} is halfway there`,
         message: `You're 50% of the way to your $${Number(goal.target_amount).toFixed(0)} goal.`,
+        severity: "info",
+      })
+    }
+  }
+
+  // ── 6. ESPP / offering period end alerts ────────────────────────────────────
+  const { data: retirementAccounts } = await supabase
+    .from("retirement_contributions")
+    .select("id, name, offering_period_end")
+    .eq("user_id", user.id)
+    .not("offering_period_end", "is", null)
+
+  for (const acct of retirementAccounts ?? []) {
+    if (!acct.offering_period_end) continue
+    const endDate = new Date(acct.offering_period_end + "T12:00:00")
+    const daysUntil = Math.round((endDate.getTime() - today.getTime()) / 86400000)
+    if (daysUntil === 0) {
+      notifications.push({
+        id: `espp-today-${acct.id}`,
+        type: "espp",
+        title: `${acct.name} purchase date today`,
+        message: `Your offering period ends today — update your shares in the portfolio and reset your pending cash balance.`,
+        severity: "success",
+      })
+    } else if (daysUntil > 0 && daysUntil <= 7) {
+      notifications.push({
+        id: `espp-soon-${acct.id}-${acct.offering_period_end}`,
+        type: "espp",
+        title: `${acct.name} purchase in ${daysUntil} day${daysUntil === 1 ? "" : "s"}`,
+        message: `Your offering period ends on ${format(endDate, "MMM d")} — shares will be purchased at a discount. Be ready to log the new shares.`,
         severity: "info",
       })
     }
