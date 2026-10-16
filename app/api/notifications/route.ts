@@ -59,7 +59,7 @@ export async function GET() {
       ? (monthlyIncome * cat.value) / 100
       : cat.value
     const spent = spentByCategory[cat.name.toLowerCase()] ?? 0
-    if (budget > 0 && spent >= budget) {
+    if (budget > 0 && spent > budget) {
       notifications.push({
         id: `budget-over-${cat.id}`,
         type: "budget",
